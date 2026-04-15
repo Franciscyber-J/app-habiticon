@@ -1,0 +1,96 @@
+[
+  {
+    "slug": "habiticon-ipora",
+    "nome": "Habiticon Iporá",
+    "cidade": "Iporá",
+    "estado": "GO",
+    "descricao": "O primeiro condomínio fechado de Iporá com segurança e lazer.",
+    "status": "ativo",
+    "leads": [],
+    "coordenadas": {
+      "lat": -16.4428,
+      "lng": -51.1171
+    },
+    "modelos": [
+      {
+        "id": "modelo-2q",
+        "nome": "Modelo 2Q",
+        "quartos": 2,
+        "area": 55,
+        "valor": 220000,
+        "valorLote": 48000,
+        "imagem": "/images/modelo-2q.png",
+        "planta": "/images/planta-2q.png"
+      },
+      {
+        "id": "modelo-3q",
+        "nome": "Modelo 3Q",
+        "quartos": 3,
+        "area": 70,
+        "valor": 240000,
+        "valorLote": 52000,
+        "imagem": "/images/modelo-3q.png",
+        "planta": "/images/planta-3q.png"
+      }
+    ],
+    "simulador": {
+      "entradaMin": 10000,
+      "entradaMax": 80000,
+      "prazoMeses": 360,
+      "taxaFaixa12": 4.5,
+      "taxaFaixa3": 8.16,
+      "taxaMercado": 12,
+      "igpmMensal": 0.8,
+      "mesesObra": 5,
+      "cotaMaximaCaixa": 0.8,
+      "percentualObraPorMes": [20, 40, 55, 75, 100]
+    },
+    "mcmv": {
+      "faixas": [
+        {
+          "id": 1,
+          "nome": "Faixa 1",
+          "rendaMin": 0,
+          "rendaMax": 2850,
+          "subsidioMax": 55000,
+          "subsidioMin": 40000,
+          "taxa": 4.5,
+          "cor": "#16a34a"
+        },
+        {
+          "id": 2,
+          "nome": "Faixa 2",
+          "rendaMin": 2851,
+          "rendaMax": 5200,
+          "subsidioMax": 40000,
+          "subsidioMin": 10000,
+          "taxa": 5.25,
+          "cor": "#84cc16"
+        },
+        {
+          "id": 3,
+          "nome": "Faixa 3",
+          "rendaMin": 5201,
+          "rendaMax": 8000,
+          "subsidioMax": 0,
+          "subsidioMin": 0,
+          "taxa": 8.16,
+          "cor": "#fb923c"
+        }
+      ],
+      "tetoImovel": 275000,
+      "observacao": "Parâmetros vigentes do programa Minha Casa Minha Vida (Federal) para Iporá-GO. Subsídio direto da modalidade Aquisição e Construção."
+    },
+    "vitrine": {
+      "imagens": [],
+      "plantas": []
+    },
+    "textos": {
+      "notasLegais": "Simulação meramente ilustrativa. Valores sujeitos à análise de crédito e aprovação da Caixa Econômica Federal. Taxas e subsídios conforme programa MCMV vigente. Parcelas não incluem seguros obrigatórios de DFI e MIP. Consulte seu correspondente bancário.",
+      "tituloObra": "Fluxo de Obra (PCI)",
+      "descricaoObra": "Durante a construção, você paga juros progressivos à medida que a casa é construída.",
+      "alertaF3": "Atenção: Para esta renda (Faixa 3), o programa MCMV não oferece subsídio direto à fundo perdido, apenas taxas de juros reduzidas.",
+      "alertaF12": "Excelente! Você se enquadra na Faixa 1/2 do MCMV com subsídio direto e as menores taxas de juros do mercado."
+    }
+  }
+]
