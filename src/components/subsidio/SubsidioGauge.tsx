@@ -3,15 +3,18 @@
 import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { calcularSubsidio, formatBRL, type FaixaMCMV } from "@/lib/calculos";
-import { CheckCircle, TrendingUp, Info, AlertTriangle } from "lucide-react";
+import { Info, AlertTriangle } from "lucide-react";
 
 interface SubsidioGaugeProps {
   faixas: FaixaMCMV[];
-  onSubsidioChange?: (subsidio: number, taxa: number, rendaDigitada: boolean, renda: number) => void;
+  onSubsidioChange?: (subsidio: number, taxa: number, rendaDigitada: boolean, renda: number, faixaId?: number) => void;
   initialRenda?: number;
   valorImovel: number;
   tetoMcmv: number;
 }
+
+// Cor por posição na lista de faixas (não mais por id fixo)
+const CORES_GAUGE = ["#4ade80", "#a3e635", "#fb923c", "#f43f5e"];
 
 export function SubsidioGauge({
   faixas,
@@ -26,8 +29,6 @@ export function SubsidioGauge({
   });
 
   const rendaNum = parseFloat(renda.replace(/\D/g, "")) || 0;
-
-  // Lógica de Subsídio e Taxa
   const excedeTeto = valorImovel > tetoMcmv;
 
   const resultado = useMemo(() => {
@@ -35,28 +36,21 @@ export function SubsidioGauge({
     return calcularSubsidio(rendaNum, faixas);
   }, [rendaNum, faixas]);
 
-  const faixaAtual = resultado?.faixa;
-  const subsidio = resultado?.subsidio || 0;
-  const taxa = resultado?.taxa || 12;
+  const faixaAtual = resultado?.faixa ?? null;
+  const subsidio   = resultado?.subsidio ?? 0;
+  const taxa        = resultado?.taxa ?? 12;
 
-  // Notifica o pai sobre mudanças
+  // Índice da faixa atual na lista (0-based)
+  const faixaIdx = faixaAtual ? faixas.findIndex((f) => f.id === faixaAtual.id) : -1;
+  const gaugeColor = faixaIdx >= 0 ? CORES_GAUGE[faixaIdx] ?? "#fb923c" : "var(--gray-mid)";
+
   useEffect(() => {
-    if (onSubsidioChange) {
-      onSubsidioChange(subsidio, taxa, rendaNum > 0, rendaNum);
-    }
-  }, [subsidio, taxa, rendaNum, onSubsidioChange]);
+    onSubsidioChange?.(subsidio, taxa, rendaNum > 0, rendaNum, faixaAtual?.id);
+  }, [subsidio, taxa, rendaNum, onSubsidioChange, faixaAtual]);
 
-  // Gauge percentage (0 a 100%, baseado na renda máxima da faixa 3)
+  // Gauge: 0 → rendaMax da última faixa
   const maxRenda = faixas[faixas.length - 1]?.rendaMax || 13000;
   const gaugePct = Math.min((rendaNum / maxRenda) * 100, 100);
-
-  // Cores do gauge por faixa
-  const getGaugeColor = () => {
-    if (!faixaAtual) return "#4ade80";
-    if (faixaAtual.id === 1) return "#4ade80";
-    if (faixaAtual.id === 2) return "#a3e635";
-    return "#fb923c";
-  };
 
   const formatInput = (val: string) => {
     const num = val.replace(/\D/g, "");
@@ -65,107 +59,171 @@ export function SubsidioGauge({
   };
 
   return (
-    <div className="space-y-12">
-      {/* Input de Renda */}
+    <div className="space-y-10">
+
+      {/* ── Input de Renda ─────────────────────────────── */}
       <div>
         <label className="text-sm font-bold mb-4 block" style={{ color: "var(--gray-light)" }}>
           Renda Bruta Familiar Mensal
         </label>
         <div className="relative">
-          <span className="absolute left-6 top-1/2 -translate-y-1/2 font-bold text-lg" style={{ color: "var(--terracota)" }}>R$</span>
+          <span className="absolute left-6 top-1/2 -translate-y-1/2 font-bold text-lg" style={{ color: "var(--terracota)" }}>
+            R$
+          </span>
           <input
             type="text"
             className="input-field"
             style={{ paddingLeft: "4.5rem", fontSize: 20, height: 60 }}
             placeholder="0"
             value={renda}
-            onChange={(e) => {
-              const formatted = formatInput(e.target.value);
-              setRenda(formatted);
-            }}
+            onChange={(e) => setRenda(formatInput(e.target.value))}
             inputMode="numeric"
           />
         </div>
+        {/* Nota: renda mínima para este empreendimento */}
+        <p style={{ fontSize: 11, color: "var(--gray-dark)", marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
+          <Info size={11} />
+          Programa MCMV — Faixas disponíveis: {faixas.map(f => f.nome).join(", ")} · até R$ {maxRenda.toLocaleString("pt-BR")}/mês
+        </p>
       </div>
 
-      {/* Alerta de Teto */}
+      {/* ── Alerta de Teto ─────────────────────────────── */}
       {excedeTeto && (
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }} 
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="p-6 rounded-2xl bg-red-500/10 border border-red-500/20 flex gap-4 items-center"
+          style={{ padding: "16px 20px", borderRadius: 14, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", display: "flex", gap: 14, alignItems: "center" }}
         >
-          <AlertTriangle className="text-red-500 shrink-0" size={20} />
-          <p className="text-xs text-red-200">
-            Atenção: O valor deste imóvel (R$ {valorImovel.toLocaleString()}) excede o teto permitido para o programa MCMV nesta região (R$ {tetoMcmv.toLocaleString()}).
+          <AlertTriangle size={18} color="#f87171" style={{ flexShrink: 0 }} />
+          <p style={{ fontSize: 12, color: "#fca5a5", lineHeight: 1.5 }}>
+            O valor deste imóvel (R$ {valorImovel.toLocaleString("pt-BR")}) excede o teto permitido para o programa MCMV nesta região (R$ {tetoMcmv.toLocaleString("pt-BR")}).
           </p>
         </motion.div>
       )}
 
-      {/* Gauge Termômetro */}
+      {/* ── Gauge + Resultado ──────────────────────────── */}
       <AnimatePresence>
         {rendaNum > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -16 }}
-            className="space-y-10"
+            style={{ display: "flex", flexDirection: "column", gap: 28 }}
           >
-            {/* Barra de Progresso */}
+
+            {/* Barra de progresso com labels dinâmicos */}
             <div style={{ padding: "0 4px" }}>
-              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: "var(--gray-dark)" }}>
-                <span>Faixa 1</span>
-                <span>Faixa 2</span>
-                <span>Faixa 3</span>
-              </div>
-              <div className="relative h-4 rounded-full" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                {faixas.slice(0, -1).map((f) => (
-                  <div
-                    key={f.id}
-                    className="absolute top-0 bottom-0 w-px"
-                    style={{ left: `${(f.rendaMax / maxRenda) * 100}%`, background: "rgba(255,255,255,0.1)" }}
-                  />
+              {/* Labels: gerados da lista de faixas */}
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                {faixas.map((f, i) => (
+                  <span key={f.id} style={{
+                    fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em",
+                    color: faixaAtual?.id === f.id ? CORES_GAUGE[i] : "var(--gray-dark)",
+                    transition: "color 0.3s",
+                  }}>
+                    {f.nome}
+                  </span>
                 ))}
+              </div>
+
+              {/* Barra */}
+              <div style={{ position: "relative", height: 14, borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.05)", overflow: "hidden" }}>
+                {/* Divisores entre faixas */}
+                {faixas.slice(0, -1).map((f) => (
+                  <div key={f.id} style={{
+                    position: "absolute", top: 0, bottom: 0, width: 1,
+                    left: `${(f.rendaMax / maxRenda) * 100}%`,
+                    background: "rgba(255,255,255,0.12)",
+                  }} />
+                ))}
+                {/* Preenchimento animado */}
                 <motion.div
-                  className="absolute inset-y-0 left-0 rounded-full"
-                  animate={{ width: `${gaugePct}%`, backgroundColor: getGaugeColor() }}
+                  style={{ position: "absolute", inset: "0 auto 0 0", borderRadius: 8, boxShadow: `0 0 14px ${gaugeColor}50` }}
+                  animate={{ width: `${gaugePct}%`, backgroundColor: gaugeColor }}
                   transition={{ duration: 0.6, ease: "easeOut" }}
-                  style={{ boxShadow: `0 0 15px ${getGaugeColor()}40` }}
                 />
+              </div>
+
+              {/* Valores limite abaixo da barra */}
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                <span style={{ fontSize: 9, color: "var(--gray-dark)" }}>R$ 0</span>
+                {faixas.slice(0, -1).map((f) => (
+                  <span key={f.id} style={{ fontSize: 9, color: "var(--gray-dark)" }}>
+                    R$ {(f.rendaMax / 1000).toFixed(1)}k
+                  </span>
+                ))}
+                <span style={{ fontSize: 9, color: "var(--gray-dark)" }}>
+                  R$ {(maxRenda / 1000).toFixed(0)}k
+                </span>
               </div>
             </div>
 
-            {/* Resultado por faixa */}
-            {faixaAtual && (
+            {/* Cards de resultado */}
+            {faixaAtual ? (
               <motion.div
                 key={faixaAtual.id}
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="grid grid-cols-1 md:grid-cols-3 gap-6"
+                style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}
               >
-                <div className="p-8 rounded-2xl text-center flex flex-col justify-center gap-1" style={{ background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-subtle)" }}>
-                  <div className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--gray-dark)" }}>Enquadramento</div>
-                  <div className="text-lg font-black" style={{ color: faixaAtual.cor }}>{faixaAtual.nome}</div>
+                {/* Enquadramento */}
+                <div style={{ padding: "20px 16px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.2)", border: `1px solid ${faixaAtual.cor}30` }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--gray-dark)", marginBottom: 8 }}>
+                    Enquadramento
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: faixaAtual.cor }}>
+                    {faixaAtual.nome}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 4 }}>
+                    até R$ {faixaAtual.rendaMax.toLocaleString("pt-BR")}
+                  </div>
                 </div>
-                <div className="p-8 rounded-2xl text-center flex flex-col justify-center gap-1" style={{ background: "rgba(0,0,0,0.25)", border: "1px solid var(--border-subtle)" }}>
-                  <div className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--gray-dark)" }}>Subsídio MCMV</div>
-                  <div className="text-xl font-black text-green-400">{subsidio > 0 ? formatBRL(subsidio) : "—"}</div>
+
+                {/* Subsídio */}
+                <div style={{ padding: "20px 16px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.25)", border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--gray-dark)", marginBottom: 8 }}>
+                    Subsídio MCMV
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: subsidio > 0 ? "#4ade80" : "var(--gray-dark)" }}>
+                    {subsidio > 0 ? formatBRL(subsidio) : "—"}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 4 }}>
+                    {subsidio > 0 ? "desconto direto" : "sem subsídio"}
+                  </div>
                 </div>
-                <div className="p-8 rounded-2xl text-center flex flex-col justify-center gap-1" style={{ background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-subtle)" }}>
-                  <div className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--gray-dark)" }}>Taxa de Juros</div>
-                  <div className="text-xl font-black" style={{ color: "var(--terracota)" }}>{taxa}% a.a.</div>
+
+                {/* Taxa */}
+                <div style={{ padding: "20px 16px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--gray-dark)", marginBottom: 8 }}>
+                    Taxa de Juros
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: "var(--terracota)" }}>
+                    {taxa}% a.a.
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 4 }}>
+                    nominal · MCMV
+                  </div>
                 </div>
               </motion.div>
+            ) : (
+              /* Renda fora das faixas disponíveis */
+              <div style={{ padding: "16px 20px", borderRadius: 12, background: "rgba(239,68,68,0.07)", border: "1px solid rgba(239,68,68,0.2)", display: "flex", gap: 10, alignItems: "center" }}>
+                <AlertTriangle size={15} color="#f87171" style={{ flexShrink: 0 }} />
+                <p style={{ fontSize: 12, color: "#fca5a5", lineHeight: 1.5 }}>
+                  Renda de {formatBRL(rendaNum)} não se enquadra nas faixas disponíveis para este empreendimento ({faixas[0]?.nome} a {faixas[faixas.length - 1]?.nome}).
+                </p>
+              </div>
             )}
 
             {/* Nota informativa */}
-            <div className="p-8 rounded-2xl flex items-start gap-4" style={{ background: "rgba(0,0,0,0.15)", border: "1px solid var(--border-subtle)" }}>
-              <Info size={18} color="var(--gray-dark)" className="shrink-0 mt-0.5" />
-              <p className="text-xs leading-relaxed" style={{ color: "var(--gray-dark)" }}>
-                Simulação baseada nas regras vigentes do programa Minha Casa Minha Vida (Federal). 
+            <div style={{ padding: "14px 18px", borderRadius: 12, background: "rgba(0,0,0,0.15)", border: "1px solid var(--border-subtle)", display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <Info size={16} color="var(--gray-dark)" style={{ flexShrink: 0, marginTop: 1 }} />
+              <p style={{ fontSize: 11, color: "var(--gray-dark)", lineHeight: 1.6 }}>
+                Simulação baseada nas regras vigentes do programa Minha Casa Minha Vida — DOU 16/04/2026.
                 Valores e taxas sujeitos à análise de crédito e aprovação da Caixa Econômica Federal.
               </p>
             </div>
+
           </motion.div>
         )}
       </AnimatePresence>

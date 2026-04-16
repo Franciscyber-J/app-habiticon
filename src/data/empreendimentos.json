@@ -16,7 +16,7 @@
         "id": "modelo-2q",
         "nome": "Modelo 2Q",
         "quartos": 2,
-        "area": 55,
+        "area": 66.72,
         "valor": 220000,
         "valorLote": 48000,
         "imagem": "/images/modelo-2q.png",
@@ -26,46 +26,49 @@
         "id": "modelo-3q",
         "nome": "Modelo 3Q",
         "quartos": 3,
-        "area": 70,
+        "area": 77.5,
         "valor": 240000,
-        "valorLote": 52000,
+        "valorLote": 48000,
         "imagem": "/images/modelo-3q.png",
         "planta": "/images/planta-3q.png"
       }
     ],
     "simulador": {
       "entradaMin": 10000,
-      "entradaMax": 80000,
+      "entradaMax": 100000,
       "prazoMeses": 360,
-      "taxaFaixa12": 4.5,
+      "taxaFaixa12": 7,
       "taxaFaixa3": 8.16,
+      "taxaFaixa3Cotista": 7.66,
       "taxaMercado": 12,
       "igpmMensal": 0.8,
       "mesesObra": 5,
       "cotaMaximaCaixa": 0.8,
-      "percentualObraPorMes": [20, 40, 55, 75, 100]
+      "percentualObraPorMes": [
+        20,
+        40,
+        55,
+        75,
+        100
+      ],
+      "cub": {
+        "bdi": 0.18,
+        "cubVigente": 2668.15
+      }
     },
     "mcmv": {
       "faixas": [
         {
-          "id": 1,
-          "nome": "Faixa 1",
-          "rendaMin": 0,
-          "rendaMax": 3200,
-          "subsidioMax": 55000,
-          "subsidioMin": 35000,
-          "taxa": 4.5,
-          "cor": "#16a34a"
-        },
-        {
           "id": 2,
           "nome": "Faixa 2",
-          "rendaMin": 3201,
+          "rendaMin": 0,
           "rendaMax": 5000,
-          "subsidioMax": 35000,
+          "subsidioMax": 55000,
           "subsidioMin": 0,
-          "taxa": 5.25,
-          "cor": "#84cc16"
+          "taxa": 7,
+          "taxaCotista": 6.5,
+          "cor": "#84cc16",
+          "tetoImovel": 275000
         },
         {
           "id": 3,
@@ -75,22 +78,36 @@
           "subsidioMax": 0,
           "subsidioMin": 0,
           "taxa": 8.16,
-          "cor": "#fb923c"
+          "taxaCotista": 7.66,
+          "cor": "#fb923c",
+          "tetoImovel": 400000
+        },
+        {
+          "id": 4,
+          "nome": "Faixa 4",
+          "rendaMin": 9601,
+          "rendaMax": 13000,
+          "subsidioMax": 0,
+          "subsidioMin": 0,
+          "taxa": 10.5,
+          "taxaCotista": 10,
+          "cor": "#f43f5e",
+          "tetoImovel": 600000
         }
       ],
       "tetoImovel": 275000,
-      "observacao": "Parâmetros vigentes do programa Minha Casa Minha Vida (Federal) para Iporá-GO. Subsídio direto da modalidade Aquisição e Construção."
+      "observacao": "Faixas e limites conforme publicação no DOU em 16/04/2026. Motor de cálculo (Faixa 3) validado por 5 simulados reais da Caixa. Faixa 1 removida — não aplicável a este empreendimento."
     },
     "vitrine": {
       "imagens": [],
       "plantas": []
     },
     "textos": {
-      "notasLegais": "Simulação meramente ilustrativa. Valores sujeitos à análise de crédito e aprovação da Caixa Econômica Federal. Taxas e subsídios conforme programa MCMV vigente. Parcelas não incluem seguros obrigatórios de DFI e MIP. Consulte seu correspondente bancário.",
+      "notasLegais": "Simulação meramente ilustrativa. Valores sujeitos à análise de crédito e aprovação da Caixa Econômica Federal. Taxas e subsídios conforme programa MCMV vigente (DOU 16/04/2026). Parcelas incluem seguros obrigatórios DFI e MIP estimados e taxa administrativa de R$25,00/mês. Motor validado por engenharia reversa com simulados reais da Caixa. Consulte seu correspondente bancário.",
       "tituloObra": "Fluxo de Obra (PCI)",
       "descricaoObra": "Durante a construção, você paga juros progressivos à medida que a casa é construída.",
-      "alertaF3": "Atenção: Para esta renda (Faixa 3), o programa MCMV não oferece subsídio direto à fundo perdido, apenas taxas de juros reduzidas.",
-      "alertaF12": "Excelente! Você se enquadra na Faixa 1/2 do MCMV com subsídio direto e as menores taxas de juros do mercado."
+      "alertaF3": "Para esta renda (Faixa 3 ou 4), o programa MCMV não oferece subsídio direto, apenas taxas de juros reduzidas.",
+      "alertaF12": "Você se enquadra na Faixa 2 do MCMV com subsídio direto e taxas de juros reduzidas!"
     }
   }
 ]
