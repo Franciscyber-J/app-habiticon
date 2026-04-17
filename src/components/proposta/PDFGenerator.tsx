@@ -9,6 +9,7 @@ import { formatBRL, formatBRLDecimal } from "@/lib/calculos";
 interface Lead {
   nome: string;
   whatsapp: string;
+  nomeCorretor: string;
 }
 
 interface PropostaData {
@@ -24,9 +25,11 @@ interface PropostaData {
   subsidio: number;
   taxa: number;
   prazoMeses: number;
-  parcelaSACPrimeira: number;
+  parcelaSACPrimeira: number;   // SAC calculado sobre finLiberadoPRICE
   parcelaSACUltima: number;
   parcelaPRICE: number;
+  sacAprovadoPDF: boolean;      // false = SAC excede 30% da renda → ocultar no PDF
+  rendaFamiliar?: number;
   notasLegais: string;
 }
 
@@ -36,7 +39,7 @@ interface PDFGeneratorProps {
 
 export function PDFGenerator({ proposta }: PDFGeneratorProps) {
   const [etapa, setEtapa] = useState<"closed" | "lead" | "success">("closed");
-  const [lead, setLead] = useState<Lead>({ nome: "", whatsapp: "" });
+  const [lead, setLead] = useState<Lead>({ nome: "", whatsapp: "", nomeCorretor: "" });
   const [loading, setLoading] = useState(false);
 
   const formatWhatsApp = (val: string) => {
@@ -47,7 +50,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
   };
 
   const gerarPDF = async () => {
-    if (!lead.nome.trim() || lead.whatsapp.replace(/\D/g, "").length < 10) return;
+    if (!lead.nome.trim() || lead.whatsapp.replace(/\D/g, "").length < 10 || !lead.nomeCorretor.trim()) return;
     setLoading(true);
 
     try {
@@ -57,14 +60,15 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...lead,
+          nomeCorretor: lead.nomeCorretor,
           empreendimento: proposta.empreendimento,
           modelo: proposta.modelo,
           valorImovel: proposta.valorImovel,
           timestamp: new Date().toISOString(),
         }),
-      }).catch(() => {}); // não bloquear se API falhar
+      }).catch(() => {});
 
-      // Gera o PDF dinamicamente via jsPDF
+      // Gera o PDF
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ orientation: "portrait", format: "a4" });
 
@@ -117,6 +121,11 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       doc.setFontSize(9);
       doc.setTextColor(154, 154, 153);
       doc.text(`WhatsApp: ${lead.whatsapp}`, 20, y + 18);
+      if (lead.nomeCorretor) {
+        doc.setFontSize(8);
+        doc.setTextColor(154, 154, 153);
+        doc.text(`Corretor(a): ${lead.nomeCorretor}`, pageW - 20, y + 18, { align: "right" });
+      }
 
       // Dados do imóvel
       y += 38;
@@ -170,7 +179,8 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
         y += 10;
       });
 
-      // Parcelas
+      // ── PARCELAS DO FINANCIAMENTO ──────────────────────────────────────
+      // Motor de bloqueio SAC: se sacAprovadoPDF=false → só PRICE no PDF
       y += 8;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
@@ -178,32 +188,57 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       doc.text("PARCELAS DO FINANCIAMENTO", 20, y);
       y += 8;
 
-      doc.setFillColor(23, 39, 28);
-      doc.roundedRect(15, y - 4, (pageW - 35) / 2, 30, 3, 3, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      doc.setTextColor(74, 222, 128);
-      doc.text("SISTEMA SAC", 15 + (pageW - 35) / 4, y + 3, { align: "center" });
-      doc.setFontSize(10);
-      doc.setTextColor(216, 216, 215);
-      doc.text(`1ª: ${formatBRLDecimal(proposta.parcelaSACPrimeira)}`, 15 + (pageW - 35) / 4, y + 12, { align: "center" });
-      doc.setFontSize(8);
-      doc.setTextColor(154, 154, 153);
-      doc.text(`última: ${formatBRLDecimal(proposta.parcelaSACUltima)}`, 15 + (pageW - 35) / 4, y + 20, { align: "center" });
+      if (proposta.sacAprovadoPDF) {
+        // SAC + PRICE lado a lado (cliente aprovado para ambos)
+        doc.setFillColor(23, 39, 28);
+        doc.roundedRect(15, y - 4, (pageW - 35) / 2, 30, 3, 3, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(74, 222, 128);
+        doc.text("SISTEMA SAC", 15 + (pageW - 35) / 4, y + 3, { align: "center" });
+        doc.setFontSize(10);
+        doc.setTextColor(216, 216, 215);
+        doc.text(`1ª: ${formatBRLDecimal(proposta.parcelaSACPrimeira)}`, 15 + (pageW - 35) / 4, y + 12, { align: "center" });
+        doc.setFontSize(8);
+        doc.setTextColor(154, 154, 153);
+        doc.text(`última: ${formatBRLDecimal(proposta.parcelaSACUltima)}`, 15 + (pageW - 35) / 4, y + 20, { align: "center" });
 
-      const col2X = 15 + (pageW - 35) / 2 + 5;
-      doc.setFillColor(23, 39, 28);
-      doc.roundedRect(col2X, y - 4, (pageW - 35) / 2, 30, 3, 3, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      doc.setTextColor(175, 111, 83);
-      doc.text("SISTEMA PRICE", col2X + (pageW - 35) / 4, y + 3, { align: "center" });
-      doc.setFontSize(10);
-      doc.setTextColor(216, 216, 215);
-      doc.text(formatBRLDecimal(proposta.parcelaPRICE), col2X + (pageW - 35) / 4, y + 12, { align: "center" });
-      doc.setFontSize(8);
-      doc.setTextColor(154, 154, 153);
-      doc.text("parcela fixa", col2X + (pageW - 35) / 4, y + 20, { align: "center" });
+        const col2X = 15 + (pageW - 35) / 2 + 5;
+        doc.setFillColor(23, 39, 28);
+        doc.roundedRect(col2X, y - 4, (pageW - 35) / 2, 30, 3, 3, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(175, 111, 83);
+        doc.text("SISTEMA PRICE", col2X + (pageW - 35) / 4, y + 3, { align: "center" });
+        doc.setFontSize(10);
+        doc.setTextColor(216, 216, 215);
+        doc.text(formatBRLDecimal(proposta.parcelaPRICE), col2X + (pageW - 35) / 4, y + 12, { align: "center" });
+        doc.setFontSize(8);
+        doc.setTextColor(154, 154, 153);
+        doc.text("parcela fixa", col2X + (pageW - 35) / 4, y + 20, { align: "center" });
+      } else {
+        // Apenas PRICE — SAC bloqueado pois excede 30% da renda
+        // Card PRICE centralizado (largura total)
+        doc.setFillColor(23, 39, 28);
+        doc.roundedRect(15, y - 4, pageW - 30, 30, 3, 3, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(175, 111, 83);
+        doc.text("SISTEMA PRICE — TABELA INDICADA", pageW / 2, y + 3, { align: "center" });
+        doc.setFontSize(13);
+        doc.setTextColor(216, 216, 215);
+        doc.text(formatBRLDecimal(proposta.parcelaPRICE), pageW / 2, y + 15, { align: "center" });
+        doc.setFontSize(8);
+        doc.setTextColor(154, 154, 153);
+        doc.text("parcela fixa · 360 meses", pageW / 2, y + 22, { align: "center" });
+        // Nota sutil sobre o SAC
+        y += 34;
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(7);
+        doc.setTextColor(90, 90, 89);
+        doc.text("* Sistema SAC não apresentado — parcela inicial excederia o limite de comprometimento de renda (30%).", 20, y);
+        y -= 34; // compensar o y extra para a nota ficar antes do bloco de notas legais
+      }
 
       // Notas Legais
       y += 40;
@@ -223,21 +258,52 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.setTextColor(90, 90, 89);
-      doc.text("Habiticon Construção Inteligente · CNPJ: 00.000.000/0001-00", pageW / 2, pageH - 15, { align: "center" });
+      doc.text("Habiticon Construção Inteligente · CNPJ: 61.922.155/0001-70", pageW / 2, pageH - 15, { align: "center" });
 
-      // Download
-      doc.save(`Proposta_Habiticon_${lead.nome.replace(/\s+/g, "_")}.pdf`);
+      // ── Web Share API (mobile) ou Download + WhatsApp Web (desktop) ──
+      const nomeArquivo = `Proposta_Habiticon_${lead.nome.replace(/\s+/g, "_")}.pdf`;
+      const mensagemWpp = `Olá ${lead.nome}! Segue a proposta da Habiticon referente ao ${proposta.modelo} em ${proposta.cidade}-${proposta.estado}.\n\nValor do imóvel: R$ ${proposta.valorImovel.toLocaleString("pt-BR")}\nEntrada: R$ ${proposta.entrada.toLocaleString("pt-BR")}\nFinanciamento: R$ ${proposta.valorFinanciado.toLocaleString("pt-BR")}\n\nEm caso de dúvidas, estou à disposição!`;
+
+      const pdfBlob = doc.output("blob");
+      const pdfFile = new File([pdfBlob], nomeArquivo, { type: "application/pdf" });
+
+      // Tenta Web Share API com arquivo (funciona em mobile Chrome/Safari)
+      const canShareFile = typeof navigator !== "undefined"
+        && "share" in navigator
+        && "canShare" in navigator
+        && navigator.canShare({ files: [pdfFile] });
+
+      if (canShareFile) {
+        // Mobile: compartilha PDF direto (usuário escolhe WhatsApp)
+        await navigator.share({
+          files: [pdfFile],
+          text: mensagemWpp,
+        });
+      } else {
+        // Desktop: baixa o PDF e abre WhatsApp Web com a mensagem
+        doc.save(nomeArquivo);
+        const wppUrl = `https://wa.me/55${lead.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(mensagemWpp)}`;
+        window.open(wppUrl, "_blank");
+      }
+
       setEtapa("success");
-    } catch (err) {
-      console.error("Erro ao gerar PDF:", err);
+    } catch (err: any) {
+      // Usuário cancelou o share — não é erro real
+      if (err?.name !== "AbortError") {
+        console.error("Erro ao gerar PDF:", err);
+      }
+      // Ainda assim considera sucesso se o PDF foi gerado
+      setEtapa("success");
     } finally {
       setLoading(false);
     }
   };
 
+  // URL do WhatsApp — usada no botão de fallback na tela de sucesso (desktop)
   const whatsappUrl = `https://wa.me/55${lead.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
-    `Olá ${lead.nome}! Segue a proposta da Habiticon referente ao ${proposta.modelo} em ${proposta.cidade}-${proposta.estado}. Em caso de dúvidas, estou à disposição!`
+    `Olá ${lead.nome}! Segue a proposta da Habiticon referente ao ${proposta.modelo} em ${proposta.cidade}-${proposta.estado}.\n\nValor do imóvel: R$ ${proposta.valorImovel.toLocaleString("pt-BR")} | Entrada: R$ ${proposta.entrada.toLocaleString("pt-BR")}\n\nEm caso de dúvidas, estou à disposição!`
   )}`;
+  const podeCompartilharNativo = typeof navigator !== "undefined" && "share" in navigator;
 
   return (
     <>
@@ -351,18 +417,51 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                         <span style={{ color: "var(--gray-dark)", fontWeight: "bold", textTransform: "uppercase", fontSize: "10px", letterSpacing: "0.15em" }} className="whitespace-nowrap">Entrada Total</span>
                         <span style={{ color: "var(--gray-light)", fontWeight: 600 }}>{formatBRL(proposta.entrada)}</span>
                       </div>
-                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-sm">
-                        <span style={{ color: "var(--gray-dark)", fontWeight: "bold", textTransform: "uppercase", fontSize: "10px", letterSpacing: "0.15em" }} className="whitespace-nowrap">Parcela (SAC 1ª)</span>
-                        <span style={{ color: "var(--terracota-light)", fontWeight: 800, fontSize: 20 }}>{formatBRLDecimal(proposta.parcelaSACPrimeira)}</span>
-                      </div>
+                      {/* SAC: só mostrar no preview se aprovado */}
+                      {proposta.sacAprovadoPDF ? (
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-sm">
+                          <span style={{ color: "var(--gray-dark)", fontWeight: "bold", textTransform: "uppercase", fontSize: "10px", letterSpacing: "0.15em" }} className="whitespace-nowrap">Parcela SAC (1ª)</span>
+                          <span style={{ color: "var(--terracota-light)", fontWeight: 800, fontSize: 20 }}>{formatBRLDecimal(proposta.parcelaSACPrimeira)}</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-sm">
+                          <span style={{ color: "var(--gray-dark)", fontWeight: "bold", textTransform: "uppercase", fontSize: "10px", letterSpacing: "0.15em" }} className="whitespace-nowrap">Parcela PRICE (fixa)</span>
+                          <span style={{ color: "var(--terracota-light)", fontWeight: 800, fontSize: 20 }}>{formatBRLDecimal(proposta.parcelaPRICE)}</span>
+                        </div>
+                      )}
+                      {!proposta.sacAprovadoPDF && (
+                        <div style={{ fontSize: 11, color: "var(--gray-dark)", paddingTop: 4, display: "flex", gap: 6, alignItems: "center" }}>
+                          <span style={{ color: "#fb923c" }}>⚠️</span>
+                          <span>SAC omitido — parcela inicial excederia 30% da renda. Apenas PRICE na proposta.</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-[0.15em] mb-4 block" style={{ color: "var(--gray-mid)" }}>
+                        Nome do Corretor (a) <span style={{ color: "var(--terracota)" }}>*</span>
+                      </label>
+                      <div className="relative">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: 24, top: "50%", transform: "translateY(-50%)", color: "var(--terracota)", zIndex: 10 }}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        <input
+                          type="text"
+                          className="input-field"
+                          style={{ height: 64, fontSize: 16, paddingLeft: 64 }}
+                          placeholder="Seu nome completo"
+                          value={lead.nomeCorretor}
+                          onChange={(e) => setLead((p) => ({ ...p, nomeCorretor: e.target.value }))}
+                          autoComplete="name"
+                        />
+                      </div>
+                    </div>
+
+                  <div style={{ height: 8 }} />
                   <button
                     onClick={gerarPDF}
-                    disabled={!lead.nome.trim() || lead.whatsapp.replace(/\D/g, "").length < 10 || loading}
+                    disabled={!lead.nome.trim() || lead.whatsapp.replace(/\D/g, "").length < 10 || !lead.nomeCorretor.trim() || loading}
                     className="btn-primary w-full"
-                    style={{ opacity: !lead.nome.trim() || lead.whatsapp.replace(/\D/g, "").length < 10 ? 0.5 : 1 }}
+                    style={{ opacity: !lead.nome.trim() || lead.whatsapp.replace(/\D/g, "").length < 10 || !lead.nomeCorretor.trim() ? 0.5 : 1 }}
                   >
                     {loading ? (
                       <span>Gerando PDF...</span>
@@ -398,18 +497,27 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                   </p>
 
                   <div className="space-y-3">
-                    <a
-                      href={whatsappUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn-primary w-full"
-                      style={{ background: "#22c55e" }}
-                    >
-                      <Send size={18} />
-                      Enviar via WhatsApp
-                    </a>
+                    {/* No mobile, o share já aconteceu durante a geração.
+                        No desktop, oferece o link do WhatsApp Web como fallback. */}
+                    {!podeCompartilharNativo && (
+                      <a
+                        href={whatsappUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-primary w-full"
+                        style={{ background: "#22c55e" }}
+                      >
+                        <Send size={18} />
+                        Abrir WhatsApp Web
+                      </a>
+                    )}
+                    {podeCompartilharNativo && (
+                      <p style={{ fontSize: 13, color: "var(--gray-mid)", textAlign: "center" }}>
+                        PDF enviado via compartilhamento nativo 📲
+                      </p>
+                    )}
                     <button
-                      onClick={() => { setEtapa("closed"); setLead({ nome: "", whatsapp: "" }); }}
+                      onClick={() => { setEtapa("closed"); setLead({ nome: "", whatsapp: "", nomeCorretor: "" }); }}
                       className="btn-ghost w-full"
                     >
                       Fechar

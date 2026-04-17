@@ -162,6 +162,20 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
 
   const modelo = emp.modelos.find((m) => m.id === modeloSelecionado) || emp.modelos[0];
 
+  // ── Teto efetivo por modelo ──────────────────────────────────────────
+  // O teto global (emp.mcmv.tetoImovel = R$275k) é o da Faixa 2 para Iporá-GO.
+  // Quando o laudo CUB de um modelo ultrapassa esse teto, o imóvel pertence à
+  // Faixa 3 (teto R$400k) ou F4 (R$600k). Usar o teto errado limitava o
+  // financiamento do 3Q a R$220k em vez de R$233k — bug corrigido aqui.
+  const tetoEfetivo = useMemo(() => {
+    if (!modelo) return emp.mcmv.tetoImovel;
+    const cubCfg = emp.simulador.cub;
+    if (!cubCfg || !cubCfg.cubVigente) return emp.mcmv.tetoImovel;
+    const laudoCalc = valorLoteEmpreendimento + modelo.area * cubCfg.cubVigente * (1 + cubCfg.bdi);
+    const faixaPeloLaudo = emp.mcmv.faixas.find((f: any) => laudoCalc <= (f.tetoImovel ?? Infinity));
+    return faixaPeloLaudo?.tetoImovel ?? emp.mcmv.tetoImovel;
+  }, [modelo, emp.simulador.cub, emp.mcmv.faixas, emp.mcmv.tetoImovel, valorLoteEmpreendimento]);
+
   const handleSubsidioChange = useCallback((
     sub: number, taxa: number, rendaDigitada: boolean, rendaVal = 0, faixaId?: number
   ) => {
@@ -204,7 +218,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
         subsidio,
         usarSubsidio,
         rendaFamiliar,
-        tetoImovel: emp.mcmv.tetoImovel,
+        tetoImovel: tetoEfetivo,  // teto da faixa correta do laudo CUB
       });
       maxFinRenda = sim.finLiberadoPRICE;
     }
@@ -227,7 +241,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
       maxFinCUB,
       emp.simulador.entradaMin,
       COTA_MAXIMA_CAIXA,
-      emp.mcmv.tetoImovel,  // teto MCMV aplicado ao laudo dentro do Motor A
+      tetoEfetivo,  // teto da faixa correta do laudo CUB (F2=275k, F3=400k, F4=600k)
     );
   }, [
     modelo,
@@ -238,7 +252,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
     taxaAtual,
     subsidio,
     usarSubsidio,
-    emp.mcmv.tetoImovel,
+    tetoEfetivo,
     valorLoteEmpreendimento,
   ]);
 
@@ -290,15 +304,35 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
       subsidio,
       usarSubsidio,
       rendaFamiliar,
-      tetoImovel: emp.mcmv.tetoImovel,
+      tetoImovel: tetoEfetivo,  // teto da faixa correta do laudo CUB
     });
-  }, [modelo, entrada, emp.simulador.prazoMeses, taxaAtual, subsidio, usarSubsidio, rendaFamiliar, emp.mcmv.tetoImovel]);
+  }, [modelo, entrada, emp.simulador.prazoMeses, taxaAtual, subsidio, usarSubsidio, rendaFamiliar, tetoEfetivo]);
 
   // ─────────────────────────────────────────────────────
   // DADOS DA PROPOSTA PDF
   // ─────────────────────────────────────────────────────
   const propostaData = useMemo(() => {
     if (!modelo || !resultadoSimulacao) return null;
+
+    // SAC para o PDF: calculado sobre finLiberadoPRICE (consistente com o que é exibido)
+    // parcelaSACPrimeira do simular() usa finLiberadoSAC (limitado pela renda para SAC)
+    // — é correto para o motor interno, mas inconsistente com o financiamento exibido.
+    const pv = resultadoSimulacao.finLiberadoPRICE;
+    const i  = taxaAtual / 100 / 12;
+    const amort = pv / emp.simulador.prazoMeses;
+    const saldoAposAmort = pv - amort;
+    const sacPrimeiraSobrePrice =
+      amort
+      + pv * i
+      + saldoAposAmort * 0.000108          // MIP sobre saldo após 1ª amort
+      + modelo.valor * 0.000071018         // DFI sobre valor do imóvel
+      + 25;                                // Taxa administrativa
+
+    // Motor de bloqueio SAC: se 1ª parcela SAC > 30% da renda → não mostrar no PDF
+    const sacAprovadoPDF = rendaFamiliar > 0
+      ? sacPrimeiraSobrePrice <= rendaFamiliar * 0.30
+      : true; // sem renda informada, não bloqueia (corretor decide)
+
     return {
       empreendimento: emp.nome,
       cidade: emp.cidade,
@@ -312,12 +346,14 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
       subsidio: usarSubsidio ? subsidio : 0,
       taxa: taxaAtual,
       prazoMeses: emp.simulador.prazoMeses,
-      parcelaSACPrimeira: resultadoSimulacao.parcelaSACPrimeira,
+      parcelaSACPrimeira: sacPrimeiraSobrePrice,    // SAC sobre finLiberadoPRICE ✅
       parcelaSACUltima: resultadoSimulacao.parcelaSACUltima,
       parcelaPRICE: resultadoSimulacao.parcelaPricePrimeira,
+      sacAprovadoPDF,                               // false → ocultar SAC no PDF
+      rendaFamiliar,
       notasLegais: emp.textos.notasLegais,
     };
-  }, [modelo, resultadoSimulacao, emp, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent]);
+  }, [modelo, resultadoSimulacao, emp, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent, rendaFamiliar]);
 
   const getModuloStatus = (modId: string) => {
     if (modId === "renda")     return rendaPreenchida ? "done" : "active";
@@ -836,7 +872,11 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                             ["Financiamento Aprovado (80% do Laudo)",formatBRL(resultadoSimulacao?.finLiberadoPRICE || 0)],
                             ["Taxa de juros anual",                  `${taxaAtual}% a.a.`],
                             ["Prazo selecionado",                    `${emp.simulador.prazoMeses} meses (${emp.simulador.prazoMeses / 12} anos)`],
-                            ["Parcela SAC (1ª)",                     formatBRL(resultadoSimulacao?.parcelaSACPrimeira || 0)],
+                            ...(propostaData?.sacAprovadoPDF !== false ? [
+                              ["Parcela SAC (1ª)", formatBRL(propostaData?.parcelaSACPrimeira || 0)],
+                            ] : [
+                              ["Parcela SAC (1ª)", "⛔ Não aprovado (excede 30% da renda)"],
+                            ]),
                             ["Parcela PRICE (Fixa)",                 formatBRL(resultadoSimulacao?.parcelaPricePrimeira || 0)],
                           ].map(([k, v]) => (
                             <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>

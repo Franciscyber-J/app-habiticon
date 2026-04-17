@@ -173,16 +173,18 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     <div className="min-h-screen" style={{background:"var(--bg-base)"}}>
 
       {/* HEADER STICKY */}
-      <header style={{background:"rgba(15,30,22,0.97)",backdropFilter:"blur(20px)",borderBottom:"1px solid var(--border-subtle)",position:"sticky",top:0,zIndex:40}}>
+      <header style={{background:"rgba(15,30,22,0.98)",backdropFilter:"blur(24px)",borderBottom:"1px solid var(--border-subtle)",position:"sticky",top:0,zIndex:40}}>
         <div className="container-app">
-          <div className="flex items-center justify-between py-4">
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 0"}}>
             <div className="flex items-center gap-3">
               <Link href="/admin" className="btn-ghost p-2" onClick={e=>{if(isDirty&&!confirm("Alterações não salvas. Sair mesmo assim?"))e.preventDefault();}}>
-                <ArrowLeft size={18}/>
+                <ArrowLeft size={20}/>
               </Link>
+              <Image src="/logo.png" alt="Habiticon" width={160} height={48} style={{height:64,width:"auto",objectFit:"contain",flexShrink:0}} priority />
+              <div style={{width:1,height:28,background:"var(--border-subtle)",flexShrink:0}}/>
               <div>
-                <h1 className="font-bold text-base" style={{color:"var(--gray-light)"}}>{emp.nome}</h1>
-                <p className="text-xs" style={{color:"var(--gray-mid)"}}>{emp.cidade} · {emp.estado}</p>
+                <h1 style={{fontSize:15,fontWeight:700,color:"var(--gray-light)"}}>{emp.nome}</h1>
+                <p style={{fontSize:12,color:"var(--gray-mid)"}}>{emp.cidade} · {emp.estado}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -206,7 +208,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
         <div className="border-t overflow-x-auto" style={{borderColor:"var(--border-subtle)"}}>
           <div className="flex" style={{minWidth:"max-content"}}>
             {SECTIONS.map(s=>{const Icon=s.icon;return(
-              <button key={s.id} onClick={()=>setSection(s.id)} className="flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all relative"
+              <button key={s.id} onClick={()=>setSection(s.id)} className="flex items-center gap-2 px-6 py-3.5 text-sm font-semibold transition-all relative"
                 style={{color:section===s.id?"var(--terracota)":"var(--gray-mid)"}}>
                 <Icon size={14}/>{s.label}
                 {section===s.id&&<motion.div layoutId="admin-tab" className="absolute bottom-0 left-0 right-0 h-0.5" style={{background:"var(--terracota)"}}/>}

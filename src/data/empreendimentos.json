@@ -6,7 +6,24 @@
     "estado": "GO",
     "descricao": "O primeiro condomínio fechado de Iporá com segurança e lazer.",
     "status": "ativo",
-    "leads": [],
+    "leads": [
+      {
+        "id": "1776385600922",
+        "nome": "teste",
+        "whatsapp": "(00) 00000-0000",
+        "modelo": "Modelo 3Q",
+        "valorImovel": 240000,
+        "timestamp": "2026-04-17T00:26:40.765Z"
+      },
+      {
+        "id": "1776386378832",
+        "nome": "Francisjunio Costa",
+        "whatsapp": "(64) 99309-4145",
+        "modelo": "Modelo 3Q",
+        "valorImovel": 240000,
+        "timestamp": "2026-04-17T00:39:38.807Z"
+      }
+    ],
     "coordenadas": {
       "lat": -16.4428,
       "lng": -51.1171

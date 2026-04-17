@@ -1,151 +1,346 @@
 import Link from "next/link";
 import Image from "next/image";
 import empreendimentos from "@/data/empreendimentos.json";
-import { MapPin, ArrowRight, ChevronRight, Building2 } from "lucide-react";
+import { MapPin, ArrowRight, Building2, Home, BarChart3, FileText } from "lucide-react";
 
 export default function HomePage() {
-  const ativos = empreendimentos.filter((e) => e.status === "ativo");
-  const emBreve = empreendimentos.filter((e) => e.status === "em_breve");
+  const ativos   = empreendimentos.filter((e) => e.status === "ativo");
+  const emBreve  = empreendimentos.filter((e) => e.status === "em_breve");
 
   return (
-    <main className="min-h-screen gradient-hero">
-      {/* Header */}
-      <header className="border-b" style={{ borderColor: "var(--border-subtle)" }}>
+    <main className="min-h-screen" style={{ background: "var(--bg-base)" }}>
+
+      {/* ── HEADER ─────────────────────────────────────────────────── */}
+      <header style={{
+        background: "rgba(15,30,22,0.98)",
+        backdropFilter: "blur(24px)",
+        borderBottom: "1px solid var(--border-subtle)",
+        position: "sticky",
+        top: 0,
+        zIndex: 40,
+      }}>
         <div className="container-app">
-          <div className="flex items-center justify-between py-4">
-            <Image src="/logo.png" alt="Habiticon" width={160} height={48} className="h-10 w-auto" />
-            <Link href="/admin" className="btn-ghost text-sm">
-              Admin
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0" }}>
+
+            {/* Logo — tamanho generoso */}
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <Image
+                src="/logo.png"
+                alt="Habiticon"
+                width={200}
+                height={56}
+                style={{ height: 64, width: "auto", objectFit: "contain" }}
+                priority
+              />
+            </div>
+
+            <Link
+              href="/admin"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "10px 20px", borderRadius: 10,
+                border: "1px solid var(--border-subtle)",
+                color: "var(--gray-mid)", fontSize: 13, fontWeight: 600,
+                textDecoration: "none", transition: "all 150ms ease",
+              }}
+              className="btn-ghost"
+            >
+              Painel Admin
             </Link>
           </div>
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="container-app section-padding">
-        <div className="max-w-2xl mb-16">
-          <div className="badge badge-info mb-6">
-            Motor de Vendas · Versão 2026
+      {/* ── HERO ────────────────────────────────────────────────────── */}
+      <section style={{
+        background: [
+          "radial-gradient(ellipse 80% 60% at 10% 0%, rgba(175,111,83,0.14) 0%, transparent 60%)",
+          "radial-gradient(ellipse 60% 80% at 90% 100%, rgba(33,57,43,0.8) 0%, transparent 60%)",
+          "var(--bg-base)",
+        ].join(", "),
+        padding: "80px 0 64px",
+      }}>
+        <div className="container-app">
+
+          {/* Badge */}
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 8,
+            padding: "6px 16px", borderRadius: 100,
+            background: "rgba(175,111,83,0.12)",
+            border: "1px solid rgba(175,111,83,0.3)",
+            marginBottom: 28,
+          }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: "50%",
+              background: "var(--terracota)", display: "inline-block",
+              boxShadow: "0 0 8px var(--terracota)",
+            }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--terracota)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              Motor de Vendas · Versão 2026
+            </span>
           </div>
-          <h1 className="text-display mb-6">
+
+          {/* Título */}
+          <h1 style={{
+            fontSize: "clamp(2.2rem, 5vw, 3.6rem)",
+            fontWeight: 800,
+            lineHeight: 1.08,
+            letterSpacing: "-0.03em",
+            color: "var(--gray-light)",
+            maxWidth: 680,
+            marginBottom: 20,
+          }}>
             Apresente e simule{" "}
-            <span className="text-accent">com transparência</span>
+            <span style={{ color: "var(--terracota)" }}>com transparência</span>
           </h1>
-          <p className="text-body text-lg">
-            Selecione o empreendimento e tenha acesso ao simulador completo,
-            motor de subsídio MCMV, evolução de obra e gerador de propostas em PDF.
+
+          {/* Subtítulo */}
+          <p style={{
+            fontSize: 17,
+            lineHeight: 1.65,
+            color: "var(--gray-mid)",
+            maxWidth: 540,
+            marginBottom: 52,
+          }}>
+            Simulador completo MCMV, motor de subsídio, evolução de obra e
+            gerador de propostas em PDF — tudo em um só lugar.
           </p>
+
+          {/* Pills de features */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
+            {[
+              { icon: BarChart3, label: "Simulador SAC + PRICE" },
+              { icon: Home,      label: "Motor de Subsídio" },
+              { icon: FileText,  label: "Proposta em PDF" },
+              { icon: Building2, label: "Entrada Embutida CUB" },
+            ].map(({ icon: Icon, label }) => (
+              <div key={label} style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "8px 16px", borderRadius: 8,
+                background: "rgba(33,57,43,0.5)",
+                border: "1px solid var(--border-subtle)",
+              }}>
+                <Icon size={14} color="var(--terracota)" />
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--gray-mid)" }}>{label}</span>
+              </div>
+            ))}
+          </div>
         </div>
+      </section>
 
-        {/* Empreendimentos Ativos */}
-        <div className="mb-12">
-          <h2 className="text-title mb-2">Empreendimentos disponíveis</h2>
-          <p className="text-muted mb-8">Clique para acessar o simulador completo</p>
+      {/* ── EMPREENDIMENTOS ─────────────────────────────────────────── */}
+      <section style={{ padding: "16px 0 80px" }}>
+        <div className="container-app">
 
-          <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+          {/* Heading da seção */}
+          <div style={{ marginBottom: 32 }}>
+            <h2 style={{
+              fontSize: "clamp(1.2rem, 2.5vw, 1.6rem)",
+              fontWeight: 700,
+              letterSpacing: "-0.02em",
+              color: "var(--gray-light)",
+              marginBottom: 6,
+            }}>
+              Empreendimentos disponíveis
+            </h2>
+            <p style={{ fontSize: 14, color: "var(--gray-mid)" }}>
+              Clique para acessar o simulador completo
+            </p>
+          </div>
+
+          {/* Grid de cards */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+            gap: 24,
+          }}>
             {ativos.map((emp) => (
-              <Link key={emp.slug} href={`/${emp.slug}`} className="glass-card p-6 block group">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-12 h-12 rounded-xl flex-center"
-                      style={{ background: "var(--terracota-glow)", border: "1px solid var(--border-active)" }}
-                    >
-                      <Building2 size={22} color="var(--terracota)" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-base" style={{ color: "var(--gray-light)" }}>
-                        {emp.nome}
-                      </h3>
-                      <div className="flex items-center gap-1 mt-0.5" style={{ color: "var(--gray-mid)" }}>
-                        <MapPin size={12} />
-                        <span className="text-xs">{emp.cidade} · {emp.estado}</span>
+              <Link
+                key={emp.slug}
+                href={`/${emp.slug}`}
+                style={{ textDecoration: "none", display: "block" }}
+                className="glass-card"
+              >
+                <div style={{ padding: "28px 28px 24px" }}>
+
+                  {/* Topo: ícone + nome + badge */}
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                      <div style={{
+                        width: 52, height: 52, borderRadius: 14, flexShrink: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: "var(--terracota-glow)",
+                        border: "1px solid var(--border-active)",
+                      }}>
+                        <Building2 size={24} color="var(--terracota)" />
                       </div>
+                      <div>
+                        <h3 style={{
+                          fontSize: 17, fontWeight: 700,
+                          color: "var(--gray-light)", marginBottom: 4,
+                        }}>
+                          {emp.nome}
+                        </h3>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--gray-mid)" }}>
+                          <MapPin size={13} />
+                          <span style={{ fontSize: 13 }}>{emp.cidade} · {emp.estado}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 5,
+                      padding: "4px 12px", borderRadius: 100,
+                      background: "rgba(22,163,74,0.15)",
+                      border: "1px solid rgba(22,163,74,0.3)",
+                      fontSize: 11, fontWeight: 700,
+                      color: "#4ade80", letterSpacing: "0.05em",
+                      textTransform: "uppercase", flexShrink: 0,
+                    }}>
+                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#4ade80", display: "inline-block" }} />
+                      Ativo
+                    </span>
+                  </div>
+
+                  {/* Descrição */}
+                  <p style={{
+                    fontSize: 14, lineHeight: 1.6,
+                    color: "var(--gray-mid)", marginBottom: 24,
+                  }}>
+                    {emp.descricao}
+                  </p>
+
+                  {/* Cards dos modelos */}
+                  <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+                    {emp.modelos.map((m) => (
+                      <div key={m.id} style={{
+                        flex: 1, borderRadius: 12, padding: "16px 14px",
+                        textAlign: "center",
+                        background: "rgba(0,0,0,0.25)",
+                        border: "1px solid var(--border-subtle)",
+                      }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--terracota)", marginBottom: 4 }}>
+                          {m.nome}
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--gray-mid)", marginBottom: 6 }}>
+                          {m.area}m²
+                        </div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>
+                          R$ {(m.valor / 1000).toFixed(0)}k
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Rodapé do card */}
+                  <div style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    paddingTop: 18,
+                    borderTop: "1px solid var(--border-subtle)",
+                  }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "var(--terracota)" }}>
+                      Abrir simulador
+                    </span>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: "50%",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      background: "var(--terracota-glow)",
+                      border: "1px solid var(--border-active)",
+                    }}>
+                      <ArrowRight size={15} color="var(--terracota)" />
                     </div>
                   </div>
-                  <div className="badge badge-success">Ativo</div>
-                </div>
-
-                <p className="text-body text-sm mb-5">{emp.descricao}</p>
-
-                <div className="flex gap-3 mb-5">
-                  {emp.modelos.map((m) => (
-                    <div
-                      key={m.id}
-                      className="flex-1 rounded-xl p-3 text-center"
-                      style={{ background: "rgba(0,0,0,0.25)", border: "1px solid var(--border-subtle)" }}
-                    >
-                      <div className="font-bold text-sm" style={{ color: "var(--terracota)" }}>{m.nome}</div>
-                      <div className="text-xs mt-0.5" style={{ color: "var(--gray-mid)" }}>{m.area}m²</div>
-                      <div className="font-semibold text-sm mt-1" style={{ color: "var(--gray-light)" }}>
-                        R$ {(m.valor / 1000).toFixed(0)}k
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div
-                  className="flex items-center justify-between pt-4"
-                  style={{ borderTop: "1px solid var(--border-subtle)" }}
-                >
-                  <span className="text-sm font-medium" style={{ color: "var(--terracota)" }}>
-                    Abrir simulador
-                  </span>
-                  <ArrowRight
-                    size={16}
-                    color="var(--terracota)"
-                    className="transition-transform group-hover:translate-x-1"
-                  />
                 </div>
               </Link>
             ))}
           </div>
-        </div>
 
-        {/* Em Breve */}
-        {emBreve.length > 0 && (
-          <div>
-            <div className="section-divider" />
-            <h2 className="text-title mb-2">Em breve</h2>
-            <p className="text-muted mb-8">Novos empreendimentos chegando</p>
-            <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
-              {emBreve.map((emp) => (
-                <div
-                  key={emp.slug}
-                  className="glass-card-nohover p-5 opacity-60"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-10 h-10 rounded-xl flex-center"
-                      style={{ background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)" }}
-                    >
-                      <Building2 size={18} color="var(--gray-mid)" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-sm" style={{ color: "var(--gray-light)" }}>
-                        {emp.nome}
-                      </h3>
-                      <div className="flex items-center gap-1" style={{ color: "var(--gray-mid)" }}>
-                        <MapPin size={11} />
-                        <span className="text-xs">{emp.cidade} · {emp.estado}</span>
+          {/* Em breve */}
+          {emBreve.length > 0 && (
+            <div style={{ marginTop: 56 }}>
+              <div style={{
+                height: 1,
+                background: "linear-gradient(to right, transparent, var(--border-subtle), transparent)",
+                marginBottom: 40,
+              }} />
+              <h2 style={{
+                fontSize: "clamp(1.1rem, 2vw, 1.4rem)",
+                fontWeight: 700, letterSpacing: "-0.02em",
+                color: "var(--gray-light)", marginBottom: 6,
+              }}>
+                Em breve
+              </h2>
+              <p style={{ fontSize: 14, color: "var(--gray-mid)", marginBottom: 28 }}>
+                Novos empreendimentos chegando
+              </p>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                gap: 16,
+              }}>
+                {emBreve.map((emp) => (
+                  <div key={emp.slug} style={{
+                    padding: "22px 24px", borderRadius: 16, opacity: 0.55,
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border-subtle)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+                      <div style={{
+                        width: 42, height: 42, borderRadius: 11, flexShrink: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)",
+                      }}>
+                        <Building2 size={18} color="var(--gray-mid)" />
+                      </div>
+                      <div>
+                        <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--gray-light)", marginBottom: 3 }}>
+                          {emp.nome}
+                        </h3>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--gray-mid)" }}>
+                          <MapPin size={11} />
+                          <span style={{ fontSize: 12 }}>{emp.cidade} · {emp.estado}</span>
+                        </div>
                       </div>
                     </div>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 5,
+                      padding: "4px 12px", borderRadius: 100,
+                      background: "rgba(249,115,22,0.12)",
+                      border: "1px solid rgba(249,115,22,0.25)",
+                      fontSize: 11, fontWeight: 700, color: "#fb923c",
+                      textTransform: "uppercase", letterSpacing: "0.05em",
+                    }}>
+                      Em breve
+                    </span>
                   </div>
-                  <div className="badge badge-warning mt-4">Em breve</div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </section>
 
-      {/* Footer */}
-      <footer
-        className="text-center py-8 text-muted"
-        style={{ borderTop: "1px solid var(--border-subtle)" }}
-      >
-        <p>© 2026 Habiticon Construção Inteligente · Todos os direitos reservados</p>
+      {/* ── FOOTER ──────────────────────────────────────────────────── */}
+      <footer style={{
+        borderTop: "1px solid var(--border-subtle)",
+        padding: "28px 0",
+      }}>
+        <div className="container-app" style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          flexWrap: "wrap", gap: 12,
+        }}>
+          <Image
+            src="/logo.png"
+            alt="Habiticon"
+            width={120}
+            height={34}
+            style={{ height: 64, width: "auto", opacity: 0.7 }}
+          />
+          <p style={{ fontSize: 12, color: "var(--gray-dark)" }}>
+            © 2026 Habiticon Construção Inteligente · CNPJ 61.922.155/0001-70
+          </p>
+        </div>
       </footer>
+
     </main>
   );
 }

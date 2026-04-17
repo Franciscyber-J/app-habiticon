@@ -1,13 +1,25 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
+import { useSSE } from "@/hooks/useSSE";
 import Link from "next/link";
 import {
-  Building2, Settings, Users, MapPin, ToggleLeft, ToggleRight,
-  Plus, ExternalLink, ArrowLeft, ChevronRight, BarChart3
+  Building2, Settings, Users, MapPin,
+  ToggleLeft, ToggleRight, Plus, ExternalLink,
+  ArrowLeft, ChevronRight, Phone,
+  Calendar, CheckCircle2, Copy, Check, Link2, Trash2,
 } from "lucide-react";
+
+// ─── Status de lead ──────────────────────────────────────
+const STATUS_LEAD = {
+  novo:           { label: "Novo",           cor: "#60a5fa", bg: "rgba(96,165,250,0.12)",  border: "rgba(96,165,250,0.3)"  },
+  em_atendimento: { label: "Em atendimento", cor: "#fbbf24", bg: "rgba(251,191,36,0.12)",  border: "rgba(251,191,36,0.3)"  },
+  qualificado:    { label: "Qualificado",    cor: "#4ade80", bg: "rgba(74,222,128,0.12)",  border: "rgba(74,222,128,0.3)"  },
+  nao_qualificado:{ label: "Não qualificado",cor: "#6b7280", bg: "rgba(107,114,128,0.12)", border: "rgba(107,114,128,0.3)" },
+} as const;
+type LeadStatus = keyof typeof STATUS_LEAD;
 
 interface Empreendimento {
   slug: string;
@@ -15,8 +27,66 @@ interface Empreendimento {
   cidade: string;
   estado: string;
   status: string;
-  modelos: { id: string; nome: string; valor: number }[];
-  leads: { id: string; nome: string; whatsapp: string; timestamp: string; modelo?: string }[];
+  modelos: { id: string; nome: string; valor: number; area?: number }[];
+  leads: { id: string; nome: string; whatsapp: string; timestamp: string; modelo?: string; nomeCorretor?: string; status?: LeadStatus }[];
+}
+
+function CopyLinkButton({ link }: { link: string }) {
+  const [copiado, setCopiado] = useState(false);
+
+  const copiar = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2500);
+    } catch {
+      // Fallback para browsers sem clipboard API
+      const el = document.createElement("textarea");
+      el.value = link;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2500);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      {/* Link visível e clicável */}
+      <a
+        href={link}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          fontSize: 11, color: "var(--gray-dark)", textDecoration: "none",
+          display: "flex", alignItems: "center", gap: 4,
+          padding: "5px 10px", borderRadius: 6,
+          background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-subtle)",
+          maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}
+      >
+        <Link2 size={11} />
+        {link.replace(/^https?:\/\//, "")}
+      </a>
+
+      {/* Botão copiar */}
+      <button
+        onClick={copiar}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "7px 14px", borderRadius: 8, cursor: "pointer",
+          border: "none", fontSize: 12, fontWeight: 700,
+          transition: "all 200ms ease",
+          background: copiado ? "rgba(22,163,74,0.15)" : "rgba(175,111,83,0.12)",
+          color: copiado ? "#4ade80" : "var(--terracota)",
+        }}
+      >
+        {copiado ? <><Check size={13} /> Copiado!</> : <><Copy size={13} /> Copiar link</>}
+      </button>
+    </div>
+  );
 }
 
 export default function AdminPage() {
@@ -24,14 +94,56 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"empreendimentos" | "leads">("empreendimentos");
 
-  useEffect(() => {
+  // Carrega dados do servidor
+  const carregar = useCallback(() => {
     fetch("/api/empreendimentos")
       .then((r) => r.json())
-      .then((data) => { setEmpreendimentos(data); setLoading(false); });
+      .then((data) => { setEmpreendimentos(data); setLoading(false); })
+      .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => { carregar(); }, [carregar]); // carga inicial
+
+  // SSE — rebusca dados somente quando o servidor sinalizar uma mudança
+  useSSE("leads", carregar);
 
   const totalLeads = empreendimentos.reduce((acc, e) => acc + (e.leads?.length || 0), 0);
   const ativos = empreendimentos.filter((e) => e.status === "ativo").length;
+
+  // ─── Atualiza status de um lead ────────────────────────────
+  const atualizarStatusLead = async (slugEmp: string, leadId: string, status: LeadStatus) => {
+    await fetch("/api/leads", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slugEmp, leadId, status }),
+    });
+    setEmpreendimentos((prev) =>
+      prev.map((e) =>
+        e.slug !== slugEmp ? e : {
+          ...e,
+          leads: e.leads.map((l) => l.id === leadId ? { ...l, status } : l),
+        }
+      )
+    );
+  };
+
+  // ─── Deleta um lead ──────────────────────────────────────
+  const deletarLead = async (slugEmp: string, leadId: string) => {
+    if (!confirm("Excluir este lead? Esta ação não pode ser desfeita.")) return;
+    await fetch("/api/leads", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slugEmp, leadId }),
+    });
+    setEmpreendimentos((prev) =>
+      prev.map((e) =>
+        e.slug !== slugEmp ? e : {
+          ...e,
+          leads: e.leads.filter((l) => l.id !== leadId),
+        }
+      )
+    );
+  };
 
   const toggleStatus = async (slug: string, current: string) => {
     const newStatus = current === "ativo" ? "inativo" : "ativo";
@@ -45,119 +157,245 @@ export default function AdminPage() {
     );
   };
 
-  const allLeads = empreendimentos.flatMap((e) =>
-    (e.leads || []).map((l) => ({ ...l, empreendimento: e.nome }))
-  ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const allLeads = empreendimentos
+    .flatMap((e) => (e.leads || []).map((l) => ({ ...l, empreendimento: e.nome })))
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
-      {/* Header Admin */}
-      <header
-        style={{
-          background: "rgba(15,30,22,0.97)",
-          backdropFilter: "blur(20px)",
-          borderBottom: "1px solid var(--border-subtle)",
-        }}
-      >
+
+      {/* ── HEADER ──────────────────────────────────────────── */}
+      <header style={{
+        background: "rgba(15,30,22,0.98)",
+        backdropFilter: "blur(24px)",
+        borderBottom: "1px solid var(--border-subtle)",
+        position: "sticky", top: 0, zIndex: 40,
+      }}>
         <div className="container-app">
-          <div className="flex items-center justify-between py-4">
-            <div className="flex items-center gap-4">
-              <Link href="/" className="btn-ghost p-2">
-                <ArrowLeft size={18} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0" }}>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+              <Link href="/" className="btn-ghost" style={{ padding: "10px 12px" }}>
+                <ArrowLeft size={20} />
               </Link>
-              <Image src="/logo.png" alt="Habiticon" width={120} height={36} className="h-8 w-auto" />
-              <div className="badge badge-warning">Admin</div>
+
+              {/* Logo 2x */}
+              <Image
+                src="/logo.png"
+                alt="Habiticon"
+                width={220}
+                height={64}
+                style={{ height: 64, width: "auto", objectFit: "contain", flexShrink: 0 }}
+                priority
+              />
+
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "5px 14px", borderRadius: 100,
+                background: "rgba(249,115,22,0.15)",
+                border: "1px solid rgba(249,115,22,0.3)",
+              }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: "#fb923c", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                  Admin
+                </span>
+              </div>
             </div>
+
+            <Link
+              href="/"
+              style={{ fontSize: 13, color: "var(--gray-mid)", textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}
+              className="btn-ghost"
+            >
+              <ExternalLink size={14} />
+              Ver site
+            </Link>
           </div>
         </div>
       </header>
 
-      <main className="container-app py-8 space-y-8">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-3 gap-4">
+      <main className="container-app" style={{ padding: "40px 32px 80px" }}>
+
+        {/* ── STATS ───────────────────────────────────────────── */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 40 }}>
           {[
-            { label: "Empreendimentos", value: empreendimentos.length, icon: Building2, color: "var(--terracota)" },
-            { label: "Ativos", value: ativos, icon: ToggleRight, color: "#4ade80" },
-            { label: "Leads Capturados", value: totalLeads, icon: Users, color: "#60a5fa" },
+            {
+              label: "Empreendimentos",
+              value: loading ? "…" : empreendimentos.length,
+              icon: Building2,
+              color: "var(--terracota)",
+              bg: "rgba(175,111,83,0.12)",
+              border: "rgba(175,111,83,0.25)",
+            },
+            {
+              label: "Ativos",
+              value: loading ? "…" : ativos,
+              icon: CheckCircle2,
+              color: "#4ade80",
+              bg: "rgba(22,163,74,0.1)",
+              border: "rgba(22,163,74,0.2)",
+            },
+            {
+              label: "Leads capturados",
+              value: loading ? "…" : totalLeads,
+              icon: Users,
+              color: "#60a5fa",
+              bg: "rgba(59,130,246,0.1)",
+              border: "rgba(59,130,246,0.2)",
+            },
           ].map((stat) => {
             const Icon = stat.icon;
             return (
-              <div key={stat.label} className="glass-card-nohover p-5">
-                <div className="flex items-center gap-3 mb-2">
-                  <Icon size={18} color={stat.color} />
-                  <span className="text-xs uppercase tracking-wider" style={{ color: "var(--gray-mid)" }}>
+              <div key={stat.label} style={{
+                padding: "24px 24px 20px",
+                background: stat.bg,
+                border: `1px solid ${stat.border}`,
+                borderRadius: 16,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: `${stat.color}22`,
+                    border: `1px solid ${stat.color}44`,
+                  }}>
+                    <Icon size={18} color={stat.color} />
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-dark)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
                     {stat.label}
                   </span>
                 </div>
-                <div className="text-3xl font-bold" style={{ color: stat.color }}>
-                  {loading ? "..." : stat.value}
+                <div style={{ fontSize: 40, fontWeight: 800, color: stat.color, lineHeight: 1 }}>
+                  {stat.value}
                 </div>
               </div>
             );
           })}
         </div>
 
-        {/* Tabs */}
-        <div className="tab-group max-w-sm">
-          <button className={`tab-item ${tab === "empreendimentos" ? "active" : ""}`} onClick={() => setTab("empreendimentos")}>
-            Empreendimentos
-          </button>
-          <button className={`tab-item ${tab === "leads" ? "active" : ""}`} onClick={() => setTab("leads")}>
-            Leads ({totalLeads})
-          </button>
+        {/* ── TABS ────────────────────────────────────────────── */}
+        <div style={{
+          display: "flex", gap: 4,
+          background: "rgba(0,0,0,0.3)",
+          padding: 4, borderRadius: 12,
+          width: "fit-content",
+          marginBottom: 28,
+        }}>
+          {([
+            { id: "empreendimentos", label: "Empreendimentos" },
+            { id: "leads", label: `Leads (${totalLeads})` },
+          ] as const).map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                padding: "10px 20px", borderRadius: 9, border: "none",
+                fontSize: 14, fontWeight: 600, cursor: "pointer",
+                transition: "all 150ms ease",
+                background: tab === t.id ? "var(--terracota)" : "transparent",
+                color: tab === t.id ? "white" : "var(--gray-mid)",
+                boxShadow: tab === t.id ? "0 2px 12px rgba(175,111,83,0.3)" : "none",
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        {/* Lista de Empreendimentos */}
+        {/* ── LISTA DE EMPREENDIMENTOS ─────────────────────────── */}
         {tab === "empreendimentos" && (
-          <div className="space-y-4">
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {empreendimentos.map((emp) => (
               <motion.div
                 key={emp.slug}
                 layout
-                className="glass-card p-6"
+                style={{
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: 16,
+                  overflow: "hidden",
+                  boxShadow: "var(--shadow-card)",
+                }}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-4 flex-1">
-                    <div
-                      className="w-12 h-12 rounded-xl flex-center shrink-0"
-                      style={{ background: "var(--terracota-glow)", border: "1px solid var(--border-active)" }}
-                    >
-                      <Building2 size={20} color="var(--terracota)" />
+                {/* Linha principal */}
+                <div style={{ padding: "24px 24px 20px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20 }}>
+
+                  {/* Esquerda: ícone + info */}
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flex: 1 }}>
+                    <div style={{
+                      width: 52, height: 52, borderRadius: 14, flexShrink: 0,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      background: "var(--terracota-glow)",
+                      border: "1px solid var(--border-active)",
+                    }}>
+                      <Building2 size={22} color="var(--terracota)" />
                     </div>
-                    <div>
-                      <h3 className="font-bold text-base" style={{ color: "var(--gray-light)" }}>
+
+                    <div style={{ flex: 1 }}>
+                      <h3 style={{ fontSize: 17, fontWeight: 700, color: "var(--gray-light)", marginBottom: 5 }}>
                         {emp.nome}
                       </h3>
-                      <div className="flex items-center gap-1.5 mt-0.5" style={{ color: "var(--gray-mid)" }}>
-                        <MapPin size={12} />
-                        <span className="text-xs">{emp.cidade} · {emp.estado}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 14, color: "var(--gray-mid)" }}>
+                        <MapPin size={13} />
+                        <span style={{ fontSize: 13 }}>{emp.cidade} · {emp.estado}</span>
                       </div>
-                      <div className="flex gap-2 mt-2">
+
+                      {/* Badges dos modelos */}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                         {emp.modelos.map((m) => (
-                          <span key={m.id} className="badge badge-info text-xs">
-                            {m.nome} · R$ {(m.valor / 1000).toFixed(0)}k
+                          <span key={m.id} style={{
+                            display: "inline-flex", alignItems: "center", gap: 5,
+                            padding: "5px 12px", borderRadius: 8,
+                            background: "rgba(175,111,83,0.12)",
+                            border: "1px solid rgba(175,111,83,0.25)",
+                            fontSize: 12, fontWeight: 700,
+                            color: "var(--terracota-light)",
+                          }}>
+                            {m.nome}
+                            <span style={{ color: "var(--gray-dark)" }}>·</span>
+                            <span style={{ color: "var(--gray-mid)", fontWeight: 600 }}>
+                              R$ {(m.valor / 1000).toFixed(0)}k
+                            </span>
                           </span>
                         ))}
                         {emp.modelos.length === 0 && (
-                          <span className="text-xs" style={{ color: "var(--gray-dark)" }}>Sem modelos</span>
+                          <span style={{ fontSize: 12, color: "var(--gray-dark)" }}>Sem modelos</span>
                         )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 shrink-0">
+                  {/* Direita: ações */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                     {/* Toggle status */}
                     <button
                       onClick={() => toggleStatus(emp.slug, emp.status)}
-                      className={`badge ${emp.status === "ativo" ? "badge-success" : "badge-warning"} cursor-pointer`}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 7,
+                        padding: "7px 14px", borderRadius: 8, cursor: "pointer",
+                        border: "none", fontSize: 12, fontWeight: 700,
+                        transition: "all 150ms ease",
+                        background: emp.status === "ativo" ? "rgba(22,163,74,0.15)" : "rgba(249,115,22,0.12)",
+                        color: emp.status === "ativo" ? "#4ade80" : "#fb923c",
+                      }}
                     >
-                      {emp.status === "ativo" ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-                      {emp.status === "ativo" ? "Ativo" : "Inativo"}
+                      {emp.status === "ativo"
+                        ? <><ToggleRight size={15} /> Ativo</>
+                        : <><ToggleLeft size={15} /> Inativo</>
+                      }
                     </button>
 
                     <Link
                       href={`/admin/${emp.slug}`}
-                      className="btn-secondary py-2 px-4 text-sm"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 7,
+                        padding: "9px 18px", borderRadius: 10,
+                        background: "transparent",
+                        border: "1.5px solid var(--border-active)",
+                        color: "var(--terracota)",
+                        fontSize: 13, fontWeight: 600,
+                        textDecoration: "none",
+                        transition: "all 150ms ease",
+                      }}
                     >
                       <Settings size={14} />
                       Editar
@@ -166,23 +404,39 @@ export default function AdminPage() {
                     <Link
                       href={`/${emp.slug}`}
                       target="_blank"
-                      className="btn-ghost py-2 px-3"
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        width: 38, height: 38, borderRadius: 10,
+                        border: "1px solid var(--border-subtle)",
+                        color: "var(--gray-mid)", textDecoration: "none",
+                        transition: "all 150ms ease",
+                        background: "transparent",
+                      }}
                     >
-                      <ExternalLink size={14} />
+                      <ExternalLink size={15} />
                     </Link>
                   </div>
                 </div>
 
-                {/* Leads count */}
+                {/* Rodapé do card: contagem de leads */}
                 {(emp.leads?.length || 0) > 0 && (
-                  <div
-                    className="mt-4 pt-4 flex items-center gap-2"
-                    style={{ borderTop: "1px solid var(--border-subtle)" }}
-                  >
-                    <Users size={14} color="var(--gray-mid)" />
-                    <span className="text-sm" style={{ color: "var(--gray-mid)" }}>
-                      {emp.leads.length} lead{emp.leads.length > 1 ? "s" : ""} capturado{emp.leads.length > 1 ? "s" : ""}
+                  <div style={{
+                    padding: "12px 24px",
+                    borderTop: "1px solid var(--border-subtle)",
+                    display: "flex", alignItems: "center", gap: 8,
+                    background: "rgba(0,0,0,0.15)",
+                  }}>
+                    <Users size={14} color="var(--gray-dark)" />
+                    <span style={{ fontSize: 13, color: "var(--gray-mid)" }}>
+                      {emp.leads.length} lead{emp.leads.length !== 1 ? "s" : ""} capturado{emp.leads.length !== 1 ? "s" : ""}
                     </span>
+                    <ChevronRight size={13} color="var(--gray-dark)" />
+                    <button
+                      onClick={() => setTab("leads")}
+                      style={{ fontSize: 12, color: "var(--terracota)", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}
+                    >
+                      Ver leads
+                    </button>
                   </div>
                 )}
               </motion.div>
@@ -191,76 +445,200 @@ export default function AdminPage() {
             {/* Novo Empreendimento */}
             <Link
               href="/admin/novo"
-              className="glass-card-nohover p-6 flex items-center justify-center gap-3 border-dashed cursor-pointer"
-              style={{ borderStyle: "dashed", borderColor: "var(--border-subtle)" }}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 12,
+                padding: "28px 24px", borderRadius: 16, textDecoration: "none",
+                border: "2px dashed var(--border-subtle)",
+                background: "transparent",
+                transition: "all 150ms ease",
+              }}
             >
-              <Plus size={20} color="var(--terracota)" />
-              <span className="font-medium" style={{ color: "var(--terracota)" }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: "var(--terracota-glow)",
+                border: "1px solid var(--border-active)",
+              }}>
+                <Plus size={18} color="var(--terracota)" />
+              </div>
+              <span style={{ fontSize: 15, fontWeight: 600, color: "var(--terracota)" }}>
                 Adicionar Novo Empreendimento
               </span>
             </Link>
           </div>
         )}
 
-        {/* Lista de Leads */}
+        {/* ── LEADS POR EMPREENDIMENTO ─────────────────────────── */}
         {tab === "leads" && (
-          <div className="space-y-3">
-            {allLeads.length === 0 ? (
-              <div
-                className="flex-center py-16 rounded-2xl text-center"
-                style={{ background: "rgba(0,0,0,0.2)", border: "1px dashed var(--border-subtle)" }}
-              >
-                <div>
-                  <div className="text-4xl mb-3">📋</div>
-                  <p className="text-muted">Nenhum lead capturado ainda</p>
-                </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+            {empreendimentos.length === 0 ? (
+              <div style={{ padding: "64px 24px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.2)", border: "1px dashed var(--border-subtle)" }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>📋</div>
+                <p style={{ fontSize: 14, color: "var(--gray-mid)" }}>Nenhum empreendimento cadastrado</p>
               </div>
             ) : (
-              allLeads.map((lead, i) => (
-                <motion.div
-                  key={lead.id || i}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
-                  className="glass-card-nohover p-4 flex items-center justify-between gap-4"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-10 h-10 rounded-xl flex-center text-sm font-bold"
-                      style={{ background: "var(--terracota-glow)", color: "var(--terracota)" }}
-                    >
-                      {(lead.nome || "?")[0].toUpperCase()}
+              empreendimentos.map((emp) => {
+                const leadsEmp = (emp.leads || [])
+                  .slice()
+                  .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                const linkLista = `${typeof window !== "undefined" ? window.location.origin : ""}/leads/${emp.slug}`;
+
+                return (
+                  <div key={emp.slug}>
+                    {/* Cabeçalho do grupo */}
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      marginBottom: 14, flexWrap: "wrap", gap: 10,
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{
+                          width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          background: "var(--terracota-glow)", border: "1px solid var(--border-active)",
+                        }}>
+                          <Building2 size={16} color="var(--terracota)" />
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>{emp.nome}</p>
+                          <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>
+                            {leadsEmp.length} lead{leadsEmp.length !== 1 ? "s" : ""} capturado{leadsEmp.length !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Botão copiar link */}
+                      <CopyLinkButton link={linkLista} />
                     </div>
-                    <div>
-                      <p className="font-semibold text-sm" style={{ color: "var(--gray-light)" }}>{lead.nome}</p>
-                      <p className="text-xs" style={{ color: "var(--gray-mid)" }}>
-                        {lead.whatsapp} · {lead.empreendimento}
-                      </p>
-                    </div>
+
+                    {/* Lista de leads do empreendimento */}
+                    {leadsEmp.length === 0 ? (
+                      <div style={{
+                        padding: "24px", borderRadius: 12, textAlign: "center",
+                        background: "rgba(0,0,0,0.15)", border: "1px dashed var(--border-subtle)",
+                      }}>
+                        <p style={{ fontSize: 13, color: "var(--gray-dark)" }}>Nenhum lead ainda para este empreendimento</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {leadsEmp.map((lead, i) => (
+                          <motion.div
+                            key={lead.id || i}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.97 }}
+                            transition={{ delay: i * 0.03 }}
+                            style={{
+                              padding: "16px 18px",
+                              background: "var(--bg-card)",
+                              border: `1px solid ${STATUS_LEAD[lead.status as LeadStatus]?.border ?? "var(--border-subtle)"}`,
+                              borderRadius: 12,
+                              display: "flex", alignItems: "center",
+                              justifyContent: "space-between", gap: 14,
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+                              {/* Avatar com cor do status */}
+                              <div style={{
+                                width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                background: STATUS_LEAD[lead.status as LeadStatus]?.bg ?? "var(--terracota-glow)",
+                                border: `1px solid ${STATUS_LEAD[lead.status as LeadStatus]?.border ?? "var(--border-active)"}`,
+                                fontSize: 14, fontWeight: 800,
+                                color: STATUS_LEAD[lead.status as LeadStatus]?.cor ?? "var(--terracota)",
+                              }}>
+                                {(lead.nome || "?")[0].toUpperCase()}
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <p style={{ fontSize: 14, fontWeight: 700, color: "var(--gray-light)", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  {lead.nome}
+                                </p>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                  <span style={{ fontSize: 12, color: "var(--gray-mid)", display: "flex", alignItems: "center", gap: 4 }}>
+                                    <Phone size={11} /> {lead.whatsapp}
+                                  </span>
+                                  {lead.modelo && (
+                                    <span style={{ fontSize: 11, color: "var(--terracota-light)", fontWeight: 600, padding: "1px 8px", borderRadius: 5, background: "rgba(175,111,83,0.1)" }}>
+                                      {lead.modelo}
+                                    </span>
+                                  )}
+                                  {lead.nomeCorretor && (
+                                    <span style={{ fontSize: 11, color: "#93c5fd", fontWeight: 600, padding: "1px 8px", borderRadius: 5, background: "rgba(96,165,250,0.1)" }}>
+                                      {lead.nomeCorretor}
+                                    </span>
+                                  )}
+                                  {lead.timestamp && (
+                                    <span style={{ fontSize: 11, color: "var(--gray-dark)", display: "flex", alignItems: "center", gap: 3 }}>
+                                      <Calendar size={11} />
+                                      {new Date(lead.timestamp).toLocaleDateString("pt-BR")}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Ações */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                              {/* Seletor de status */}
+                              <select
+                                value={lead.status ?? "novo"}
+                                onChange={(e) => atualizarStatusLead(emp.slug, lead.id, e.target.value as LeadStatus)}
+                                style={{
+                                  padding: "5px 10px", borderRadius: 8, cursor: "pointer",
+                                  fontSize: 11, fontWeight: 700, border: "none",
+                                  background: STATUS_LEAD[lead.status as LeadStatus]?.bg ?? STATUS_LEAD.novo.bg,
+                                  color: STATUS_LEAD[lead.status as LeadStatus]?.cor ?? STATUS_LEAD.novo.cor,
+                                  outline: `1px solid ${STATUS_LEAD[lead.status as LeadStatus]?.border ?? STATUS_LEAD.novo.border}`,
+                                }}
+                              >
+                                {Object.entries(STATUS_LEAD).map(([key, cfg]) => (
+                                  <option key={key} value={key} style={{ background: "var(--green-dark)", color: "var(--gray-light)" }}>
+                                    {cfg.label}
+                                  </option>
+                                ))}
+                              </select>
+
+                              {/* WhatsApp */}
+                              <a
+                                href={`https://wa.me/55${lead.whatsapp?.replace(/\D/g, "")}`}
+                                target="_blank" rel="noopener noreferrer"
+                                style={{
+                                  display: "inline-flex", alignItems: "center", gap: 5,
+                                  padding: "6px 12px", borderRadius: 8,
+                                  background: "rgba(22,163,74,0.15)",
+                                  border: "1px solid rgba(22,163,74,0.3)",
+                                  color: "#4ade80", fontSize: 12, fontWeight: 700,
+                                  textDecoration: "none",
+                                }}
+                              >
+                                WhatsApp
+                              </a>
+
+                              {/* Excluir */}
+                              <button
+                                onClick={() => deletarLead(emp.slug, lead.id)}
+                                style={{
+                                  width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  background: "rgba(239,68,68,0.1)",
+                                  border: "1px solid rgba(239,68,68,0.25)",
+                                  color: "#f87171", cursor: "pointer",
+                                }}
+                                title="Excluir lead"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right hidden sm:block">
-                      <p className="text-xs" style={{ color: "var(--gray-mid)" }}>
-                        {lead.modelo || "—"}
-                      </p>
-                      <p className="text-xs" style={{ color: "var(--gray-dark)" }}>
-                        {lead.timestamp ? new Date(lead.timestamp).toLocaleDateString("pt-BR") : "—"}
-                      </p>
-                    </div>
-                    <a
-                      href={`https://wa.me/55${lead.whatsapp?.replace(/\D/g, "")}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="badge badge-success cursor-pointer"
-                    >
-                      WhatsApp
-                    </a>
-                  </div>
-                </motion.div>
-              ))
+                );
+              })
             )}
           </div>
         )}
+
       </main>
     </div>
   );
