@@ -27,9 +27,9 @@ export default function HomePage() {
               <Image
                 src="/logo.png"
                 alt="Habiticon"
-                width={200}
-                height={56}
-                style={{ height: 64, width: "auto", objectFit: "contain" }}
+                width={280}
+                height={80}
+                style={{ height: 96, width: "auto", objectFit: "contain" }}
                 priority
               />
             </div>
@@ -333,7 +333,7 @@ export default function HomePage() {
             alt="Habiticon"
             width={120}
             height={34}
-            style={{ height: 64, width: "auto", opacity: 0.7 }}
+            style={{ height: 80, width: "auto", opacity: 0.8 }}
           />
           <p style={{ fontSize: 12, color: "var(--gray-dark)" }}>
             © 2026 Habiticon Construção Inteligente · CNPJ 61.922.155/0001-70

@@ -183,9 +183,9 @@ export default function AdminPage() {
               <Image
                 src="/logo.png"
                 alt="Habiticon"
-                width={220}
-                height={64}
-                style={{ height: 64, width: "auto", objectFit: "contain", flexShrink: 0 }}
+                width={280}
+                height={80}
+                style={{ height: 96, width: "auto", objectFit: "contain", flexShrink: 0 }}
                 priority
               />
 

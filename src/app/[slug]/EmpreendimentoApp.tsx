@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
@@ -17,7 +17,7 @@ import { ComparadorSacPrice } from "@/components/simulador/ComparadorSacPrice";
 import { SubsidioGauge } from "@/components/subsidio/SubsidioGauge";
 import { ObrasEscadaChart } from "@/components/obra/ObrasEscadaChart";
 import { PDFGenerator } from "@/components/proposta/PDFGenerator";
-import { GaleriaCarousel } from "@/components/vitrine/GaleriaCarousel";
+import { GaleriaVitrine } from "@/components/vitrine/GaleriaVitrine";
 import {
   simular,
   formatBRL,
@@ -91,7 +91,8 @@ interface Empreendimento {
   };
   vitrine: {
     imagens: { url: string; titulo?: string }[];
-    plantas: { url: string; titulo?: string }[];
+    plantas:  { url: string; titulo?: string }[];
+    ambientes?: Record<string, { ativo: boolean; fotos: { url: string; titulo?: string }[] }>;
   };
   textos: {
     notasLegais: string;
@@ -284,9 +285,17 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
     }
   }, [faixaEfetiva]);
 
-  // Slider avança automaticamente se a entrada atual ficou abaixo do novo mínimo
+  // Reset do slider de entrada:
+  // - Quando minEntradaPermitida MUDA (nova renda digitada) → volta para o mínimo
+  // - Se o usuário arrastou abaixo do mínimo → empurra de volta para cima
+  const prevMinEntrada = useRef(minEntradaPermitida);
   useEffect(() => {
-    if (entrada < minEntradaPermitida) {
+    if (prevMinEntrada.current !== minEntradaPermitida) {
+      // Mínimo mudou (nova renda ou novo modelo) → resetar para o mínimo calculado
+      setEntrada(minEntradaPermitida);
+      prevMinEntrada.current = minEntradaPermitida;
+    } else if (entrada < minEntradaPermitida) {
+      // Usuário arrastou abaixo do mínimo → empurrar de volta
       setEntrada(minEntradaPermitida);
     }
   }, [minEntradaPermitida, entrada]);
@@ -822,8 +831,9 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                         titulo={emp.textos.tituloObra}
                         descricao={emp.textos.descricaoObra}
                         valorLote={valorLoteEmpreendimento}
-                        parcelaSAC={resultadoSimulacao.parcelaSACPrimeira}
-                        parcelaPRICE={resultadoSimulacao.parcelaPricePrimeira}
+                        parcelaSAC={propostaData?.parcelaSACPrimeira ?? 0}
+                        parcelaPRICE={propostaData?.parcelaPRICE ?? resultadoSimulacao.parcelaPricePrimeira}
+                        sacAprovado={propostaData?.sacAprovadoPDF ?? true}
                       />
                     </div>
                   ) : (
@@ -908,24 +918,43 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                 <motion.div key="vitrine" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} style={{ display: "flex", flexDirection: "column", gap: 28 }}>
                   <div>
                     <h2 className="text-title" style={{ marginBottom: 10 }}>Vitrine Digital</h2>
-                    <p className="text-body">Plantas baixas, renders 3D e localização no mapa.</p>
+                    <p className="text-body">Fotos da fachada, ambientes e localização no mapa.</p>
                   </div>
-                  <div className="glass-card-nohover">
-                    <GaleriaCarousel imagens={emp.vitrine.imagens} plantas={emp.vitrine.plantas} nomeModelo={modelo?.nome || emp.nome} />
-                  </div>
-                  <div className="glass-card-nohover">
-                    <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 20 }}>
-                      Localização — {emp.cidade}, {emp.estado}
-                    </h3>
-                    <div style={{ borderRadius: 12, overflow: "hidden", height: 340 }}>
-                      <iframe
-                        src={`https://maps.google.com/maps?q=${emp.coordenadas.lat},${emp.coordenadas.lng}&z=14&output=embed`}
-                        width="100%" height="100%" style={{ border: 0 }}
-                        loading="lazy" referrerPolicy="no-referrer-when-downgrade"
-                        title={`Mapa ${emp.cidade}`}
+
+                  {/* Galeria com ambientes, carrossel e zoom */}
+                  {(emp.vitrine.imagens.length > 0 ||
+                    emp.vitrine.plantas.length > 0 ||
+                    Object.values(emp.vitrine.ambientes ?? {}).some(a => a.ativo && a.fotos?.length > 0)
+                  ) ? (
+                    <div className="glass-card-nohover">
+                      <GaleriaVitrine
+                        imagens={emp.vitrine.imagens}
+                        plantas={emp.vitrine.plantas}
+                        ambientes={emp.vitrine.ambientes}
                       />
                     </div>
-                  </div>
+                  ) : (
+                    <div style={{ padding: "40px 20px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.15)", border: "1px dashed var(--border-subtle)" }}>
+                      <p style={{ fontSize: 14, color: "var(--gray-dark)" }}>Nenhuma foto disponível ainda.</p>
+                    </div>
+                  )}
+
+                  {/* Mapa */}
+                  {emp.coordenadas?.lat && emp.coordenadas?.lng && (
+                    <div className="glass-card-nohover">
+                      <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 20 }}>
+                        Localização — {emp.cidade}, {emp.estado}
+                      </h3>
+                      <div style={{ borderRadius: 12, overflow: "hidden", height: 340 }}>
+                        <iframe
+                          src={`https://maps.google.com/maps?q=${emp.coordenadas.lat},${emp.coordenadas.lng}&z=14&output=embed`}
+                          width="100%" height="100%" style={{ border: 0 }}
+                          loading="lazy" referrerPolicy="no-referrer-when-downgrade"
+                          title={`Mapa ${emp.cidade}`}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               )}
 

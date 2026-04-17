@@ -4,29 +4,22 @@
     "nome": "Habiticon Iporá",
     "cidade": "Iporá",
     "estado": "GO",
-    "descricao": "O primeiro condomínio fechado de Iporá com segurança e lazer.",
+    "descricao": "Sua casa própria em Iporá, em parceria com o Grupo Real Viver. Construção de qualidade com financiamento MCMV e entrada facilitada.",
     "status": "ativo",
     "leads": [
-      {
-        "id": "1776385600922",
-        "nome": "teste",
-        "whatsapp": "(00) 00000-0000",
-        "modelo": "Modelo 3Q",
-        "valorImovel": 240000,
-        "timestamp": "2026-04-17T00:26:40.765Z"
-      },
       {
         "id": "1776386378832",
         "nome": "Francisjunio Costa",
         "whatsapp": "(64) 99309-4145",
         "modelo": "Modelo 3Q",
         "valorImovel": 240000,
-        "timestamp": "2026-04-17T00:39:38.807Z"
+        "timestamp": "2026-04-17T00:39:38.807Z",
+        "status": "novo"
       }
     ],
     "coordenadas": {
-      "lat": -16.4428,
-      "lng": -51.1171
+      "lat": -16.404678651707904,
+      "lng": -51.11394544127127
     },
     "modelos": [
       {
@@ -117,7 +110,27 @@
     },
     "vitrine": {
       "imagens": [],
-      "plantas": []
+      "plantas": [],
+      "ambientes": {
+        "sala": {
+          "ativo": false,
+          "fotos": [
+            {
+              "url": "/uploads/habiticon-ipora/ambiente_sala-1776448383927-Gemini_Generated_Image_h3m48h3m48h3m48h.png",
+              "titulo": "Sala"
+            }
+          ]
+        },
+        "quarto_master": {
+          "ativo": false,
+          "fotos": [
+            {
+              "url": "/uploads/habiticon-ipora/ambiente_quarto_master-1776448389857-Gemini_Generated_Image_3691e23691e23691.png",
+              "titulo": "Quarto Master"
+            }
+          ]
+        }
+      }
     },
     "textos": {
       "notasLegais": "Simulação meramente ilustrativa. Valores sujeitos à análise de crédito e aprovação da Caixa Econômica Federal. Taxas e subsídios conforme programa MCMV vigente (DOU 16/04/2026). Parcelas incluem seguros obrigatórios DFI e MIP estimados e taxa administrativa de R$25,00/mês. Motor validado por engenharia reversa com simulados reais da Caixa. Consulte seu correspondente bancário.",

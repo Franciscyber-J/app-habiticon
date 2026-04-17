@@ -113,8 +113,8 @@ export default function LeadsPublicosPage({ params }: { params: Promise<{ slug: 
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
               <Image
                 src="/logo.png" alt="Habiticon"
-                width={160} height={48}
-                style={{ height: 44, width: "auto" }}
+                width={280} height={80}
+                style={{ height: 96, width: "auto" }}
                 priority
               />
               <div style={{ height: 28, width: 1, background: "var(--border-subtle)" }} />

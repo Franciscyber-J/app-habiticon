@@ -9,12 +9,13 @@ import { Shield, Info } from "lucide-react";
 interface ObrasChartProps {
   valorFinanciado: number;
   taxaAnual: number;
-  percentuaisPorMes?: number[]; // mantido por compatibilidade, não utilizado mais
+  percentuaisPorMes?: number[];
   titulo?: string;
   descricao?: string;
   valorLote: number;
   parcelaSAC: number;
   parcelaPRICE: number;
+  sacAprovado?: boolean;  // false = SAC excede 30% da renda → ocultar
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -52,6 +53,7 @@ export function ObrasEscadaChart({
   valorLote,
   parcelaSAC,
   parcelaPRICE,
+  sacAprovado = true,
 }: ObrasChartProps) {
   const [mesSelecionado, setMesSelecionado] = useState<number>(0); // começa com Mês 1 selecionado
 
@@ -218,18 +220,38 @@ export function ObrasEscadaChart({
           <p style={{ fontSize: 13, color: "var(--gray-mid)", marginBottom: 14 }}>
             Após o Habite-se, o financiamento bancário substitui os juros. Escolha sua modalidade:
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <div style={{ padding: "14px 16px", borderRadius: 12, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "#4ade80", textTransform: "uppercase", marginBottom: 4 }}>Tabela SAC (1ª Parcela)</p>
-              <p style={{ fontSize: 20, fontWeight: 800, color: "var(--gray-light)" }}>{formatBRLDecimal(parcelaSAC)}</p>
-              <p style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 4 }}>Decrescente até o final</p>
+          {sacAprovado ? (
+            /* SAC + PRICE lado a lado */
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div style={{ padding: "14px 16px", borderRadius: 12, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: "#4ade80", textTransform: "uppercase", marginBottom: 4 }}>Tabela SAC (1ª Parcela)</p>
+                <p style={{ fontSize: 20, fontWeight: 800, color: "var(--gray-light)" }}>{formatBRLDecimal(parcelaSAC)}</p>
+                <p style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 4 }}>Decrescente até o final</p>
+              </div>
+              <div style={{ padding: "14px 16px", borderRadius: 12, background: "rgba(175,111,83,0.08)", border: "1px solid rgba(175,111,83,0.2)" }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: "var(--terracota)", textTransform: "uppercase", marginBottom: 4 }}>Tabela PRICE (Fixa)</p>
+                <p style={{ fontSize: 20, fontWeight: 800, color: "var(--gray-light)" }}>{formatBRLDecimal(parcelaPRICE)}</p>
+                <p style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 4 }}>Mesmo valor até o final</p>
+              </div>
             </div>
-            <div style={{ padding: "14px 16px", borderRadius: 12, background: "rgba(175,111,83,0.08)", border: "1px solid rgba(175,111,83,0.2)" }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--terracota)", textTransform: "uppercase", marginBottom: 4 }}>Tabela PRICE (Fixa)</p>
-              <p style={{ fontSize: 20, fontWeight: 800, color: "var(--gray-light)" }}>{formatBRLDecimal(parcelaPRICE)}</p>
-              <p style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 4 }}>Mesmo valor até o final</p>
+          ) : (
+            /* Apenas PRICE — SAC bloqueado pela regra dos 30% */
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ padding: "16px 18px", borderRadius: 12, background: "rgba(175,111,83,0.08)", border: "1px solid rgba(175,111,83,0.2)" }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: "var(--terracota)", textTransform: "uppercase", marginBottom: 4 }}>
+                  Tabela PRICE (Fixa) — Sistema indicado
+                </p>
+                <p style={{ fontSize: 22, fontWeight: 800, color: "var(--gray-light)" }}>{formatBRLDecimal(parcelaPRICE)}</p>
+                <p style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 4 }}>Parcela fixa · mesmo valor até o final</p>
+              </div>
+              <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(251,146,60,0.07)", border: "1px solid rgba(251,146,60,0.2)", display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 13, flexShrink: 0 }}>⚠️</span>
+                <p style={{ fontSize: 11, color: "#fb923c", lineHeight: 1.5 }}>
+                  Tabela SAC não exibida — a 1ª parcela excederia o limite de comprometimento de renda (30%). Apenas PRICE é indicado para este perfil.
+                </p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 

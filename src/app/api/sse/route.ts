@@ -1,13 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Mapa de clientes conectados: id → controller
-const clientes = new Map<string, ReadableStreamDefaultController>();
+// ─────────────────────────────────────────────────────────
+// Usa globalThis para garantir que o mapa de clientes seja
+// compartilhado entre TODAS as instâncias de módulo do Next.js.
+// Sem isso, /api/leads e /api/sse podem ter Maps separados
+// e o emitirAtualizacao não alcança os clientes conectados.
+// ─────────────────────────────────────────────────────────
+const g = globalThis as any;
+if (!g._sseClientes) g._sseClientes = new Map<string, ReadableStreamDefaultController>();
+const clientes: Map<string, ReadableStreamDefaultController> = g._sseClientes;
 
-// Emite um evento para todos os clientes conectados
+// Exportada e importada por outros routes (ex: /api/leads)
 export function emitirAtualizacao(tipo = "leads") {
   const msg = `event: ${tipo}\ndata: ${Date.now()}\n\n`;
-  clientes.forEach((ctrl) => {
-    try { ctrl.enqueue(new TextEncoder().encode(msg)); } catch { /* cliente desconectou */ }
+  const encoder = new TextEncoder();
+  clientes.forEach((ctrl, id) => {
+    try {
+      ctrl.enqueue(encoder.encode(msg));
+    } catch {
+      // Cliente desconectou — remove do mapa
+      clientes.delete(id);
+    }
   });
 }
 
@@ -19,10 +32,13 @@ export async function GET(req: NextRequest) {
     start(controller) {
       clientes.set(id, controller);
 
-      // Ping a cada 25s para manter a conexão viva (proxies fecham conexões ociosas)
+      // Ping a cada 25s para manter vivo (proxies fecham conexões ociosas)
       const ping = setInterval(() => {
-        try { controller.enqueue(new TextEncoder().encode(": ping\n\n")); }
-        catch { clearInterval(ping); }
+        try {
+          controller.enqueue(new TextEncoder().encode(": ping\n\n"));
+        } catch {
+          clearInterval(ping);
+        }
       }, 25000);
 
       // Cleanup ao fechar
@@ -33,16 +49,18 @@ export async function GET(req: NextRequest) {
       });
 
       // Confirmação inicial
-      controller.enqueue(new TextEncoder().encode("event: connected\ndata: ok\n\n"));
+      controller.enqueue(
+        new TextEncoder().encode("event: connected\ndata: ok\n\n")
+      );
     },
   });
 
   return new NextResponse(stream, {
     headers: {
-      "Content-Type":  "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      "Connection":    "keep-alive",
-      "X-Accel-Buffering": "no", // necessário para Nginx
+      "Content-Type":      "text/event-stream",
+      "Cache-Control":     "no-cache, no-transform",
+      "Connection":        "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }
