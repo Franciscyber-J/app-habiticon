@@ -359,6 +359,19 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     error:  { bg: "#dc2626",               color: "white", label: "Erro",        Icon: AlertCircle },
   }[saveState];
 
+
+  // Ambientes: padrão + customizados do JSON
+  const idsConfigAmb = AMBIENTES_LISTA.map((a: {id:string}) => a.id);
+  const customAmbIds = Object.keys(emp.vitrine?.ambientes ?? {}).filter(
+    (id: string) => !idsConfigAmb.includes(id)
+  );
+  const customAmbs = customAmbIds.map((id: string) => ({
+    id,
+    label: emp.vitrine?.ambientes?.[id]?.label ?? id,
+    icone: emp.vitrine?.ambientes?.[id]?.icone ?? "🏠",
+  }));
+  const todosAmbientes = [...AMBIENTES_LISTA, ...customAmbs];
+
   return (
     <div className="min-h-screen flex" style={{ background: "var(--bg-base)" }}>
 
@@ -687,18 +700,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
 
                   {/* Grid de ambientes — toggle + edição inline */}
                   <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    {(() => {
-                      // Combinar lista padrão com ambientes customizados do JSON
-                      const customIds = Object.keys(emp.vitrine?.ambientes ?? {}).filter(
-                        id => !AMBIENTES_LISTA.find(a => a.id === id)
-                      );
-                      const customAmbs = customIds.map(id => ({
-                        id,
-                        label: emp.vitrine?.ambientes?.[id]?.label ?? id,
-                        icone: emp.vitrine?.ambientes?.[id]?.icone ?? "🏠",
-                      }));
-                      const todos = [...AMBIENTES_LISTA, ...customAmbs];
-                      return todos.map(amb => {
+                    {todosAmbientes.map(amb => {
                         const ambData = emp.vitrine?.ambientes?.[amb.id];
                         const ativo = ambData?.ativo ?? false;
                         const label = ambData?.label ?? amb.label;
@@ -774,8 +776,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                             >{ativo?"ON":"OFF"}</button>
                           </div>
                         );
-                      });
-                    })()}
+                      })}
                   </div>
 
                   {/* Botão: novo ambiente customizado */}
