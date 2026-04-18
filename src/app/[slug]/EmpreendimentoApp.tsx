@@ -147,6 +147,18 @@ const TRAVA_CONFIG: Record<LimitadorEntrada, {
 
 export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
   const [moduloAtivo,       setModuloAtivo]       = useState("renda");
+  const [empFresh, setEmpFresh] = useState(emp); // dados frescos da API
+
+  // Ao montar, buscar dados atualizados da API (resolve cache SSG)
+  useEffect(() => {
+    fetch("/api/empreendimentos")
+      .then(r => r.json())
+      .then((lista: any[]) => {
+        const fresco = lista.find((e: any) => e.slug === emp.slug);
+        if (fresco) setEmpFresh(fresco);
+      })
+      .catch(() => {});
+  }, [emp.slug]);
   const [modeloSelecionado, setModeloSelecionado] = useState(emp.modelos[0]?.id || "");
   const [entrada,           setEntrada]           = useState(emp.simulador.entradaMin);
   const [subsidio,          setSubsidio]          = useState(0);
@@ -951,15 +963,15 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                   </div>
 
                   {/* Galeria com ambientes, carrossel e zoom */}
-                  {(emp.vitrine.imagens.length > 0 ||
-                    emp.vitrine.plantas.length > 0 ||
-                    Object.values(emp.vitrine.ambientes ?? {}).some(a => a.ativo && a.fotos?.length > 0)
+                  {(empFresh.vitrine.imagens.length > 0 ||
+                    empFresh.vitrine.plantas.length > 0 ||
+                    Object.values(empFresh.vitrine.ambientes ?? {}).some(a => a.ativo && a.fotos?.length > 0)
                   ) ? (
                     <div className="glass-card-nohover">
                       <GaleriaVitrine
-                        imagens={emp.vitrine.imagens}
-                        plantas={emp.vitrine.plantas}
-                        ambientes={emp.vitrine.ambientes}
+                        imagens={empFresh.vitrine.imagens}
+                        plantas={empFresh.vitrine.plantas}
+                        ambientes={empFresh.vitrine.ambientes}
                       />
                     </div>
                   ) : (
@@ -969,14 +981,14 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                   )}
 
                   {/* Mapa */}
-                  {emp.coordenadas?.lat && emp.coordenadas?.lng && (
+                  {empFresh.coordenadas?.lat && empFresh.coordenadas?.lng && (
                     <div className="glass-card-nohover">
                       <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 20 }}>
                         Localização — {emp.cidade}, {emp.estado}
                       </h3>
                       <div style={{ borderRadius: 12, overflow: "hidden", height: "clamp(220px, 40vw, 340px)" }}>
                         <iframe
-                          src={`https://maps.google.com/maps?q=${emp.coordenadas.lat},${emp.coordenadas.lng}&z=14&output=embed`}
+                          src={`https://maps.google.com/maps?q=${empFresh.coordenadas.lat},${empFresh.coordenadas.lng}&z=14&output=embed`}
                           width="100%" height="100%" style={{ border: 0 }}
                           loading="lazy" referrerPolicy="no-referrer-when-downgrade"
                           title={`Mapa ${emp.cidade}`}
