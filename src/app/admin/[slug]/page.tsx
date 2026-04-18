@@ -233,6 +233,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [upType, setUpType] = useState<"imagens"|"plantas">("imagens");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [editandoAmb, setEditandoAmb] = useState<string|null>(null); // id do ambiente em edição
   const [uploading, setUploading] = useState(false);
 
   const isDirty = emp && orig && JSON.stringify(emp) !== JSON.stringify(orig);
@@ -681,33 +682,118 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
               </Card>
 
               {/* AMBIENTES */}
-              <Card title="🏠 Ambientes" subtitle="Ative os ambientes disponíveis no empreendimento. Cada um aparece como ícone clicável na vitrine com sua galeria.">
+              <Card title="🏠 Ambientes" subtitle="Ative, renomeie ou crie ambientes. Cada um aparece como ícone clicável na vitrine.">
                 <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
-                    {AMBIENTES_LISTA.map(amb=>{
-                      const ativo = emp.vitrine?.ambientes?.[amb.id]?.ativo ?? false;
-                      return (
-                        <button
-                          key={amb.id}
-                          onClick={()=>{
-                            const atual = emp.vitrine?.ambientes?.[amb.id] ?? {ativo:false,fotos:[]};
-                            update(`vitrine.ambientes.${amb.id}`,{...atual,ativo:!ativo});
-                          }}
-                          style={{
-                            display:"flex",alignItems:"center",gap:10,padding:"11px 12px",
-                            borderRadius:12,cursor:"pointer",textAlign:"left",
-                            border:`1.5px solid ${ativo?"var(--border-active)":"var(--border-subtle)"}`,
-                            background:ativo?"var(--terracota-glow)":"rgba(0,0,0,0.15)",
-                            transition:"all 150ms ease",
-                          }}
-                        >
-                          <span style={{fontSize:20,lineHeight:1,flexShrink:0}}>{amb.icone}</span>
-                          <span style={{fontSize:12,fontWeight:ativo?700:500,color:ativo?"var(--gray-light)":"var(--gray-dark)",lineHeight:1.3,flex:1}}>{amb.label}</span>
-                          <span style={{fontSize:10,color:ativo?"#4ade80":"var(--gray-dark)",fontWeight:800}}>{ativo?"ON":"OFF"}</span>
-                        </button>
+
+                  {/* Grid de ambientes — toggle + edição inline */}
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {(() => {
+                      // Combinar lista padrão com ambientes customizados do JSON
+                      const customIds = Object.keys(emp.vitrine?.ambientes ?? {}).filter(
+                        id => !AMBIENTES_LISTA.find(a => a.id === id)
                       );
-                    })}
+                      const customAmbs = customIds.map(id => ({
+                        id,
+                        label: emp.vitrine?.ambientes?.[id]?.label ?? id,
+                        icone: emp.vitrine?.ambientes?.[id]?.icone ?? "🏠",
+                      }));
+                      const todos = [...AMBIENTES_LISTA, ...customAmbs];
+                      return todos.map(amb => {
+                        const ambData = emp.vitrine?.ambientes?.[amb.id];
+                        const ativo = ambData?.ativo ?? false;
+                        const label = ambData?.label ?? amb.label;
+                        const icone = ambData?.icone ?? amb.icone;
+                        const editando = editandoAmb === amb.id;
+                        return (
+                          <div key={amb.id} style={{
+                            display:"flex", alignItems:"center", gap:10,
+                            padding:"10px 12px", borderRadius:12,
+                            border:`1.5px solid ${ativo?"var(--border-active)":"var(--border-subtle)"}`,
+                            background: ativo ? "var(--terracota-glow)" : "rgba(0,0,0,0.15)",
+                          }}>
+                            {/* Ícone — clicável para editar */}
+                            {editando ? (
+                              <input
+                                type="text"
+                                defaultValue={icone}
+                                maxLength={4}
+                                onBlur={e=>{
+                                  const atual = emp.vitrine?.ambientes?.[amb.id] ?? {ativo,fotos:[]};
+                                  update(`vitrine.ambientes.${amb.id}`, {...atual, icone: e.target.value || icone});
+                                }}
+                                style={{width:40,fontSize:20,background:"transparent",border:"1px solid var(--border-active)",borderRadius:6,textAlign:"center",color:"var(--gray-light)"}}
+                              />
+                            ) : (
+                              <span style={{fontSize:20,lineHeight:1,flexShrink:0}}>{icone}</span>
+                            )}
+
+                            {/* Nome — editável */}
+                            {editando ? (
+                              <input
+                                type="text"
+                                className="input-field"
+                                defaultValue={label}
+                                style={{flex:1,fontSize:13,padding:"4px 8px"}}
+                                onBlur={e=>{
+                                  const atual = emp.vitrine?.ambientes?.[amb.id] ?? {ativo,fotos:[]};
+                                  update(`vitrine.ambientes.${amb.id}`, {...atual, label: e.target.value || label});
+                                }}
+                                onKeyDown={e=>e.key==="Enter"&&setEditandoAmb(null)}
+                                autoFocus
+                              />
+                            ) : (
+                              <span style={{fontSize:13,fontWeight:ativo?700:500,color:ativo?"var(--gray-light)":"var(--gray-dark)",flex:1}}>{label}</span>
+                            )}
+
+                            {/* Botão editar nome */}
+                            <button
+                              onClick={()=>setEditandoAmb(editando ? null : amb.id)}
+                              title={editando?"Concluir edição":"Editar nome"}
+                              style={{
+                                width:28,height:28,borderRadius:7,flexShrink:0,fontSize:12,
+                                display:"flex",alignItems:"center",justifyContent:"center",
+                                background: editando ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.06)",
+                                border: editando ? "1px solid rgba(74,222,128,0.3)" : "1px solid var(--border-subtle)",
+                                color: editando ? "#4ade80" : "var(--gray-dark)", cursor:"pointer",
+                              }}
+                            >{editando ? "✓" : "✏️"}</button>
+
+                            {/* Toggle ON/OFF */}
+                            <button
+                              onClick={()=>{
+                                const atual = emp.vitrine?.ambientes?.[amb.id] ?? {ativo:false,fotos:[]};
+                                update(`vitrine.ambientes.${amb.id}`,{...atual, ativo:!ativo, label: atual.label ?? amb.label, icone: atual.icone ?? amb.icone});
+                              }}
+                              style={{
+                                padding:"4px 10px",borderRadius:7,flexShrink:0,
+                                fontSize:10,fontWeight:800,cursor:"pointer",
+                                background: ativo?"rgba(74,222,128,0.15)":"rgba(0,0,0,0.2)",
+                                border: ativo?"1px solid rgba(74,222,128,0.3)":"1px solid var(--border-subtle)",
+                                color: ativo?"#4ade80":"var(--gray-dark)",
+                              }}
+                            >{ativo?"ON":"OFF"}</button>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
+
+                  {/* Botão: novo ambiente customizado */}
+                  <button
+                    onClick={()=>{
+                      const novoId = `custom_${Date.now()}`;
+                      update(`vitrine.ambientes.${novoId}`, {ativo:true, fotos:[], label:"Novo Ambiente", icone:"🏠"});
+                      setTimeout(()=>setEditandoAmb(novoId), 50);
+                    }}
+                    style={{
+                      display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+                      padding:"12px 16px",borderRadius:12,cursor:"pointer",
+                      border:"2px dashed var(--border-subtle)",background:"transparent",
+                      color:"var(--terracota)",fontSize:13,fontWeight:600,
+                    }}
+                  >
+                    + Novo Ambiente
+                  </button>
 
                   {/* Upload por ambiente ativo */}
                   {AMBIENTES_LISTA.filter(a=>emp.vitrine?.ambientes?.[a.id]?.ativo).length>0&&<Hr/>}

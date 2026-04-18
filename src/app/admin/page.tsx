@@ -512,7 +512,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                         color: "#93c5fd", fontSize: 13, fontWeight: 600,
                       }}
                     >
-                      <span className="hidden xs:inline">Clonar</span>
+                      <span className="hidden sm:inline">Clonar</span>
                     </button>
                     <Link
                       href={`/admin/${emp.slug}`}

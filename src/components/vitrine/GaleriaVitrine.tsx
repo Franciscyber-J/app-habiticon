@@ -11,7 +11,7 @@ import { X, ChevronLeft, ChevronRight, ZoomIn } from "lucide-react";
 
 interface Foto { url: string; titulo?: string }
 
-interface AmbienteData { ativo: boolean; fotos: Foto[] }
+interface AmbienteData { ativo: boolean; fotos: Foto[]; label?: string; icone?: string; }
 
 interface GaleriaVitrineProps {
   imagens:   Foto[];    // fachada / renders
@@ -267,9 +267,27 @@ export function GaleriaVitrine({ imagens, plantas, ambientes = {} }: GaleriaVitr
   const [abaAtiva, setAbaAtiva] = useState<"fachada" | "plantas" | string>("fachada");
 
   // Ambientes ativos com fotos
-  const ambientesAtivos = AMBIENTES_CONFIG.filter(
-    (a) => ambientes[a.id]?.ativo && (ambientes[a.id]?.fotos?.length ?? 0) > 0
-  );
+  // Ambientes ativos: inclui os padrão + os customizados (não presentes em AMBIENTES_CONFIG)
+  const ambientesAtivos = (() => {
+    const idsConfig = AMBIENTES_CONFIG.map(a => a.id);
+    // Padrão
+    const padrao = AMBIENTES_CONFIG.filter(
+      a => ambientes[a.id]?.ativo && (ambientes[a.id]?.fotos?.length ?? 0) > 0
+    ).map(a => ({
+      id: a.id,
+      label: ambientes[a.id]?.label ?? a.label,  // usa label customizado se existir
+      icone: ambientes[a.id]?.icone ?? a.icone,  // usa ícone customizado se existir
+    }));
+    // Customizados (ids que não estão na lista padrão)
+    const custom = Object.entries(ambientes)
+      .filter(([id, data]) => !idsConfig.includes(id) && data.ativo && (data.fotos?.length ?? 0) > 0)
+      .map(([id, data]) => ({
+        id,
+        label: data.label ?? id,
+        icone: data.icone ?? "🏠",
+      }));
+    return [...padrao, ...custom];
+  })();
 
   const abas = [
     ...(imagens.length > 0 ? [{ id: "fachada", label: "Fachada & Renders", icone: "🏠" }] : []),
