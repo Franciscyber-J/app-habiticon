@@ -76,11 +76,12 @@ const AMBIENTES_LISTA = [
 ] as const;
 
 // Mini-componente de upload por ambiente
-function AmbienteUpload({ amb, fotos, slug, onAdd, onRemove }: {
+function AmbienteUpload({ amb, fotos, slug, onAdd, onAddMulti, onRemove }: {
   amb: {id:string;label:string;icone:string};
   fotos: {url:string;titulo?:string}[];
   slug: string;
   onAdd: (foto:{url:string;titulo:string}) => void;
+  onAddMulti: (fotos:{url:string;titulo:string}[]) => void;
   onRemove: (url:string) => void;
 }) {
   const [uploading, setUploading] = React.useState(false);
@@ -90,14 +91,18 @@ function AmbienteUpload({ amb, fotos, slug, onAdd, onRemove }: {
     const files = Array.from(e.target.files || []); if (!files.length) return;
     setUploading(true);
     try {
+      // Acumula todas as fotos e chama onAddMulti uma única vez
+      // evita bug onde cada onAdd lê estado antigo e sobrescreve as anteriores
+      const novas: {url:string;titulo:string}[] = [];
       for (const file of files) {
         const fd = new FormData();
         fd.append("file", file); fd.append("slug", slug);
         fd.append("tipo", `ambiente_${amb.id}`); fd.append("titulo", amb.label);
         const res = await fetch("/api/upload", { method: "POST", body: fd });
         const data = await res.json();
-        if (data.url) onAdd({ url: data.url, titulo: amb.label });
+        if (data.url) novas.push({ url: data.url, titulo: amb.label });
       }
+      if (novas.length > 0) onAddMulti(novas);
     } finally { setUploading(false); if (ref.current) ref.current.value = ""; }
   };
 
@@ -715,6 +720,19 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                       onAdd={foto=>{
                         const atual=emp.vitrine?.ambientes?.[amb.id]??{ativo:true,fotos:[]};
                         update(`vitrine.ambientes.${amb.id}`,{...atual,fotos:[...atual.fotos,foto]});
+                      }}
+                      onAddMulti={novas=>{
+                        // Lê estado atual via função para garantir que pega todas as fotos já salvas
+                        setEmp((prev:any) => {
+                          const next = JSON.parse(JSON.stringify(prev));
+                          if (!next.vitrine.ambientes) next.vitrine.ambientes = {};
+                          if (!next.vitrine.ambientes[amb.id]) next.vitrine.ambientes[amb.id] = {ativo:true,fotos:[]};
+                          next.vitrine.ambientes[amb.id].fotos = [
+                            ...next.vitrine.ambientes[amb.id].fotos,
+                            ...novas
+                          ];
+                          return next;
+                        });
                       }}
                       onRemove={url=>{
                         const atual=emp.vitrine?.ambientes?.[amb.id]??{ativo:true,fotos:[]};

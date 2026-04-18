@@ -2,21 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 
-// UPLOAD_DIR: diretório persistente FORA da pasta do projeto
-// Na Hostinger configure: UPLOAD_PATH = /home/u123456789/uploads
-// Sobrevive a novos deploys via Git pois fica fora do repositório
 const UPLOAD_DIR = process.env.UPLOAD_PATH
   ? path.resolve(process.env.UPLOAD_PATH)
   : path.join(process.cwd(), "public", "uploads");
 
-// Se UPLOAD_PATH definido → serve via /api/images/ (API route)
-// Caso contrário → serve do /public/uploads como antes (dev local)
 const URL_BASE = process.env.UPLOAD_PATH ? "/api/images" : "/uploads";
 
 const DATA_FILE = path.join(process.cwd(), "src/data/empreendimentos.json");
 
 export async function POST(req: NextRequest) {
   try {
+    // Log para confirmar o caminho em produção
+    console.log("[upload] UPLOAD_DIR:", UPLOAD_DIR);
+    console.log("[upload] URL_BASE:", URL_BASE);
+
     const formData = await req.formData();
     const file   = formData.get("file")   as File;
     const slug   = formData.get("slug")   as string;
@@ -29,12 +28,14 @@ export async function POST(req: NextRequest) {
 
     const dir = path.join(UPLOAD_DIR, slug);
     await fs.mkdir(dir, { recursive: true });
+    console.log("[upload] Diretório criado:", dir);
 
     const bytes    = await file.arrayBuffer();
     const buffer   = Buffer.from(bytes);
     const filename = `${tipo}-${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
     const filepath = path.join(dir, filename);
     await fs.writeFile(filepath, buffer);
+    console.log("[upload] Arquivo salvo:", filepath);
 
     const url = `${URL_BASE}/${slug}/${filename}`;
 
@@ -58,8 +59,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, url, titulo });
   } catch (error) {
-    console.error("Upload error:", error);
-    return NextResponse.json({ error: "Erro no upload" }, { status: 500 });
+    console.error("[upload] Erro:", error);
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 
@@ -67,7 +68,6 @@ export async function DELETE(req: NextRequest) {
   try {
     const { slug, url, tipo } = await req.json();
 
-    // Calcular caminho real do arquivo
     const relativePath = url.startsWith("/api/images")
       ? url.replace("/api/images", "")
       : url.replace("/uploads", "");
