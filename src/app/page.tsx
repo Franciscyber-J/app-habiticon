@@ -20,7 +20,7 @@ export default function HomePage() {
         zIndex: 40,
       }}>
         <div className="container-app">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "clamp(6px,1.5vw,12px) 0" }}>
 
             {/* Logo — tamanho generoso */}
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -29,7 +29,7 @@ export default function HomePage() {
                 alt="Habiticon"
                 width={280}
                 height={80}
-                style={{ height: 96, width: "auto", objectFit: "contain" }}
+                style={{ height: "clamp(40px,6vw,96px)", width: "auto", objectFit: "contain" }}
                 priority
               />
             </div>
@@ -310,7 +310,7 @@ export default function HomePage() {
       {/* ── FOOTER ──────────────────────────────────────────────────── */}
       <footer style={{
         borderTop: "1px solid var(--border-subtle)",
-        padding: "28px 0",
+        padding: "clamp(12px,2vw,18px) 0",
       }}>
         <div className="container-app" style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -321,7 +321,7 @@ export default function HomePage() {
             alt="Habiticon"
             width={120}
             height={34}
-            style={{ height: 80, width: "auto", opacity: 0.8 }}
+            style={{ height: "clamp(28px,4vw,40px)", width: "auto", opacity: 0.8 }}
           />
           <p style={{ fontSize: 12, color: "var(--gray-dark)" }}>
             © 2026 Habiticon Construção Inteligente · CNPJ 61.922.155/0001-70
