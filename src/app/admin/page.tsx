@@ -65,7 +65,7 @@ function CopyLinkButton({ link }: { link: string }) {
           display: "flex", alignItems: "center", gap: 4,
           padding: "5px 10px", borderRadius: 6,
           background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-subtle)",
-          maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          maxWidth: "min(220px, 40vw)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         }}
       >
         <Link2 size={11} />
@@ -264,7 +264,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
         <div className="container-app">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0" }}>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
               <Link href="/" className="btn-ghost" style={{ padding: "10px 12px" }}>
                 <ArrowLeft size={20} />
               </Link>
@@ -275,7 +275,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                 alt="Habiticon"
                 width={280}
                 height={80}
-                style={{ height: 96, width: "auto", objectFit: "contain", flexShrink: 0 }}
+                style={{ height: 48, width: "auto", objectFit: "contain", flexShrink: 0 }}
                 priority
               />
 
@@ -292,11 +292,12 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <Link
                 href="/"
-                style={{ fontSize: 13, color: "var(--gray-mid)", textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}
+                style={{ fontSize: 13, color: "var(--gray-mid)", textDecoration: "none", display: "flex", alignItems: "center", gap: 6, padding: "8px 10px" }}
                 className="btn-ghost"
+                title="Ver site"
               >
                 <ExternalLink size={14} />
-                Ver site
+                <span className="hidden sm:inline">Ver site</span>
               </Link>
               <div style={{ width: 1, height: 20, background: "var(--border-subtle)" }} />
               <button
@@ -309,17 +310,18 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                   color: "#f87171", fontSize: 13, fontWeight: 600,
                 }}
               >
-                <LogOut size={14} /> Sair
+                <LogOut size={14} />
+                <span className="hidden sm:inline">Sair</span>
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="container-app" style={{ padding: "40px 32px 80px" }}>
+      <main className="container-app" style={{ padding: "clamp(20px,4vw,40px) clamp(16px,4vw,32px) 80px" }}>
 
         {/* ── STATS ───────────────────────────────────────────── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 40 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, marginBottom: 32 }}>
           {[
             {
               label: "Empreendimentos",
@@ -349,7 +351,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
             const Icon = stat.icon;
             return (
               <div key={stat.label} style={{
-                padding: "24px 24px 20px",
+                padding: "18px 16px 16px",
                 background: stat.bg,
                 border: `1px solid ${stat.border}`,
                 borderRadius: 16,
@@ -367,7 +369,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                     {stat.label}
                   </span>
                 </div>
-                <div style={{ fontSize: 40, fontWeight: 800, color: stat.color, lineHeight: 1 }}>
+                <div style={{ fontSize: "clamp(28px,6vw,40px)", fontWeight: 800, color: stat.color, lineHeight: 1 }}>
                   {stat.value}
                 </div>
               </div>
@@ -380,8 +382,8 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
           display: "flex", gap: 4,
           background: "rgba(0,0,0,0.3)",
           padding: 4, borderRadius: 12,
-          width: "fit-content",
-          marginBottom: 28,
+          width: "fit-content", maxWidth: "100%",
+          marginBottom: 24,
         }}>
           {([
             { id: "empreendimentos", label: "Empreendimentos" },
@@ -420,7 +422,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                 }}
               >
                 {/* Linha principal */}
-                <div style={{ padding: "24px 24px 20px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20 }}>
+                <div style={{ padding: "18px 18px 16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
 
                   {/* Esquerda: ícone + info */}
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flex: 1 }}>
@@ -468,7 +470,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                   </div>
 
                   {/* Direita: ações */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     {/* Toggle status */}
                     <button
                       onClick={() => toggleStatus(emp.slug, emp.status)}
@@ -497,7 +499,8 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                         color: "#f87171", fontSize: 13, fontWeight: 600,
                       }}
                     >
-                      <Trash2 size={13} /> Excluir
+                      <Trash2 size={13} />
+                      <span className="hidden sm:inline">Excluir</span>
                     </button>
                     <button
                       onClick={() => clonarEmpreendimento(emp)}
@@ -509,7 +512,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                         color: "#93c5fd", fontSize: 13, fontWeight: 600,
                       }}
                     >
-                      Clonar
+                      <span className="hidden xs:inline">Clonar</span>
                     </button>
                     <Link
                       href={`/admin/${emp.slug}`}
@@ -550,7 +553,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                   <div style={{
                     padding: "12px 24px",
                     borderTop: "1px solid var(--border-subtle)",
-                    display: "flex", alignItems: "center", gap: 8,
+                    display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
                     background: "rgba(0,0,0,0.15)",
                   }}>
                     <Users size={14} color="var(--gray-dark)" />
