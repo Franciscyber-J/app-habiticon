@@ -530,7 +530,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
     <div className="min-h-screen flex" style={{ background: "var(--bg-base)" }}>
 
       {/* Sidebar desktop */}
-      <aside className="hidden lg:flex flex-col sticky top-0 h-screen" style={{ width: 160, minWidth: 160, background: "rgba(15,30,22,0.98)", backdropFilter: "blur(20px)", borderRight: "1px solid var(--border-subtle)", overflow: "hidden" }}>
+      <aside className="hidden lg:flex flex-col sticky top-0 h-screen" style={{ width: 200, minWidth: 200, background: "rgba(15,30,22,0.98)", backdropFilter: "blur(20px)", borderRight: "1px solid var(--border-subtle)", overflow: "hidden" }}>
         <SidebarContent />
       </aside>
 
@@ -541,7 +541,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
             <motion.div className="fixed inset-0 z-40 lg:hidden" style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} />
             <motion.aside className="fixed left-0 top-0 bottom-0 z-50 flex flex-col lg:hidden" style={{ width: 288, background: "rgba(15,30,22,0.99)", backdropFilter: "blur(20px)", borderRight: "1px solid var(--border-subtle)", overflow: "hidden" }} initial={{ x: -288 }} animate={{ x: 0 }} exit={{ x: -288 }} transition={{ type: "spring", damping: 28, stiffness: 320 }}>
               <div className="flex items-center justify-between" style={{ padding: "16px 16px", borderBottom: "1px solid var(--border-subtle)" }}>
-                <Image src="/logo.png" alt="Habiticon" width={280} height={80} style={{ height: 56, width: "auto" }} />
+                <Image src="/logo.png" alt="Habiticon" width={280} height={80} style={{ height: 44, width: "auto" }} />
                 <button onClick={() => setSidebarOpen(false)} className="btn-ghost" style={{ padding: "8px" }}><X size={18} /></button>
               </div>
               <div style={{ flex: 1, overflow: "hidden" }}>
@@ -557,13 +557,13 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
         {/* Header mobile */}
         <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between" style={{ padding: "12px 20px", background: "rgba(15,30,22,0.97)", backdropFilter: "blur(20px)", borderBottom: "1px solid var(--border-subtle)" }}>
           <button onClick={() => setSidebarOpen(true)} className="btn-ghost" style={{ padding: "8px" }}><Menu size={20} /></button>
-          <Image src="/logo.png" alt="Habiticon" width={280} height={80} style={{ height: 56, width: "auto" }} />
+          <Image src="/logo.png" alt="Habiticon" width={280} height={80} style={{ height: 44, width: "auto" }} />
           <div className="badge badge-info" style={{ fontSize: 11 }}>{MODULOS.find((m) => m.id === moduloAtivo)?.shortLabel}</div>
         </header>
 
         {/* Breadcrumb desktop */}
         <div className="hidden lg:flex items-center gap-3" style={{ padding: "16px 40px", borderBottom: "1px solid var(--border-subtle)" }}>
-          <Image src="/logo.png" alt="Habiticon" width={280} height={80} style={{ height: 72, width: "auto" }} loading="eager" priority />
+          <Image src="/logo.png" alt="Habiticon" width={280} height={80} style={{ height: 56, width: "auto" }} loading="eager" priority />
           <div style={{ width: 1, height: 20, background: "var(--border-subtle)" }} />
           {(() => {
             const mod = MODULOS.find((m) => m.id === moduloAtivo);

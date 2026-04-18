@@ -109,12 +109,12 @@ export default function LeadsPublicosPage({ params }: { params: Promise<{ slug: 
         position: "sticky", top: 0, zIndex: 40,
       }}>
         <div className="container-app">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 0" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", flexWrap: "wrap", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
               <Image
                 src="/logo.png" alt="Habiticon"
                 width={280} height={80}
-                style={{ height: 96, width: "auto" }}
+                style={{ height: "clamp(36px, 8vw, 56px)", width: "auto" }}
                 priority
               />
               <div style={{ height: 28, width: 1, background: "var(--border-subtle)" }} />

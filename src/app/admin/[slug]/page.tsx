@@ -393,7 +393,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
             <ArrowLeft size={15} /> Voltar ao Admin
           </Link>
           <Image src="/logo.png" alt="Habiticon" width={200} height={56}
-            style={{ height: 56, width: "auto", objectFit: "contain", display: "block", marginBottom: 12 }} priority />
+            style={{ height: "clamp(36px,6vw,48px)", width: "auto", objectFit: "contain", display: "block", marginBottom: 12 }} priority />
           <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(0,0,0,0.25)", border: "1px solid var(--border-subtle)" }}>
             <p style={{ fontSize: 13, fontWeight: 700, color: "var(--gray-light)", marginBottom: 2 }}>{emp.nome}</p>
             <p style={{ fontSize: 11, color: "var(--gray-mid)", display: "flex", alignItems: "center", gap: 4 }}>

@@ -275,7 +275,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                 alt="Habiticon"
                 width={280}
                 height={80}
-                style={{ height: 56, width: "auto", objectFit: "contain", flexShrink: 0 }}
+                style={{ height: "clamp(36px,8vw,56px)", width: "auto", objectFit: "contain", flexShrink: 0 }}
                 priority
               />
 
@@ -512,7 +512,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                         color: "#93c5fd", fontSize: 13, fontWeight: 600,
                       }}
                     >
-                      <span className="hidden sm:inline">Clonar</span>
+                      Clonar
                     </button>
                     <Link
                       href={`/admin/${emp.slug}`}
