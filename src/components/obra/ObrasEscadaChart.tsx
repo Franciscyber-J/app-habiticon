@@ -48,6 +48,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 export function ObrasEscadaChart({
   valorFinanciado,
   taxaAnual,
+  percentuaisPorMes,
   titulo = "Evolução dos Juros de Obra",
   descricao = "Você só paga pelo que a Caixa já vistoriou e liberou na sua obra.",
   valorLote,
@@ -57,7 +58,11 @@ export function ObrasEscadaChart({
 }: ObrasChartProps) {
   const [mesSelecionado, setMesSelecionado] = useState<number>(0); // começa com Mês 1 selecionado
 
-  const jurosObra = calcularJurosObra(valorFinanciado, taxaAnual, valorLote);
+  // Passa os percentuais do JSON (ex: [18,44,63,85,95,100]) para a função de cálculo
+  const percentuaisValidos = percentuaisPorMes && percentuaisPorMes.length > 0
+    ? percentuaisPorMes
+    : undefined;
+  const jurosObra = calcularJurosObra(valorFinanciado, taxaAnual, valorLote, percentuaisValidos);
 
   const dados = jurosObra.map((j) => ({
     mes: j.mes,
@@ -70,7 +75,8 @@ export function ObrasEscadaChart({
   const mesSel = dados[mesSelecionado];
 
   // Cores progressivas: verde (baixo) → terracota (alto)
-  const cores = ["#4ade80", "#a3e635", "#fbbf24", "#fb923c", "#ef4444"];
+  // 7 cores — 1 assinatura + até 6 medições mensais
+  const cores = ["#4ade80", "#86efac", "#a3e635", "#fbbf24", "#fb923c", "#f97316", "#ef4444"];
 
   const totalJuros = dados.reduce((acc, d) => acc + d.juros, 0);
 
@@ -109,7 +115,7 @@ export function ObrasEscadaChart({
         <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 14 }}>
           Juros mensais por fase de obra
         </p>
-        <div style={{ height: 200 }}>
+        <div style={{ height: 200, minWidth: 0 }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={dados} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
               onClick={(e) => { if (e && e.activeTooltipIndex !== undefined) setMesSelecionado(e.activeTooltipIndex as number); }}
@@ -175,7 +181,7 @@ export function ObrasEscadaChart({
         <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 14 }}>
           Linha do tempo da obra
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${dados.length}, 1fr)`, gap: 10 }}>
           {dados.map((d, i) => (
             <button
               key={i}

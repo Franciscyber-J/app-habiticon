@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import { useSSE } from "@/hooks/useSSE";
@@ -9,7 +10,7 @@ import {
   Building2, Settings, Users, MapPin,
   ToggleLeft, ToggleRight, Plus, ExternalLink,
   ArrowLeft, ChevronRight, Phone,
-  Calendar, CheckCircle2, Copy, Check, Link2, Trash2,
+  Calendar, CheckCircle2, Copy, Check, Link2, Trash2, LogOut,
 } from "lucide-react";
 
 // ─── Status de lead ──────────────────────────────────────
@@ -95,6 +96,95 @@ export default function AdminPage() {
   const [tab, setTab] = useState<"empreendimentos" | "leads">("empreendimentos");
 
   // Carrega dados do servidor
+  const router = useRouter();
+
+  // ─── Criar novo empreendimento em branco ─────────────
+  const criarEmpreendimento = useCallback(async () => {
+    const slug = `novo-empreendimento-${Date.now()}`;
+    const novo = {
+      slug,
+      nome: "Novo Empreendimento",
+      cidade: "Cidade",
+      estado: "GO",
+      descricao: "",
+      status: "ativo",
+      leads: [],
+      coordenadas: { lat: 0, lng: 0 },
+      modelos: [{
+        id: "modelo-1", nome: "Modelo 1", quartos: 2,
+        area: 60, valor: 200000, valorLote: 40000,
+        imagem: "", planta: ""
+      }],
+      simulador: {
+        entradaMin: 10000, entradaMax: 100000, prazoMeses: 360,
+        taxaFaixa12: 7, taxaFaixa3: 8.16, taxaFaixa3Cotista: 7.66,
+        taxaMercado: 12, igpmMensal: 0.8, mesesObra: 5,
+        cotaMaximaCaixa: 0.8, percentualObraPorMes: [20,40,55,75,100],
+        cub: { bdi: 0.18, cubVigente: 0 }
+      },
+      mcmv: {
+        faixas: [
+          { id:2, nome:"Faixa 2", rendaMin:0, rendaMax:5000, subsidioMax:55000, subsidioMin:0, taxa:7, taxaCotista:6.5, cor:"#84cc16", tetoImovel:275000 },
+          { id:3, nome:"Faixa 3", rendaMin:5001, rendaMax:9600, subsidioMax:0, subsidioMin:0, taxa:8.16, taxaCotista:7.66, cor:"#fb923c", tetoImovel:400000 },
+          { id:4, nome:"Faixa 4", rendaMin:9601, rendaMax:13000, subsidioMax:0, subsidioMin:0, taxa:10.5, taxaCotista:10, cor:"#f43f5e", tetoImovel:600000 }
+        ],
+        tetoImovel: 275000,
+        observacao: ""
+      },
+      vitrine: { imagens: [], plantas: [], ambientes: {} },
+      textos: {
+        notasLegais: "", tituloObra: "Fluxo de Obra (PCI)",
+        descricaoObra: "", alertaF3: "", alertaF12: ""
+      }
+    };
+    const lista = await fetch("/api/empreendimentos").then(r => r.json());
+    await fetch("/api/empreendimentos", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([...lista, novo]),
+    });
+    router.push(`/admin/${slug}`);
+  }, [router]);
+
+  // ─── Excluir empreendimento ──────────────────────────
+  const excluirEmpreendimento = useCallback(async (slug: string, nome: string) => {
+    if (!confirm(`Excluir "${nome}"?
+
+Esta ação é permanente e irá remover todos os leads e configurações. Não pode ser desfeita.`)) return;
+    const lista = await fetch("/api/empreendimentos").then(r => r.json());
+    const nova = lista.filter((e: any) => e.slug !== slug);
+    await fetch("/api/empreendimentos", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(nova),
+    });
+    setEmpreendimentos(nova);
+  }, []);
+
+  // ─── Clonar empreendimento existente ─────────────────
+  const clonarEmpreendimento = useCallback(async (emp: any) => {
+    const novoSlug = `clone-${emp.slug}-${Date.now()}`;
+    const clone = {
+      ...JSON.parse(JSON.stringify(emp)),
+      slug: novoSlug,
+      nome: `Clone — ${emp.nome}`,
+      leads: [],
+    };
+    const lista = await fetch("/api/empreendimentos").then(r => r.json());
+    await fetch("/api/empreendimentos", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([...lista, clone]),
+    });
+    router.push(`/admin/${novoSlug}`);
+  }, [router]);
+
+  const fazerLogout = useCallback(async () => {
+    if (!confirm("Sair do painel administrativo?")) return;
+    await fetch("/api/auth", { method: "DELETE" });
+    window.location.href = "/admin/login";
+  }, []);
+
   const carregar = useCallback(() => {
     fetch("/api/empreendimentos")
       .then((r) => r.json())
@@ -201,14 +291,29 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <Link
-              href="/"
-              style={{ fontSize: 13, color: "var(--gray-mid)", textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}
-              className="btn-ghost"
-            >
-              <ExternalLink size={14} />
-              Ver site
-            </Link>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Link
+                href="/"
+                style={{ fontSize: 13, color: "var(--gray-mid)", textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}
+                className="btn-ghost"
+              >
+                <ExternalLink size={14} />
+                Ver site
+              </Link>
+              <div style={{ width: 1, height: 20, background: "var(--border-subtle)" }} />
+              <button
+                onClick={fazerLogout}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "8px 14px", borderRadius: 8, cursor: "pointer",
+                  background: "rgba(239,68,68,0.08)",
+                  border: "1px solid rgba(239,68,68,0.2)",
+                  color: "#f87171", fontSize: 13, fontWeight: 600,
+                }}
+              >
+                <LogOut size={14} /> Sair
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -384,6 +489,30 @@ export default function AdminPage() {
                       }
                     </button>
 
+                    <button
+                      onClick={() => excluirEmpreendimento(emp.slug, emp.nome)}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 7,
+                        padding: "9px 14px", borderRadius: 10, cursor: "pointer",
+                        background: "rgba(239,68,68,0.08)",
+                        border: "1px solid rgba(239,68,68,0.2)",
+                        color: "#f87171", fontSize: 13, fontWeight: 600,
+                      }}
+                    >
+                      <Trash2 size={13} /> Excluir
+                    </button>
+                    <button
+                      onClick={() => clonarEmpreendimento(emp)}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 7,
+                        padding: "9px 16px", borderRadius: 10, cursor: "pointer",
+                        background: "rgba(96,165,250,0.08)",
+                        border: "1px solid rgba(96,165,250,0.25)",
+                        color: "#93c5fd", fontSize: 13, fontWeight: 600,
+                      }}
+                    >
+                      Clonar
+                    </button>
                     <Link
                       href={`/admin/${emp.slug}`}
                       style={{
@@ -443,14 +572,14 @@ export default function AdminPage() {
             ))}
 
             {/* Novo Empreendimento */}
-            <Link
-              href="/admin/novo"
+            <button
+              onClick={criarEmpreendimento}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 12,
-                padding: "28px 24px", borderRadius: 16, textDecoration: "none",
+                padding: "28px 24px", borderRadius: 16,
                 border: "2px dashed var(--border-subtle)",
                 background: "transparent",
-                transition: "all 150ms ease",
+                transition: "all 150ms ease", cursor: "pointer", width: "100%",
               }}
             >
               <div style={{
@@ -461,10 +590,11 @@ export default function AdminPage() {
               }}>
                 <Plus size={18} color="var(--terracota)" />
               </div>
-              <span style={{ fontSize: 15, fontWeight: 600, color: "var(--terracota)" }}>
-                Adicionar Novo Empreendimento
-              </span>
-            </Link>
+              <div>
+                <p style={{ fontSize: 14, fontWeight: 700, color: "var(--terracota)" }}>Adicionar Novo Empreendimento</p>
+                <p style={{ fontSize: 12, color: "var(--gray-dark)", marginTop: 2 }}>Cria um empreendimento em branco para edição</p>
+              </div>
+            </button>
           </div>
         )}
 

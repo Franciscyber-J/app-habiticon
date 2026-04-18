@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   Home, TrendingUp, HardHat, FileText, ImageIcon,
-  MapPin, ChevronLeft, Settings2, CheckCircle2,
+  MapPin, ChevronLeft, CheckCircle2,
   ChevronRight, Menu, X, Info, AlertTriangle, Ban,
 } from "lucide-react";
 
@@ -434,8 +434,8 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
   // SIDEBAR
   // ─────────────────────────────────────────────────────
   const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", minWidth: 0 }}>
+      <div style={{ padding: "16px 12px 14px", borderBottom: "1px solid var(--border-subtle)" }}>
         <Link href="/" className="btn-ghost flex items-center gap-2 text-sm mb-5 px-0 py-1 w-fit" style={{ color: "var(--gray-mid)" }}>
           <ChevronLeft size={15} /> Voltar à lista
         </Link>
@@ -452,7 +452,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
         </div>
       </div>
 
-      <nav style={{ flex: 1, padding: "16px 12px", overflowY: "auto", minHeight: 0 }}>
+      <nav style={{ flex: 1, padding: "10px 8px", overflowY: "auto", minHeight: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
           {MODULOS.map((mod) => {
             const Icon = mod.icon;
@@ -464,7 +464,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                 onClick={() => { setModuloAtivo(mod.id); onNavigate?.(); }}
                 style={{
                   display: "flex", alignItems: "center", gap: "12px",
-                  padding: "12px 14px", borderRadius: "12px",
+                  padding: "9px 10px", borderRadius: "10px",
                   border: isActive ? "1px solid var(--border-active)" : "1px solid transparent",
                   background: isActive ? "var(--terracota-glow)" : "transparent",
                   cursor: "pointer", transition: "all 150ms ease",
@@ -472,7 +472,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                 }}
               >
                 <div style={{
-                  width: 34, height: 34, borderRadius: 10,
+                  width: 28, height: 28, borderRadius: 8,
                   display: "flex", alignItems: "center", justifyContent: "center",
                   background: isActive ? "var(--terracota)" : "rgba(0,0,0,0.3)",
                   flexShrink: 0, transition: "all 150ms ease",
@@ -482,10 +482,10 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                     : <Icon size={15} color={isActive ? "white" : "var(--gray-mid)"} />}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontWeight: 600, fontSize: 13, color: isActive ? "var(--terracota-light)" : "var(--gray-light)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <p style={{ fontWeight: 600, fontSize: 11, color: isActive ? "var(--terracota-light)" : "var(--gray-light)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {mod.label}
                   </p>
-                  <p style={{ fontSize: 11, color: "var(--gray-dark)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <p style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {mod.hint}
                   </p>
                 </div>
@@ -496,10 +496,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
         </div>
       </nav>
 
-      <div style={{ padding: "16px 12px 20px", borderTop: "1px solid var(--border-subtle)", flexShrink: 0 }}>
-        <Link href="/admin" className="btn-ghost w-full justify-start gap-2" style={{ fontSize: 13, padding: "10px 14px" }}>
-          <Settings2 size={14} /> Painel Admin
-        </Link>
+      <div style={{ padding: "10px 8px 14px", borderTop: "1px solid var(--border-subtle)", flexShrink: 0 }}>
         {modelo && (
           <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 12, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)" }}>
             <p style={{ fontSize: 11, color: "var(--gray-mid)", marginBottom: 4 }}>Modelo ativo</p>
@@ -521,7 +518,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
     <div className="min-h-screen flex" style={{ background: "var(--bg-base)" }}>
 
       {/* Sidebar desktop */}
-      <aside className="hidden lg:flex flex-col sticky top-0 h-screen" style={{ width: 272, minWidth: 272, background: "rgba(15,30,22,0.98)", backdropFilter: "blur(20px)", borderRight: "1px solid var(--border-subtle)", overflow: "hidden" }}>
+      <aside className="hidden lg:flex flex-col sticky top-0 h-screen" style={{ width: 160, minWidth: 160, background: "rgba(15,30,22,0.98)", backdropFilter: "blur(20px)", borderRight: "1px solid var(--border-subtle)", overflow: "hidden" }}>
         <SidebarContent />
       </aside>
 
@@ -532,7 +529,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
             <motion.div className="fixed inset-0 z-40 lg:hidden" style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} />
             <motion.aside className="fixed left-0 top-0 bottom-0 z-50 flex flex-col lg:hidden" style={{ width: 288, background: "rgba(15,30,22,0.99)", backdropFilter: "blur(20px)", borderRight: "1px solid var(--border-subtle)", overflow: "hidden" }} initial={{ x: -288 }} animate={{ x: 0 }} exit={{ x: -288 }} transition={{ type: "spring", damping: 28, stiffness: 320 }}>
               <div className="flex items-center justify-between" style={{ padding: "16px 16px", borderBottom: "1px solid var(--border-subtle)" }}>
-                <Image src="/logo.png" alt="Habiticon" width={100} height={28} className="h-7 w-auto" />
+                <Image src="/logo.png" alt="Habiticon" width={280} height={80} style={{ height: 48, width: "auto" }} />
                 <button onClick={() => setSidebarOpen(false)} className="btn-ghost" style={{ padding: "8px" }}><X size={18} /></button>
               </div>
               <div style={{ flex: 1, overflow: "hidden" }}>
@@ -548,13 +545,13 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
         {/* Header mobile */}
         <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between" style={{ padding: "12px 20px", background: "rgba(15,30,22,0.97)", backdropFilter: "blur(20px)", borderBottom: "1px solid var(--border-subtle)" }}>
           <button onClick={() => setSidebarOpen(true)} className="btn-ghost" style={{ padding: "8px" }}><Menu size={20} /></button>
-          <Image src="/logo.png" alt="Habiticon" width={90} height={28} className="h-7 w-auto" />
+          <Image src="/logo.png" alt="Habiticon" width={280} height={80} style={{ height: 48, width: "auto" }} />
           <div className="badge badge-info" style={{ fontSize: 11 }}>{MODULOS.find((m) => m.id === moduloAtivo)?.shortLabel}</div>
         </header>
 
         {/* Breadcrumb desktop */}
         <div className="hidden lg:flex items-center gap-3" style={{ padding: "16px 40px", borderBottom: "1px solid var(--border-subtle)" }}>
-          <Image src="/logo.png" alt="Habiticon" width={90} height={28} className="h-7 w-auto" />
+          <Image src="/logo.png" alt="Habiticon" width={280} height={80} style={{ height: 64, width: "auto" }} loading="eager" priority />
           <div style={{ width: 1, height: 20, background: "var(--border-subtle)" }} />
           {(() => {
             const mod = MODULOS.find((m) => m.id === moduloAtivo);
@@ -621,34 +618,66 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                   {subsidio > 0 && (
                     <motion.div
                       initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                      className="glass-card p-5"
-                      style={{ borderLeft: usarSubsidio ? "4px solid #4ade80" : "4px solid #fb923c" }}
+                      style={{
+                        borderRadius: 16,
+                        border: `1px solid ${usarSubsidio ? "rgba(74,222,128,0.25)" : "rgba(251,146,60,0.25)"}`,
+                        background: usarSubsidio ? "rgba(74,222,128,0.04)" : "rgba(251,146,60,0.04)",
+                        overflow: "hidden",
+                      }}
                     >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 style={{ fontWeight: 700, color: "var(--gray-light)", fontSize: 14 }}>
+                      {/* Linha superior — título + toggle */}
+                      <div style={{
+                        display: "flex", alignItems: "center",
+                        justifyContent: "space-between", gap: 20,
+                        padding: "20px 24px",
+                      }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <h4 style={{ fontWeight: 700, color: "var(--gray-light)", fontSize: 15, lineHeight: 1.3 }}>
                             Aplicar Subsídio MCMV de {formatBRL(subsidio)}?
                           </h4>
-                          <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>
+                          <p style={{ fontSize: 12, color: "var(--gray-mid)", lineHeight: 1.5 }}>
                             A Caixa pode zerar o subsídio para compradores solteiros e sem dependentes.
                           </p>
                         </div>
                         <button
                           onClick={() => setUsarSubsidio(!usarSubsidio)}
-                          style={{ padding: "8px 16px", borderRadius: 8, fontWeight: 700, fontSize: 12, transition: "all 0.2s", background: usarSubsidio ? "#4ade80" : "rgba(255,255,255,0.1)", color: usarSubsidio ? "#000" : "var(--gray-mid)", border: usarSubsidio ? "none" : "1px solid var(--border-subtle)" }}
+                          style={{
+                            flexShrink: 0,
+                            padding: "10px 20px", borderRadius: 10,
+                            fontWeight: 800, fontSize: 13, letterSpacing: "0.05em",
+                            transition: "all 0.2s", cursor: "pointer",
+                            background: usarSubsidio ? "#4ade80" : "rgba(255,255,255,0.08)",
+                            color: usarSubsidio ? "#052e16" : "var(--gray-mid)",
+                            border: usarSubsidio ? "none" : "1px solid var(--border-subtle)",
+                          }}
                         >
                           {usarSubsidio ? "LIGADO" : "DESLIGADO"}
                         </button>
                       </div>
-                      {!usarSubsidio ? (
-                        <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 8, background: "rgba(251,146,60,0.1)", color: "#fb923c", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
-                          ⚠️ Mostrando valores reais sem o desconto do governo (pior cenário).
-                        </div>
-                      ) : (
-                        <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 8, background: "rgba(74,222,128,0.1)", color: "#4ade80", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
-                          <CheckCircle2 size={15} /> Subsídio descontado do saldo a financiar! Taxa de {taxaAtual}% a.a.
-                        </div>
-                      )}
+
+                      {/* Linha inferior — status */}
+                      <div style={{
+                        padding: "12px 24px",
+                        borderTop: `1px solid ${usarSubsidio ? "rgba(74,222,128,0.15)" : "rgba(251,146,60,0.15)"}`,
+                        background: usarSubsidio ? "rgba(74,222,128,0.06)" : "rgba(251,146,60,0.06)",
+                        display: "flex", alignItems: "center", gap: 8,
+                      }}>
+                        {usarSubsidio ? (
+                          <>
+                            <CheckCircle2 size={14} color="#4ade80" style={{ flexShrink: 0 }} />
+                            <span style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>
+                              Subsídio descontado do saldo a financiar · Taxa de {taxaAtual}% a.a.
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ fontSize: 14, lineHeight: 1, flexShrink: 0 }}>⚠️</span>
+                            <span style={{ fontSize: 12, color: "#fb923c", fontWeight: 600 }}>
+                              Simulando sem subsídio — pior cenário para o comprador.
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </motion.div>
                   )}
 

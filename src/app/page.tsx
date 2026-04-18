@@ -34,19 +34,7 @@ export default function HomePage() {
               />
             </div>
 
-            <Link
-              href="/admin"
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "10px 20px", borderRadius: 10,
-                border: "1px solid var(--border-subtle)",
-                color: "var(--gray-mid)", fontSize: 13, fontWeight: 600,
-                textDecoration: "none", transition: "all 150ms ease",
-              }}
-              className="btn-ghost"
-            >
-              Painel Admin
-            </Link>
+            
           </div>
         </div>
       </header>

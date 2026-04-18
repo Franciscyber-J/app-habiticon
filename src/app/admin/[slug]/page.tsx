@@ -8,7 +8,7 @@ import { use } from "react";
 import {
   ArrowLeft, Upload, Trash2, Image as ImageIcon,
   DollarSign, FileText, Settings2, Eye, CheckCircle,
-  Info, Save, AlertCircle, MapPin, ExternalLink,
+  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut,
 } from "lucide-react";
 
 type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao";
@@ -133,6 +133,91 @@ function AmbienteUpload({ amb, fotos, slug, onAdd, onRemove }: {
   );
 }
 
+
+// ─── Parser de coordenadas DMS ────────────────────────────
+// Aceita: 16°24'17.1"S 51°06'50.3"W  ← cópia direta do Google Maps
+// Aceita: -16.4047, -51.1140          ← decimal simples
+function parseDMS(input: string): { lat: number; lng: number } | null {
+  const trimmed = input.trim();
+
+  // Já está em decimal (ex: -16.4047, -51.1140)
+  const dec = trimmed.match(/^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$/);
+  if (dec) return { lat: parseFloat(dec[1]), lng: parseFloat(dec[2]) };
+
+  // DMS com símbolos (ex: 16°24'17.1"S 51°06'50.3"W)
+  const dms = trimmed.match(
+    /(\d+)[°\s](\d+)['\s](\d+\.?\d*)["]?\s*([NSns])[,\s]+(\d+)[°\s](\d+)['\s](\d+\.?\d*)["]?\s*([EWew])/
+  );
+  if (!dms) return null;
+
+  const lat = (parseInt(dms[1]) + parseInt(dms[2]) / 60 + parseFloat(dms[3]) / 3600)
+    * (/[Ss]/.test(dms[4]) ? -1 : 1);
+  const lng = (parseInt(dms[5]) + parseInt(dms[6]) / 60 + parseFloat(dms[7]) / 3600)
+    * (/[Ww]/.test(dms[8]) ? -1 : 1);
+
+  return { lat: parseFloat(lat.toFixed(6)), lng: parseFloat(lng.toFixed(6)) };
+}
+
+function CoordParser({ lat, lng, onChange }: {
+  lat: number; lng: number;
+  onChange: (lat: number, lng: number) => void;
+}) {
+  const [texto, setTexto] = React.useState("");
+  const [erro, setErro] = React.useState("");
+  const [ok, setOk] = React.useState(false);
+  const [parsed, setParsed] = React.useState<{lat:number;lng:number}|null>(null);
+
+  const aplicar = () => {
+    if (!texto.trim()) return;
+    const result = parseDMS(texto);
+    if (result) {
+      onChange(result.lat, result.lng);
+      setParsed(result);
+      setErro("");
+      setOk(true);
+      setTimeout(() => { setOk(false); setParsed(null); }, 4000);
+    } else {
+      setErro("Formato não reconhecido. Cole as coordenadas como aparecem no Google Maps.");
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <FieldLabel hint="Cole diretamente do Google Maps — qualquer formato aceito">
+        Colar Coordenadas
+      </FieldLabel>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          type="text"
+          className="input-field"
+          style={{ flex: 1, fontSize: 14 }}
+          placeholder={`16°24'17.1"S 51°06'50.3"W`}
+          value={texto}
+          onChange={e => { setTexto(e.target.value); setErro(""); setOk(false); }}
+          onKeyDown={e => e.key === "Enter" && aplicar()}
+        />
+        <button
+          onClick={aplicar}
+          style={{
+            padding: "0 18px", borderRadius: 10, cursor: "pointer", border: "none",
+            fontWeight: 700, fontSize: 13, flexShrink: 0,
+            background: ok ? "#16a34a" : "var(--terracota)", color: "white",
+            transition: "background 0.3s",
+          }}
+        >
+          {ok ? "✓ Aplicado" : "Aplicar"}
+        </button>
+      </div>
+      {erro && <p style={{ fontSize: 11, color: "#f87171" }}>⚠️ {erro}</p>}
+      {ok && parsed && (
+        <p style={{ fontSize: 11, color: "#4ade80" }}>
+          ✓ Lat: {parsed.lat} · Lng: {parsed.lng}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function AdminEmpreendimentoPage({ params }: Params) {
   const { slug } = use(params);
   const [emp, setEmp]   = useState<any>(null);
@@ -181,6 +266,12 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
       obj[last] = value;
       return next;
     });
+  }, []);
+
+  const fazerLogout = useCallback(async () => {
+    if (!confirm("Sair do painel administrativo?")) return;
+    await fetch("/api/auth", { method: "DELETE" });
+    window.location.href = "/admin/login";
   }, []);
 
   const salvar = useCallback(async () => {
@@ -346,6 +437,18 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
           <Link href={`/${slug}`} target="_blank" className="btn-ghost" style={{ justifyContent: "center", fontSize: 13, gap: 6 }}>
             <Eye size={14} /> Visualizar site
           </Link>
+          <button
+            onClick={fazerLogout}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              padding: "9px 16px", borderRadius: 10, cursor: "pointer",
+              background: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.2)",
+              color: "#f87171", fontSize: 13, fontWeight: 600,
+            }}
+          >
+            <LogOut size={14} /> Sair
+          </button>
         </div>
       </aside>
 
@@ -632,29 +735,41 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                 </div>
               </Card>
 
-              <Card title="🗺️ Coordenadas GPS" subtitle="Usadas para exibir o mapa e calcular distâncias. Encontre as coordenadas no Google Maps clicando com botão direito no local.">
+              <Card title="🗺️ Coordenadas GPS" subtitle={`Cole as coordenadas do Google Maps em qualquer formato — DMS (16°24'17.1"S 51°06'50.3"W) ou decimal (-16.4047, -51.1140).`}>
                 <div style={{display:"flex",flexDirection:"column",gap:20}}>
+
+                  {/* Input DMS — cola direto do Google Maps */}
+                  <CoordParser
+                    lat={emp.coordenadas?.lat ?? 0}
+                    lng={emp.coordenadas?.lng ?? 0}
+                    onChange={(lat,lng)=>{
+                      // Um único update evita condição de corrida entre os dois setState
+                      update("coordenadas", { ...(emp.coordenadas ?? {}), lat, lng });
+                    }}
+                  />
+
+                  {/* Campos individuais para ajuste fino */}
                   <Two>
                     <div>
-                      <FieldLabel hint="Latitude — número negativo para sul do equador">Latitude</FieldLabel>
+                      <FieldLabel hint="Latitude decimal (sul = negativo)">Latitude</FieldLabel>
                       <NumInput
                         value={emp.coordenadas?.lat ?? 0}
                         step={0.000001}
-                        placeholder="-16.4428"
+                        placeholder="-16.404750"
                         onChange={v=>update("coordenadas.lat",v)}/>
                     </div>
                     <div>
-                      <FieldLabel hint="Longitude — número negativo para oeste do meridiano">Longitude</FieldLabel>
+                      <FieldLabel hint="Longitude decimal (oeste = negativo)">Longitude</FieldLabel>
                       <NumInput
                         value={emp.coordenadas?.lng ?? 0}
                         step={0.000001}
-                        placeholder="-51.1171"
+                        placeholder="-51.113972"
                         onChange={v=>update("coordenadas.lng",v)}/>
                     </div>
                   </Two>
 
-                  {/* Link para conferir no Google Maps */}
-                  {emp.coordenadas?.lat && emp.coordenadas?.lng && (
+                  {/* Link para conferir */}
+                  {(emp.coordenadas?.lat !== 0 && emp.coordenadas?.lat !== undefined && emp.coordenadas?.lng !== 0 && emp.coordenadas?.lng !== undefined) && (
                     <a
                       href={`https://www.google.com/maps?q=${emp.coordenadas.lat},${emp.coordenadas.lng}`}
                       target="_blank" rel="noopener noreferrer"
@@ -669,12 +784,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                       Conferir no Google Maps
                     </a>
                   )}
-
-                  <div style={{padding:"12px 16px",borderRadius:10,background:"rgba(0,0,0,0.2)",border:"1px solid var(--border-subtle)"}}>
-                    <p style={{fontSize:11,color:"var(--gray-dark)",lineHeight:1.6}}>
-                      <strong style={{color:"var(--gray-mid)"}}>Como encontrar as coordenadas:</strong> Acesse o Google Maps, navegue até o terreno do empreendimento, clique com o botão direito sobre o local exato e selecione as coordenadas que aparecem no menu. Cole o primeiro número no campo Latitude e o segundo em Longitude.
-                    </p>
-                  </div>
                 </div>
               </Card>
 
@@ -683,17 +792,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
 
         </AnimatePresence>
 
-        {/* BOTÃO FLUTUANTE */}
-        <AnimatePresence>
-          {isDirty&&(
-            <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} exit={{opacity:0,y:20}} style={{position:"fixed",bottom:24,right:24,zIndex:50}}>
-              <button onClick={salvar} disabled={saveState==="saving"}
-                style={{display:"inline-flex",alignItems:"center",gap:10,padding:"14px 24px",borderRadius:14,background:"var(--terracota)",color:"white",border:"none",fontWeight:700,fontSize:14,cursor:"pointer",boxShadow:"0 8px 30px rgba(175,111,83,0.5)"}}>
-                <Save size={17}/>{saveState==="saving"?"Salvando...":"Salvar alterações"}
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+
 
       
           </div>

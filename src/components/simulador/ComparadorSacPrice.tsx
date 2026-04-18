@@ -226,7 +226,7 @@ export function ComparadorSacPrice({ valorFinanciado, taxaAnual, prazoMeses, ren
         <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 16 }}>
           Evolução das parcelas ao longo do tempo
         </p>
-        <div style={{ height: 150, minHeight: 150 }}>
+        <div style={{ height: 150, minHeight: 150, minWidth: 0 }}>
           <ResponsiveContainer width="100%" height={150}>
             <LineChart data={dadosGrafico} margin={{ top: 4, right: 4, left: 0, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />

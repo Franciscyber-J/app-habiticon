@@ -385,22 +385,44 @@ export interface JurosObra {
 export function calcularJurosObra(
   valorFinanciado: number,
   taxaAnual: number,
-  valorLote = 48000
+  valorLote = 48000,
+  // Percentuais cumulativos por mês (ex: [18,44,63,85,95,100])
+  // O mês 0 = assinatura (80% do lote) é sempre inserido automaticamente
+  percentuaisCustom?: number[]
 ): JurosObra[] {
-  const taxaMensal   = taxaAnualParaMensal(taxaAnual);
+  const taxaMensal     = taxaAnualParaMensal(taxaAnual);
   const libertaInicial = valorLote * 0.80;
   const construirSaldo = valorFinanciado - libertaInicial;
 
+  // Descrições automáticas baseadas no número de medições
+  const descricoesPadrao = [
+    "Fundações e Infraestrutura",
+    "Supraestrutura e Alvenaria",
+    "Cobertura e Revestimentos",
+    "Pisos, Instalações e Acabamentos",
+    "Pinturas e Louças",
+    "Habite-se — Retenção Final (5%)",
+  ];
+
+  // Percentuais padrão caso não haja custom (retrocompatível)
+  const pctsCumulativos = percentuaisCustom && percentuaisCustom.length > 0
+    ? percentuaisCustom
+    : [25, 50, 75, 100];
+
+  // Mês 0 = assinatura (80% do lote) + medições seguintes
   const etapas = [
-    { pct: 0,    desc: `Assinatura: 80% do Lote (${formatBRL(libertaInicial)})` },
-    { pct: 0.25, desc: "Fundações e Estrutura" },
-    { pct: 0.50, desc: "Alvenaria e Revestimento" },
-    { pct: 0.75, desc: "Pintura e Instalações" },
-    { pct: 1.00, desc: "Habite-se / Entrega" },
+    {
+      pctDoConstruir: 0,
+      desc: `Assinatura: 80% do Lote (${formatBRL(libertaInicial)})`,
+    },
+    ...pctsCumulativos.map((pctAcum, i) => ({
+      pctDoConstruir: pctAcum / 100,
+      desc: descricoesPadrao[i] ?? `Medição ${i + 1}`,
+    })),
   ];
 
   return etapas.map((etapa, i) => {
-    const valorAcumulado = libertaInicial + construirSaldo * etapa.pct;
+    const valorAcumulado = libertaInicial + construirSaldo * etapa.pctDoConstruir;
     return {
       mes: i + 1,
       percentualLiberado: Math.round((valorAcumulado / valorFinanciado) * 100),

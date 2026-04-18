@@ -52,13 +52,14 @@
       "taxaFaixa3Cotista": 7.66,
       "taxaMercado": 12,
       "igpmMensal": 0.8,
-      "mesesObra": 5,
+      "mesesObra": 6,
       "cotaMaximaCaixa": 0.8,
       "percentualObraPorMes": [
-        20,
-        40,
-        55,
-        75,
+        18,
+        44,
+        63,
+        85,
+        95,
         100
       ],
       "cub": {
