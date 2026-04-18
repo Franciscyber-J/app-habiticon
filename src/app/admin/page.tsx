@@ -275,7 +275,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                 alt="Habiticon"
                 width={280}
                 height={80}
-                style={{ height: 48, width: "auto", objectFit: "contain", flexShrink: 0 }}
+                style={{ height: 56, width: "auto", objectFit: "contain", flexShrink: 0 }}
                 priority
               />
 
@@ -285,7 +285,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                 background: "rgba(249,115,22,0.15)",
                 border: "1px solid rgba(249,115,22,0.3)",
               }}>
-                <span className="hidden sm:block" style={{ fontSize: 11, fontWeight: 800, color: "#fb923c", letterSpacing: "0.1em", textTransform: "uppercase" }}>Admin</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: "#fb923c", letterSpacing: "0.1em", textTransform: "uppercase" }}>Admin</span>
               </div>
             </div>
 
@@ -659,14 +659,15 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                             exit={{ opacity: 0, scale: 0.97 }}
                             transition={{ delay: i * 0.03 }}
                             style={{
-                              padding: "16px 18px",
+                              padding: "14px 16px",
                               background: "var(--bg-card)",
                               border: `1px solid ${STATUS_LEAD[lead.status as LeadStatus]?.border ?? "var(--border-subtle)"}`,
-                              borderRadius: 12,
-                              display: "flex", alignItems: "center",
-                              justifyContent: "space-between", gap: 14,
+                              borderRadius: 14,
+                              display: "flex", flexDirection: "column", gap: 12,
                             }}
                           >
+                            {/* Linha 1: Avatar + info */}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
                               {/* Avatar com cor do status */}
                               <div style={{
@@ -707,8 +708,10 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                               </div>
                             </div>
 
-                            {/* Ações */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                            </div>{/* fecha linha 1 space-between */}
+
+                            {/* Linha 2: Ações */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                               {/* Seletor de status */}
                               <select
                                 value={lead.status ?? "novo"}
