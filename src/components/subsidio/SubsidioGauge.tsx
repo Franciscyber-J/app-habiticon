@@ -164,7 +164,7 @@ export function SubsidioGauge({
                 key={faixaAtual.id}
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
-                style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}
+                style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}
               >
                 {/* Enquadramento */}
                 <div style={{ padding: "20px 16px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.2)", border: `1px solid ${faixaAtual.cor}30` }}>

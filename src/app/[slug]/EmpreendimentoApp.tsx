@@ -567,7 +567,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
         </div>
 
         {/* CONTEÚDO PRINCIPAL */}
-        <main style={{ flex: 1, padding: "40px 40px 60px", overflowY: "auto" }}>
+        <main style={{ flex: 1, padding: "clamp(20px,4vw,40px) clamp(16px,4vw,40px) 60px", overflowY: "auto" }}>
           <div style={{ maxWidth: 900, margin: "0 auto" }}>
             <AnimatePresence mode="wait">
 
@@ -591,7 +591,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                   </div>
                   {rendaPreenchida && (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                      <button onClick={() => setModuloAtivo("simulador")} className="btn-primary w-full" style={{ padding: "16px 28px", fontSize: 15 }}>
+                      <button onClick={() => setModuloAtivo("simulador")} className="btn-primary w-full" style={{ padding: "clamp(14px,3vw,16px) 24px", fontSize: 15 }}>
                         Ir para o Simulador <ChevronRight size={18} />
                       </button>
                     </motion.div>
@@ -745,7 +745,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                         return (
                           <div style={{ marginBottom: 20, padding: "16px 18px", borderRadius: 10, background: `${cor}10`, border: `1px solid ${cor}30` }}>
                             <p style={{ fontSize: 13, fontWeight: 700, color: cor, marginBottom: 10 }}>{status}</p>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: 10 }}>
                               <div>
                                 <p style={{ fontSize: 10, color: "var(--gray-dark)", marginBottom: 4 }}>Laudo CUB cobre</p>
                                 <p style={{ fontSize: 16, fontWeight: 800, color: cor }}>{pct}%</p>
@@ -784,7 +784,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
 
                   {/* Cards resultado */}
                   {modelo && resultadoSimulacao && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                         <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--gray-mid)" }}>
                           Composição da Entrada
@@ -872,7 +872,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                     </div>
                   )}
                   {resultadoSimulacao && resultadoSimulacao.finLiberadoPRICE > 0 && (
-                    <button onClick={() => setModuloAtivo("proposta")} className="btn-primary w-full" style={{ padding: "16px 28px", fontSize: 15 }}>
+                    <button onClick={() => setModuloAtivo("proposta")} className="btn-primary w-full" style={{ padding: "clamp(14px,3vw,16px) 24px", fontSize: 15 }}>
                       Gerar Proposta PDF <ChevronRight size={18} />
                     </button>
                   )}
@@ -918,7 +918,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                             ]),
                             ["Parcela PRICE (Fixa)",                 formatBRL(resultadoSimulacao?.parcelaPricePrimeira || 0)],
                           ].map(([k, v]) => (
-                            <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                            <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", flexWrap: "wrap" }}>
                               <span style={{ fontSize: 13, color: k.startsWith("  ") ? "var(--gray-dark)" : k.includes("Laudo") ? "var(--terracota)" : "var(--gray-mid)" }}>
                                 {k.trim()}
                               </span>
@@ -974,7 +974,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                       <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 20 }}>
                         Localização — {emp.cidade}, {emp.estado}
                       </h3>
-                      <div style={{ borderRadius: 12, overflow: "hidden", height: 340 }}>
+                      <div style={{ borderRadius: 12, overflow: "hidden", height: "clamp(220px, 40vw, 340px)" }}>
                         <iframe
                           src={`https://maps.google.com/maps?q=${emp.coordenadas.lat},${emp.coordenadas.lng}&z=14&output=embed`}
                           width="100%" height="100%" style={{ border: 0 }}

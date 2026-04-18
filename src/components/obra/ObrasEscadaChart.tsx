@@ -158,7 +158,7 @@ export function ObrasEscadaChart({
                 Mês {mesSel.mes} — {mesSel.descricao}
               </p>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: 12 }}>
               <div>
                 <p style={{ fontSize: 11, color: "var(--gray-mid)", marginBottom: 8 }}>% Liberado</p>
                 <p style={{ fontWeight: 800, fontSize: 22, color: cores[mesSelecionado] }}>{mesSel.percentual}%</p>
@@ -181,33 +181,37 @@ export function ObrasEscadaChart({
         <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 14 }}>
           Linha do tempo da obra
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${dados.length}, 1fr)`, gap: 10 }}>
-          {dados.map((d, i) => (
-            <button
-              key={i}
-              onClick={() => setMesSelecionado(i)}
-              style={{
-                padding: "14px 10px",
-                borderRadius: 12,
-                textAlign: "center",
-                cursor: "pointer",
-                transition: "all 200ms ease",
-                background: mesSelecionado === i ? `${cores[i]}18` : "rgba(0,0,0,0.25)",
-                border: `1px solid ${mesSelecionado === i ? cores[i] : "var(--border-subtle)"}`,
-                transform: mesSelecionado === i ? "translateY(-2px)" : "none",
-              }}
-            >
-              <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 8, color: mesSelecionado === i ? cores[i] : "var(--gray-mid)" }}>
-                Mês {d.mes}
-              </div>
-              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6, color: cores[i] }}>
-                {formatBRLDecimal(d.juros)}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--gray-dark)" }}>
-                {d.percentual}%
-              </div>
-            </button>
-          ))}
+        {/* Scroll horizontal em mobile, grid em desktop */}
+        <div style={{ overflowX: "auto", marginInline: -4, paddingInline: 4, paddingBottom: 4 }}>
+          <div style={{ display: "flex", gap: 8, minWidth: "max-content" }}>
+            {dados.map((d, i) => (
+              <button
+                key={i}
+                onClick={() => setMesSelecionado(i)}
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  textAlign: "center",
+                  cursor: "pointer",
+                  transition: "all 200ms ease",
+                  background: mesSelecionado === i ? `${cores[i]}18` : "rgba(0,0,0,0.25)",
+                  border: `1px solid ${mesSelecionado === i ? cores[i] : "var(--border-subtle)"}`,
+                  transform: mesSelecionado === i ? "translateY(-2px)" : "none",
+                  minWidth: 80, flexShrink: 0,
+                }}
+              >
+                <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6, color: mesSelecionado === i ? cores[i] : "var(--gray-mid)", whiteSpace: "nowrap" }}>
+                  Mês {d.mes}
+                </div>
+                <div style={{ fontWeight: 800, fontSize: 12, marginBottom: 4, color: cores[i], whiteSpace: "nowrap" }}>
+                  {formatBRLDecimal(d.juros)}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--gray-dark)" }}>
+                  {d.percentual}%
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -228,7 +232,7 @@ export function ObrasEscadaChart({
           </p>
           {sacAprovado ? (
             /* SAC + PRICE lado a lado */
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
               <div style={{ padding: "14px 16px", borderRadius: 12, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>
                 <p style={{ fontSize: 10, fontWeight: 700, color: "#4ade80", textTransform: "uppercase", marginBottom: 4 }}>Tabela SAC (1ª Parcela)</p>
                 <p style={{ fontSize: 20, fontWeight: 800, color: "var(--gray-light)" }}>{formatBRLDecimal(parcelaSAC)}</p>

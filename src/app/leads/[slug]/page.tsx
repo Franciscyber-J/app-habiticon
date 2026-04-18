@@ -128,14 +128,14 @@ export default function LeadsPublicosPage({ params }: { params: Promise<{ slug: 
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {ultimaAtu && (
-                <span style={{ fontSize: 11, color: "var(--gray-dark)", display: "flex", alignItems: "center", gap: 5 }}>
+                <span className="hidden sm:flex" style={{ fontSize: 11, color: "var(--gray-dark)", alignItems: "center", gap: 5 }}>
                   <span style={{
                     width: 6, height: 6, borderRadius: "50%", display: "inline-block", flexShrink: 0,
                     background: atualizando ? "#fbbf24" : "#4ade80",
                     boxShadow: atualizando ? "0 0 6px #fbbf24" : "0 0 6px #4ade80",
                     transition: "all 0.3s ease",
                   }} />
-                  {atualizando ? "Sincronizando…" : `Sincronizado às ${ultimaAtu.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`}
+                  {atualizando ? "Sync…" : `${ultimaAtu.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`}
                 </span>
               )}
               <button
@@ -157,7 +157,7 @@ export default function LeadsPublicosPage({ params }: { params: Promise<{ slug: 
         </div>
       </header>
 
-      <main className="container-app" style={{ padding: "36px 32px 80px" }}>
+      <main className="container-app" style={{ padding: "clamp(20px,4vw,36px) clamp(16px,4vw,32px) 80px" }}>
 
         {/* Título + contador */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
@@ -194,14 +194,14 @@ export default function LeadsPublicosPage({ params }: { params: Promise<{ slug: 
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {leads.map((lead, i) => (
               <div key={lead.id || i} style={{
-                padding: "18px 20px",
+                padding: "14px 16px",
                 background: "var(--bg-card)",
                 border: `1px solid ${STATUS_LEAD[lead.status as LeadStatus]?.border ?? "var(--border-subtle)"}`,
                 borderRadius: 14,
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16,
+                display: "flex", flexDirection: "column", gap: 12,
               }}>
-                {/* Avatar com cor do status */}
-                <div style={{ display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
                   <div style={{
                     width: 44, height: 44, borderRadius: 12, flexShrink: 0,
                     display: "flex", alignItems: "center", justifyContent: "center",
@@ -240,8 +240,8 @@ export default function LeadsPublicosPage({ params }: { params: Promise<{ slug: 
                   </div>
                 </div>
 
-                {/* Status + WhatsApp */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   {/* Seletor de status — corretor pode atualizar */}
                   <select
                     value={lead.status ?? "novo"}

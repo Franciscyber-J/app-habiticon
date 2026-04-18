@@ -8,7 +8,7 @@ import { use } from "react";
 import {
   ArrowLeft, Upload, Trash2, Image as ImageIcon,
   DollarSign, FileText, Settings2, Eye, CheckCircle,
-  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut,
+  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X,
 } from "lucide-react";
 
 type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao";
@@ -227,6 +227,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const fileRef = useRef<HTMLInputElement>(null);
   const [upType, setUpType] = useState<"imagens"|"plantas">("imagens");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const isDirty = emp && orig && JSON.stringify(emp) !== JSON.stringify(orig);
@@ -355,14 +356,17 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
   return (
     <div className="min-h-screen flex" style={{ background: "var(--bg-base)" }}>
 
-      {/* ── SIDEBAR ──────────────────────────────────────── */}
-      <aside style={{
-        width: 260, minWidth: 260, height: "100vh", position: "sticky", top: 0,
-        background: "rgba(15,30,22,0.98)", backdropFilter: "blur(24px)",
-        borderRight: "1px solid var(--border-subtle)",
-        display: "flex", flexDirection: "column", overflow: "hidden",
-        flexShrink: 0,
-      }}>
+      {/* ═══ SIDEBAR DESKTOP (sticky, sempre visível) ══════ */}
+      <aside
+        className="hidden lg:flex"
+        style={{
+          width: 260, minWidth: 260, flexShrink: 0,
+          position: "sticky", top: 0, height: "100vh",
+          background: "rgba(15,30,22,0.98)", backdropFilter: "blur(24px)",
+          borderRight: "1px solid var(--border-subtle)",
+          flexDirection: "column", overflow: "hidden",
+        }}
+      >
         {/* Topo: logo + voltar */}
         <div style={{ padding: "20px 16px 16px", borderBottom: "1px solid var(--border-subtle)" }}>
           <Link href="/admin" className="btn-ghost" style={{ padding: "8px 10px", marginBottom: 16, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--gray-mid)" }}
@@ -386,7 +390,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
               const Icon = s.icon;
               const ativo = section === s.id;
               return (
-                <button key={s.id} onClick={() => setSection(s.id)} style={{
+                <button key={s.id} onClick={() => { setSection(s.id); setSidebarOpen(false); }} style={{
                   display: "flex", alignItems: "center", gap: 12,
                   padding: "11px 14px", borderRadius: 12, border: "none",
                   cursor: "pointer", textAlign: "left", width: "100%",
@@ -452,14 +456,99 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
         </div>
       </aside>
 
+      {/* ═══ SIDEBAR MOBILE (drawer) ════════════════════════ */}
+      {/* Overlay */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="lg:hidden"
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 49, backdropFilter: "blur(3px)" }}
+        />
+      )}
+      {/* Drawer */}
+      <div
+        className="lg:hidden"
+        style={{
+          position: "fixed", top: 0, left: 0, height: "100%", width: 280,
+          background: "rgba(10,25,16,0.99)", backdropFilter: "blur(24px)",
+          borderRight: "1px solid var(--border-subtle)",
+          display: "flex", flexDirection: "column", overflow: "hidden",
+          transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
+          transition: "transform 280ms cubic-bezier(.4,0,.2,1)",
+          zIndex: 50,
+        }}
+      >
+        {/* Mesmo conteúdo da sidebar desktop */}
+        <div style={{ padding: "16px 14px 12px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <Image src="/logo.png" alt="Habiticon" width={140} height={40} style={{ height: 36, width: "auto" }} priority />
+          <button onClick={() => setSidebarOpen(false)} style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-subtle)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gray-light)" }}>
+            <X size={16} />
+          </button>
+        </div>
+        <div style={{ padding: "8px 10px", overflowY: "auto", flex: 1 }}>
+          {SECTIONS.map(s => {
+            const Icon = s.icon;
+            const ativo = section === s.id;
+            return (
+              <button key={s.id} onClick={() => { setSection(s.id); setSidebarOpen(false); }} style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "12px 14px", borderRadius: 12, border: "none",
+                cursor: "pointer", textAlign: "left", width: "100%", marginBottom: 4,
+                background: ativo ? "var(--terracota-glow)" : "transparent",
+                outline: ativo ? "1px solid var(--border-active)" : "1px solid transparent",
+              }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: ativo ? "var(--terracota)" : "rgba(0,0,0,0.3)" }}>
+                  <Icon size={15} color={ativo ? "white" : "var(--gray-mid)"} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: ativo ? "var(--terracota-light)" : "var(--gray-light)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</p>
+                  <p style={{ fontSize: 11, color: "var(--gray-dark)", marginTop: 1 }}>{s.hint}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ padding: "10px", borderTop: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <button onClick={salvar} disabled={saveState === "saving"} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px 16px", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, background: isDirty ? "var(--terracota)" : "rgba(255,255,255,0.07)", color: isDirty ? "white" : "var(--gray-dark)" }}>
+            <saveCfg.Icon size={15} />{saveCfg.label}
+          </button>
+          <button onClick={fazerLogout} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 16px", borderRadius: 10, cursor: "pointer", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 13, fontWeight: 600 }}>
+            <LogOut size={14} /> Sair
+          </button>
+        </div>
+      </div>
+
       {/* ── CONTEÚDO ─────────────────────────────────────── */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
 
-        {/* Breadcrumb top */}
-        <div style={{
+        {/* Header mobile — hamburger + nome */}
+        <div className="lg:hidden" style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "12px 16px", background: "rgba(15,30,22,0.98)",
+          borderBottom: "1px solid var(--border-subtle)",
+          position: "sticky", top: 0, zIndex: 30,
+        }}>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+            width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-subtle)",
+            cursor: "pointer", color: "var(--gray-light)",
+          }}>
+            {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
+          <Image src="/logo.png" alt="Habiticon" width={140} height={40}
+            style={{ height: 36, width: "auto" }} priority />
+          <span style={{
+            marginLeft: "auto", fontSize: 11, fontWeight: 700,
+            color: "#fb923c", textTransform: "uppercase", letterSpacing: "0.08em",
+          }}>Admin</span>
+        </div>
+
+        {/* Breadcrumb top — só desktop */}
+        <div className="hidden lg:flex" style={{
           padding: "14px 32px", background: "rgba(15,30,22,0.6)",
           borderBottom: "1px solid var(--border-subtle)",
-          display: "flex", alignItems: "center", gap: 10,
+          alignItems: "center", gap: 10,
         }}>
           {(() => { const s = SECTIONS.find(x => x.id === section); const Icon = s?.icon ?? DollarSign; return (
             <>
@@ -470,7 +559,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
           ); })()}
         </div>
 
-        <main style={{ flex: 1, overflowY: "auto", padding: "36px 40px 80px" }}>
+        <main style={{ flex: 1, overflowY: "auto", padding: "clamp(16px,3vw,36px) clamp(12px,3vw,40px) 80px" }}>
           <div style={{ maxWidth: 740, margin: "0 auto" }}>
 
             <AnimatePresence mode="wait">

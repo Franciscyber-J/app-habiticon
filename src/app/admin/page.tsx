@@ -285,9 +285,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                 background: "rgba(249,115,22,0.15)",
                 border: "1px solid rgba(249,115,22,0.3)",
               }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: "#fb923c", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                  Admin
-                </span>
+                <span className="hidden sm:block" style={{ fontSize: 11, fontWeight: 800, color: "#fb923c", letterSpacing: "0.1em", textTransform: "uppercase" }}>Admin</span>
               </div>
             </div>
 
@@ -617,7 +615,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                   <div key={emp.slug}>
                     {/* Cabeçalho do grupo */}
                     <div style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      display: "flex", alignItems: "flex-start", justifyContent: "space-between",
                       marginBottom: 14, flexWrap: "wrap", gap: 10,
                     }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
