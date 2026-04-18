@@ -274,21 +274,36 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
         && navigator.canShare({ files: [pdfFile] });
 
       if (canShareFile) {
-        // Mobile: compartilha PDF direto (usuário escolhe WhatsApp)
-        await navigator.share({
-          files: [pdfFile],
-          text: mensagemWpp,
-        });
+        // Mobile: compartilha PDF direto (usuário escolhe WhatsApp/Drive/etc)
+        try {
+          await navigator.share({
+            files: [pdfFile],
+            title: nomeArquivo,
+            text: mensagemWpp,
+          });
+          // Share concluído com sucesso
+          setEtapa("success");
+        } catch (shareErr: any) {
+          // Usuário cancelou o share ou share falhou
+          if (shareErr?.name === "AbortError") {
+            // Cancelou — não mostrar erro, só fechar loading
+            setLoading(false);
+            return;
+          }
+          // Share falhou — fallback para download
+          doc.save(nomeArquivo);
+          setEtapa("success");
+        }
       } else {
         // Desktop: baixa o PDF e abre WhatsApp Web com a mensagem
         doc.save(nomeArquivo);
         const wppUrl = `https://wa.me/55${lead.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(mensagemWpp)}`;
         window.open(wppUrl, "_blank");
+        setEtapa("success");
       }
-
-      setEtapa("success");
     } catch (err: any) {
-      // Usuário cancelou o share — não é erro real
+      // Erro na geração do PDF
+
       if (err?.name !== "AbortError") {
         console.error("Erro ao gerar PDF:", err);
       }
@@ -493,7 +508,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
 
                   <h2 className="text-title mb-2">PDF Gerado com Sucesso!</h2>
                   <p className="text-muted mb-6">
-                    A proposta de <strong style={{ color: "var(--gray-light)" }}>{lead.nome}</strong> foi baixada.
+                    A proposta de <strong style={{ color: "var(--gray-light)" }}>{lead.nome}</strong> foi gerada com sucesso.
                   </p>
 
                   <div className="space-y-3">
