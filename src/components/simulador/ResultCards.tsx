@@ -6,7 +6,6 @@ import { CreditCard, FileText, AlertTriangle, Percent, CheckCircle2, SlidersHori
 import {
   formatBRL, formatBRLDecimal,
   parcelamentoCartao, parcelamentoBoleto,
-  C6_MDR, C6_ADICIONAL_PARCELA,
   calcularEntradaEmbutida,
 } from "@/lib/calculos";
 import { useAnimatedNumber } from "@/hooks/useAnimatedNumber";
@@ -46,6 +45,9 @@ function InfoLine({ label, value, valueColor, last = false }: {
 
 export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoPercentChange }: ResultCardsProps) {
   const [tabAtiva, setTabAtiva] = useState<"cartao" | "boleto">("cartao");
+  
+  // NOVO: Estado para controlar a quantidade de parcelas (inicia em 5x)
+  const [qtdParcelas, setQtdParcelas] = useState<number>(5);
 
   const ato = entrada * atoPercent;
   const restanteEntrada = entrada - ato;
@@ -54,9 +56,9 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
   // Dados entrada embutida para info
   const embutida = calcularEntradaEmbutida(valorImovel, entrada, subsidio);
 
-  const cartao = parcelamentoCartao(restanteEntrada, 5);
-  const boleto = parcelamentoBoleto(restanteEntrada, 5);
-  const taxaTotalC6Pct = ((C6_MDR + C6_ADICIONAL_PARCELA) * 100).toFixed(2);
+  // NOVO: Passando a variável qtdParcelas para o motor de cálculo
+  const cartao = parcelamentoCartao(restanteEntrada, qtdParcelas);
+  const boleto = parcelamentoBoleto(restanteEntrada, qtdParcelas);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -146,13 +148,40 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
               Valor a parcelar: <strong style={{ color: "var(--gray-light)" }}>{formatBRL(restanteEntrada)}</strong>
             </p>
 
+            {/* NOVO: Seletor de Parcelas (1x a 5x) */}
+            <div style={{ marginBottom: 20 }}>
+              <p style={{ fontSize: 12, color: "var(--gray-mid)", marginBottom: 8 }}>Em quantas vezes?</p>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[1, 2, 3, 4, 5].map((num) => (
+                  <button
+                    key={num}
+                    onClick={() => setQtdParcelas(num)}
+                    style={{
+                      flex: 1,
+                      padding: "8px 0",
+                      borderRadius: 8,
+                      background: qtdParcelas === num ? "var(--terracota)" : "rgba(255,255,255,0.05)",
+                      border: `1px solid ${qtdParcelas === num ? "var(--terracota)" : "var(--border-subtle)"}`,
+                      color: qtdParcelas === num ? "#fff" : "var(--gray-mid)",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    {num}x
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Tabs */}
             <div className="tab-group" style={{ marginBottom: 20 }}>
               <button className={`tab-item flex items-center justify-center gap-2 ${tabAtiva === "cartao" ? "active" : ""}`} onClick={() => setTabAtiva("cartao")}>
-                <CreditCard size={13} />Cartão 5x
+                <CreditCard size={13} />Cartão {qtdParcelas}x
               </button>
               <button className={`tab-item flex items-center justify-center gap-2 ${tabAtiva === "boleto" ? "active" : ""}`} onClick={() => setTabAtiva("boleto")}>
-                <FileText size={13} />Boleto 5x
+                <FileText size={13} />Boleto {qtdParcelas}x
               </button>
             </div>
 
@@ -165,14 +194,16 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
                       <span style={{ fontSize: 30, fontWeight: 800, color: "var(--gray-light)" }}>{formatBRLDecimal(cartao.parcelaComJuros)}</span>
                       <span style={{ fontSize: 13, color: "var(--gray-mid)" }}>/parcela</span>
                     </div>
-                    <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>5x no cartão · maquininha C6 · taxa embutida</p>
+                    <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>{qtdParcelas}x no cartão · maquininha C6 · taxa embutida</p>
                   </div>
                   <div style={{ padding: "14px 16px", borderRadius: 12, background: "rgba(0,0,0,0.25)", border: "1px solid var(--border-subtle)" }}>
                     <InfoLine label="Valor parcelado" value={formatBRL(restanteEntrada)} />
-                    <InfoLine label="Taxa MDR" value={`${(C6_MDR * 100).toFixed(2)}%`} />
-                    <InfoLine label="Adicional por parcela" value={`${(C6_ADICIONAL_PARCELA * 100).toFixed(2)}%`} />
-                    <InfoLine label="Total com taxas (5x)" value={formatBRLDecimal(cartao.totalComJuros)} />
-                    <InfoLine label={`Custo total (${taxaTotalC6Pct}%)`} value={formatBRLDecimal(cartao.totalJuros)} valueColor="#fb923c" last />
+                    <InfoLine label={qtdParcelas === 1 ? "Taxa à vista" : "Taxa MDR Base"} value={qtdParcelas === 1 ? "2.89%" : "2.14%"} />
+                    {qtdParcelas > 1 && (
+                      <InfoLine label="Adicional por parcela" value="0.65%" />
+                    )}
+                    <InfoLine label={`Total com taxas (${qtdParcelas}x)`} value={formatBRLDecimal(cartao.totalComJuros)} />
+                    <InfoLine label={`Custo total (${cartao.taxaEfetiva?.toFixed(2) || "0.00"}%)`} value={formatBRLDecimal(cartao.totalJuros)} valueColor="#fb923c" last />
                   </div>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(34,197,94,0.07)", border: "1px solid rgba(34,197,94,0.2)" }}>
                     <CheckCircle2 size={13} color="#4ade80" style={{ flexShrink: 0, marginTop: 1 }} />
@@ -189,12 +220,12 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
                       <span style={{ fontSize: 30, fontWeight: 800, color: "var(--gray-light)" }}>{formatBRLDecimal(boleto.parcelaPorParcela)}</span>
                       <span style={{ fontSize: 13, color: "var(--gray-mid)" }}>/parcela</span>
                     </div>
-                    <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>5x no boleto · 1,99% a.m. · Tabela Price (CDC)</p>
+                    <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>{qtdParcelas}x no boleto · 1,99% a.m. · Tabela Price (CDC)</p>
                   </div>
                   <div style={{ padding: "14px 16px", borderRadius: 12, background: "rgba(0,0,0,0.25)", border: "1px solid var(--border-subtle)" }}>
                     <InfoLine label="Valor parcelado" value={formatBRL(restanteEntrada)} />
                     <InfoLine label="Taxa de crédito" value="1,99% a.m. (CDC)" />
-                    <InfoLine label="Total com juros (5x)" value={formatBRLDecimal(boleto.totalComJuros)} />
+                    <InfoLine label={`Total com juros (${qtdParcelas}x)`} value={formatBRLDecimal(boleto.totalComJuros)} />
                     <InfoLine label="Custo total dos juros" value={formatBRLDecimal(boleto.totalJuros)} valueColor="#fb923c" last />
                   </div>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px solid var(--border-subtle)" }}>

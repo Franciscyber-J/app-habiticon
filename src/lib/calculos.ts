@@ -83,13 +83,57 @@ export function getMipFator(idade: number): number {
   return bracket?.fator ?? CAIXA_FATOR_MIP; // fallback para o fator padrão
 }
 
+// ===================================================
+// CONSTANTES E CÁLCULOS DA MAQUININHA C6 E BOLETO
+// ===================================================
 export const C6_MDR               = 0.0214;
-export const C6_ADICIONAL_PARCELA = 0.0325;
-export const C6_FATOR             = 1 / (1 - C6_MDR - C6_ADICIONAL_PARCELA);
-export const TAXA_BOLETO_MENSAL   = 1.99;
+export const C6_ADICIONAL_PARCELA = 0.0065; // FIX: era 0.0325, agora é 0.65% correto
+export const C6_MDR_A_VISTA       = 0.0289; // Taxa de 1x (2.89%)
+
+// Tabela de Fatores Reais da Maquininha (Para bater os centavos físicos)
+// Fator = Total Simulado na Máquina / Valor Original (ex: 5324.25 / 5000 = 1.06485)
+export const C6_FATORES_MAQUININHA: Record<number, number> = {
+  1: 1 / (1 - C6_MDR_A_VISTA), // 1.02976
+  2: 1.03815, // Estimativa (Teste 5000 em 2x na máquina e divida por 5000 para ter o fator exato)
+  3: 1.04685, // Estimativa (Teste 3x na máquina...)
+  4: 1.05575, // Estimativa (Teste 4x na máquina...)
+  5: 1.06485, // Fator EXATO relatado: 5324.25 / 5000
+};
+
+export const TAXA_BOLETO_MENSAL   = 3.59; // Nova taxa com prêmio de risco (+70% vs Cartão)
 export const PRAZO_PADRAO_MESES   = 360; // Máximo usado no simulador Habiticon
 export const COMPROMETIMENTO_MAX_RENDA = 0.30;
 export const COTA_MAXIMA_CAIXA    = 0.80;
+
+export function parcelamentoCartao(valor: number, parcelas = 5) {
+  // Puxa o fator real da máquina para garantir precisão de centavos
+  let fatorDinamico = C6_FATORES_MAQUININHA[parcelas];
+
+  if (!fatorDinamico) {
+    const taxaTotal = parcelas === 1 ? C6_MDR_A_VISTA : C6_MDR + (C6_ADICIONAL_PARCELA * parcelas);
+    fatorDinamico = 1 / (1 - taxaTotal);
+  }
+  
+  const totalComJuros = valor * fatorDinamico;
+  
+  // Calcula a taxa efetiva real que a máquina cobrou para mostrar no app
+  const taxaEfetiva = (1 - (valor / totalComJuros)) * 100;
+  
+  return { 
+    parcelaComJuros: totalComJuros / parcelas, 
+    totalComJuros, 
+    totalJuros: totalComJuros - valor,
+    taxaEfetiva
+  };
+}
+
+export function parcelamentoBoleto(valor: number, parcelas = 5, taxaMensalPct = TAXA_BOLETO_MENSAL) {
+  const i = taxaMensalPct / 100;
+  const fator = Math.pow(1 + i, parcelas);
+  const parcelaPorParcela = valor * (i * fator) / (fator - 1);
+  const totalComJuros = parcelaPorParcela * parcelas;
+  return { parcelaPorParcela, totalComJuros, totalJuros: totalComJuros - valor };
+}
 
 // ===================================================
 // CONVERSÃO DE TAXA
@@ -356,22 +400,6 @@ export function calcularEntradaEmbutida(
 }
 
 // ===================================================
-// PARCELAMENTOS (Entrada 50/50)
-// ===================================================
-export function parcelamentoCartao(valor: number, parcelas = 5) {
-  const totalComJuros = valor * C6_FATOR;
-  return { parcelaComJuros: totalComJuros / parcelas, totalComJuros, totalJuros: totalComJuros - valor };
-}
-
-export function parcelamentoBoleto(valor: number, parcelas = 5, taxaMensalPct = TAXA_BOLETO_MENSAL) {
-  const i = taxaMensalPct / 100;
-  const fator = Math.pow(1 + i, parcelas);
-  const parcelaPorParcela = valor * (i * fator) / (fator - 1);
-  const totalComJuros = parcelaPorParcela * parcelas;
-  return { parcelaPorParcela, totalComJuros, totalJuros: totalComJuros - valor };
-}
-
-// ===================================================
 // JUROS DE OBRA (PCI)
 // ===================================================
 export interface JurosObra {
@@ -558,15 +586,15 @@ export function calcularMaxFinCUB(
  *
  * Dois motores competem — o mais restritivo (maior entrada) prevalece:
  *
- *   Motor A (CHEFE) — CUB:
- *     laudoCUB = lote + área × cub × (1+bdi)
- *     maxFinCUB = min(laudoCUB, tetoMCMV) × 80%
- *     entradaMinCUB = max(entradaMinConfig, valorVenda − maxFinCUB)
- *     → Quando CUB=0: fallback para 80% do contrato (comportamento padrão)
+ * Motor A (CHEFE) — CUB:
+ * laudoCUB = lote + área × cub × (1+bdi)
+ * maxFinCUB = min(laudoCUB, tetoMCMV) × 80%
+ * entradaMinCUB = max(entradaMinConfig, valorVenda − maxFinCUB)
+ * → Quando CUB=0: fallback para 80% do contrato (comportamento padrão)
  *
- *   Motor B — Renda 30%:
- *     maxFinRenda = motor de parcela (Infinity se sem renda)
- *     entradaMinRenda = max(entradaMinConfig, valorVenda − maxFinRenda)
+ * Motor B — Renda 30%:
+ * maxFinRenda = motor de parcela (Infinity se sem renda)
+ * entradaMinRenda = max(entradaMinConfig, valorVenda − maxFinRenda)
  *
  * NÃO existe "regra dos 80% do contrato" como terceiro limitador separado.
  * Esse papel pertence ao Motor A (via tetoMCMV já embutido no laudoCUB).
@@ -620,7 +648,7 @@ export function calcularEntradaMinima(
     } else {
       // CUB não configurado — é o fallback do 80% do contrato
       limitador = "cota_80";
-      detalhe = `Configure o CUB SINDUSCON no painel admin para ativar a estratégia de entrada embutida. Atualmente usando 80% do contrato como base.`;
+      detalhe = `Configure o CUB SINDUSCON no painel admin para ativar a estratégia de entrada embutida. Atualmente usando 80% do contrato base.`;
     }
   } else {
     limitador = "renda_30";

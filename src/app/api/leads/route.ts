@@ -1,28 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import { emitirAtualizacao } from "@/app/api/sse/route";
-import { promises as fs } from "fs";
-import path from "path";
+import { db } from "@/lib/firebase"; // Importando a conexão do Firebase que criamos
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
 
-const DATA_FILE = path.join(process.cwd(), "src/data/empreendimentos.json");
+// Evita cache da API
+export const dynamic = "force-dynamic";
 
 // ─────────────────────────────────────────────────────────
-// GET /api/leads
+// GET /api/leads — Busca os leads direto do Firebase
 // ─────────────────────────────────────────────────────────
 export async function GET() {
   try {
-    const raw = await fs.readFile(DATA_FILE, "utf-8");
-    const empreendimentos = JSON.parse(raw);
-    const leads = empreendimentos.flatMap((e: any) =>
-      (e.leads || []).map((l: any) => ({ ...l, empreendimento: e.nome }))
-    );
+    const leadsRef = collection(db, "leads");
+    const snapshot = await getDocs(leadsRef);
+    
+    // Mapeia os documentos do Firestore para um array de objetos
+    const leads = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
     return NextResponse.json({ leads });
-  } catch {
+  } catch (error) {
+    console.error("Erro ao buscar leads no Firebase:", error);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }
 
 // ─────────────────────────────────────────────────────────
-// POST /api/leads — salva novo lead
+// POST /api/leads — Salva novo lead no Firebase
 // ─────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
@@ -33,86 +38,83 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Nome e WhatsApp são obrigatórios" }, { status: 400 });
     }
 
-    const raw = await fs.readFile(DATA_FILE, "utf-8");
-    const empreendimentos = JSON.parse(raw);
-    const empIndex = empreendimentos.findIndex((e: any) =>
-      e.nome === empreendimento || e.slug === empreendimento?.toLowerCase().replace(/\s+/g, "-")
-    );
+    // ─────────────────────────────────────────────────────────────────
+    // CORREÇÃO CRÍTICA: Geração do Slug para o Filtro Funcionar
+    // O painel de admin precisa do empreendimentoId ("habiticon-ipora")
+    // para mostrar o lead na tela certa.
+    // ─────────────────────────────────────────────────────────────────
+    let slug = empreendimento;
+    if (slug) {
+      slug = slug.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "-");
+    }
 
-    const lead = {
-      id: Date.now().toString(),
-      nome, whatsapp,
+    // Estrutura do documento que será salvo na coleção "leads"
+    const novoLead = {
+      nome, 
+      whatsapp,
       nomeCorretor: nomeCorretor || "",
-      modelo, valorImovel, timestamp,
+      empreendimentoNome: empreendimento || "Nova Iporá II", // Guarda o nome legível
+      empreendimentoId: slug,                                // Guarda o Slug (fundamental para o Admin)
+      modelo: modelo || "",
+      valorImovel: valorImovel || 0,
+      timestamp: timestamp || new Date().toISOString(),
       status: "novo",
     };
 
-    if (empIndex >= 0) {
-      if (!empreendimentos[empIndex].leads) empreendimentos[empIndex].leads = [];
-      empreendimentos[empIndex].leads.push(lead);
-      await fs.writeFile(DATA_FILE, JSON.stringify(empreendimentos, null, 2));
-      emitirAtualizacao("leads");
-    }
+    // Salva no Firestore
+    const docRef = await addDoc(collection(db, "leads"), novoLead);
 
-    return NextResponse.json({ success: true, lead });
+    // Nota: O emitirAtualizacao() foi removido pois o onSnapshot no frontend 
+    // já cuida da atualização em tempo real automaticamente.
+
+    return NextResponse.json({ success: true, lead: { id: docRef.id, ...novoLead } });
   } catch (error) {
-    console.error("Erro ao salvar lead:", error);
+    console.error("Erro ao salvar lead no Firebase:", error);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }
 
 // ─────────────────────────────────────────────────────────
-// PATCH /api/leads — atualiza status de um lead
-// Body: { slugEmp, leadId, status }
+// PATCH /api/leads — Atualiza status de um lead no Firebase
+// Body: { leadId, status }
 // ─────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
   try {
-    const { slugEmp, leadId, status } = await req.json();
-    if (!slugEmp || !leadId) {
-      return NextResponse.json({ error: "slugEmp e leadId são obrigatórios" }, { status: 400 });
+    const { leadId, status } = await req.json();
+    
+    if (!leadId || !status) {
+      return NextResponse.json({ error: "leadId e status são obrigatórios" }, { status: 400 });
     }
-    const raw = await fs.readFile(DATA_FILE, "utf-8");
-    const empreendimentos = JSON.parse(raw);
-    const idx = empreendimentos.findIndex((e: any) => e.slug === slugEmp);
-    if (idx < 0) return NextResponse.json({ error: "Empreendimento não encontrado" }, { status: 404 });
-    const leadIdx = empreendimentos[idx].leads?.findIndex((l: any) => l.id === leadId);
-    if (leadIdx < 0 || leadIdx === undefined) {
-      return NextResponse.json({ error: "Lead não encontrado" }, { status: 404 });
-    }
-    empreendimentos[idx].leads[leadIdx].status = status;
-    await fs.writeFile(DATA_FILE, JSON.stringify(empreendimentos, null, 2));
-    emitirAtualizacao("leads");
+
+    // Aponta para o documento exato no banco de dados
+    const leadDocRef = doc(db, "leads", leadId);
+    await updateDoc(leadDocRef, { status: status });
+
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (error) {
+    console.error("Erro ao atualizar lead:", error);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }
 
 // ─────────────────────────────────────────────────────────
-// DELETE /api/leads — remove um lead
-// Body: { slugEmp, leadId }
+// DELETE /api/leads — Remove um lead do Firebase
+// Body: { leadId }
 // ─────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
   try {
-    const { slugEmp, leadId } = await req.json();
-    if (!slugEmp || !leadId) {
-      return NextResponse.json({ error: "slugEmp e leadId são obrigatórios" }, { status: 400 });
+    const { leadId } = await req.json();
+    
+    if (!leadId) {
+      return NextResponse.json({ error: "leadId é obrigatório" }, { status: 400 });
     }
-    const raw = await fs.readFile(DATA_FILE, "utf-8");
-    const empreendimentos = JSON.parse(raw);
-    const idx = empreendimentos.findIndex((e: any) => e.slug === slugEmp);
-    if (idx < 0) return NextResponse.json({ error: "Empreendimento não encontrado" }, { status: 404 });
-    const antes = empreendimentos[idx].leads?.length || 0;
-    empreendimentos[idx].leads = (empreendimentos[idx].leads || []).filter(
-      (l: any) => l.id !== leadId
-    );
-    if (empreendimentos[idx].leads.length === antes) {
-      return NextResponse.json({ error: "Lead não encontrado" }, { status: 404 });
-    }
-    await fs.writeFile(DATA_FILE, JSON.stringify(empreendimentos, null, 2));
-    emitirAtualizacao("leads");
+
+    const leadDocRef = doc(db, "leads", leadId);
+    await deleteDoc(leadDocRef);
+
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (error) {
+    console.error("Erro ao deletar lead:", error);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }

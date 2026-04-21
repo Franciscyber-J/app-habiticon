@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
-import { useSSE } from "@/hooks/useSSE";
 import Link from "next/link";
+import { db } from "@/lib/firebase";
+import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, onSnapshot } from "firebase/firestore";
 import {
   Building2, Settings, Users, MapPin,
   ToggleLeft, ToggleRight, Plus, ExternalLink,
@@ -22,6 +23,17 @@ const STATUS_LEAD = {
 } as const;
 type LeadStatus = keyof typeof STATUS_LEAD;
 
+interface Lead {
+  id: string;
+  empreendimentoId: string;
+  nome: string;
+  whatsapp: string;
+  timestamp: string;
+  modelo?: string;
+  nomeCorretor?: string;
+  status?: LeadStatus;
+}
+
 interface Empreendimento {
   slug: string;
   nome: string;
@@ -29,7 +41,7 @@ interface Empreendimento {
   estado: string;
   status: string;
   modelos: { id: string; nome: string; valor: number; area?: number }[];
-  leads: { id: string; nome: string; whatsapp: string; timestamp: string; modelo?: string; nomeCorretor?: string; status?: LeadStatus }[];
+  leads?: Lead[];
 }
 
 function CopyLinkButton({ link }: { link: string }) {
@@ -41,7 +53,6 @@ function CopyLinkButton({ link }: { link: string }) {
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2500);
     } catch {
-      // Fallback para browsers sem clipboard API
       const el = document.createElement("textarea");
       el.value = link;
       document.body.appendChild(el);
@@ -55,7 +66,6 @@ function CopyLinkButton({ link }: { link: string }) {
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      {/* Link visível e clicável */}
       <a
         href={link}
         target="_blank"
@@ -71,8 +81,6 @@ function CopyLinkButton({ link }: { link: string }) {
         <Link2 size={11} />
         {link.replace(/^https?:\/\//, "")}
       </a>
-
-      {/* Botão copiar */}
       <button
         onClick={copiar}
         style={{
@@ -92,13 +100,51 @@ function CopyLinkButton({ link }: { link: string }) {
 
 export default function AdminPage() {
   const [empreendimentos, setEmpreendimentos] = useState<Empreendimento[]>([]);
+  const [todosLeads, setTodosLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"empreendimentos" | "leads">("empreendimentos");
 
-  // Carrega dados do servidor
   const router = useRouter();
 
-  // ─── Criar novo empreendimento em branco ─────────────
+  // Buscar Empreendimentos e Leads
+  const carregarDados = useCallback(async () => {
+    try {
+      // 1. Busca os empreendimentos
+      const empSnapshot = await getDocs(collection(db, "empreendimentos"));
+      const emps: Empreendimento[] = [];
+      empSnapshot.forEach((doc) => {
+        emps.push(doc.data() as Empreendimento);
+      });
+      setEmpreendimentos(emps);
+
+      // 2. Configura o listener em tempo real para TODOS os leads
+      const unsubscribe = onSnapshot(collection(db, "leads"), (snapshot) => {
+        const leadsData: Lead[] = [];
+        snapshot.forEach((doc) => {
+          leadsData.push({ id: doc.id, ...doc.data() } as Lead);
+        });
+        setTodosLeads(leadsData);
+        setLoading(false);
+      });
+
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("Erro ao carregar dados:", error);
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const cleanup = carregarDados();
+    return () => {
+        cleanup.then(unsub => {
+            if(unsub) unsub()
+        });
+    }
+  }, [carregarDados]);
+
+
+  // ─── Criar novo empreendimento ─────────────
   const criarEmpreendimento = useCallback(async () => {
     const slug = `novo-empreendimento-${Date.now()}`;
     const novo = {
@@ -108,7 +154,6 @@ export default function AdminPage() {
       estado: "GO",
       descricao: "",
       status: "ativo",
-      leads: [],
       coordenadas: { lat: 0, lng: 0 },
       modelos: [{
         id: "modelo-1", nome: "Modelo 1", quartos: 2,
@@ -137,123 +182,80 @@ export default function AdminPage() {
         descricaoObra: "", alertaF3: "", alertaF12: ""
       }
     };
-    const lista = await fetch("/api/empreendimentos").then(r => r.json());
-    await fetch("/api/empreendimentos", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify([...lista, novo]),
-    });
+    
+    await setDoc(doc(db, "empreendimentos", slug), novo);
+    setEmpreendimentos(prev => [...prev, novo]);
     router.push(`/admin/${slug}`);
   }, [router]);
 
   // ─── Excluir empreendimento ──────────────────────────
   const excluirEmpreendimento = useCallback(async (slug: string, nome: string) => {
-    if (!confirm(`Excluir "${nome}"?
-
-Esta ação é permanente e irá remover todos os leads e configurações. Não pode ser desfeita.`)) return;
-    const lista = await fetch("/api/empreendimentos").then(r => r.json());
-    const nova = lista.filter((e: any) => e.slug !== slug);
-    await fetch("/api/empreendimentos", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(nova),
-    });
-    setEmpreendimentos(nova);
+    if (!confirm(`Excluir "${nome}"?\n\nEsta ação é permanente.`)) return;
+    
+    try {
+      await deleteDoc(doc(db, "empreendimentos", slug));
+      setEmpreendimentos(prev => prev.filter(e => e.slug !== slug));
+    } catch (error) {
+      console.error("Erro ao excluir empreendimento:", error);
+      alert("Erro ao excluir empreendimento.");
+    }
   }, []);
 
-  // ─── Clonar empreendimento existente ─────────────────
-  const clonarEmpreendimento = useCallback(async (emp: any) => {
+  // ─── Clonar empreendimento ───────────────────────────
+  const clonarEmpreendimento = useCallback(async (emp: Empreendimento) => {
     const novoSlug = `clone-${emp.slug}-${Date.now()}`;
     const clone = {
       ...JSON.parse(JSON.stringify(emp)),
       slug: novoSlug,
       nome: `Clone — ${emp.nome}`,
-      leads: [],
     };
-    const lista = await fetch("/api/empreendimentos").then(r => r.json());
-    await fetch("/api/empreendimentos", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify([...lista, clone]),
-    });
+    
+    await setDoc(doc(db, "empreendimentos", novoSlug), clone);
+    setEmpreendimentos(prev => [...prev, clone]);
     router.push(`/admin/${novoSlug}`);
   }, [router]);
 
   const fazerLogout = useCallback(async () => {
     if (!confirm("Sair do painel administrativo?")) return;
-    await fetch("/api/auth", { method: "DELETE" });
+    await fetch("/api/auth", { method: "DELETE" }); // Manter temporariamente se a API ainda for usada para cookies
     window.location.href = "/admin/login";
   }, []);
 
-  const carregar = useCallback(() => {
-    fetch("/api/empreendimentos")
-      .then((r) => r.json())
-      .then((data) => { setEmpreendimentos(data); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
-  useEffect(() => { carregar(); }, [carregar]); // carga inicial
-
-  // SSE — rebusca dados somente quando o servidor sinalizar uma mudança
-  useSSE("leads", carregar);
-
-  const totalLeads = empreendimentos.reduce((acc, e) => acc + (e.leads?.length || 0), 0);
-  const ativos = empreendimentos.filter((e) => e.status === "ativo").length;
-
-  // ─── Atualiza status de um lead ────────────────────────────
-  const atualizarStatusLead = async (slugEmp: string, leadId: string, status: LeadStatus) => {
-    await fetch("/api/leads", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slugEmp, leadId, status }),
-    });
-    setEmpreendimentos((prev) =>
-      prev.map((e) =>
-        e.slug !== slugEmp ? e : {
-          ...e,
-          leads: e.leads.map((l) => l.id === leadId ? { ...l, status } : l),
-        }
-      )
-    );
+  // ─── Atualiza status do Lead (Firestore) ─────────────────
+  const atualizarStatusLead = async (leadId: string, status: LeadStatus) => {
+    try {
+      await updateDoc(doc(db, "leads", leadId), { status });
+    } catch (error) {
+      console.error("Erro ao atualizar status:", error);
+    }
   };
 
-  // ─── Deleta um lead ──────────────────────────────────────
-  const deletarLead = async (slugEmp: string, leadId: string) => {
+  // ─── Deleta Lead (Firestore) ─────────────────────────────
+  const deletarLead = async (leadId: string) => {
     if (!confirm("Excluir este lead? Esta ação não pode ser desfeita.")) return;
-    await fetch("/api/leads", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slugEmp, leadId }),
-    });
-    setEmpreendimentos((prev) =>
-      prev.map((e) =>
-        e.slug !== slugEmp ? e : {
-          ...e,
-          leads: e.leads.filter((l) => l.id !== leadId),
-        }
-      )
-    );
+    try {
+      await deleteDoc(doc(db, "leads", leadId));
+    } catch (error) {
+      console.error("Erro ao deletar lead:", error);
+    }
   };
 
   const toggleStatus = async (slug: string, current: string) => {
     const newStatus = current === "ativo" ? "inativo" : "ativo";
-    await fetch("/api/empreendimentos", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slug, field: "status", value: newStatus }),
-    });
-    setEmpreendimentos((prev) =>
-      prev.map((e) => (e.slug === slug ? { ...e, status: newStatus } : e))
-    );
+    try {
+        await updateDoc(doc(db, "empreendimentos", slug), { status: newStatus });
+        setEmpreendimentos((prev) =>
+          prev.map((e) => (e.slug === slug ? { ...e, status: newStatus } : e))
+        );
+    } catch (error) {
+        console.error("Erro ao atualizar status do empreendimento", error)
+    }
   };
 
-  const allLeads = empreendimentos
-    .flatMap((e) => (e.leads || []).map((l) => ({ ...l, empreendimento: e.nome })))
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const ativos = empreendimentos.filter((e) => e.status === "ativo").length;
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
-
       {/* ── HEADER ──────────────────────────────────────────── */}
       <header style={{
         background: "rgba(15,30,22,0.98)",
@@ -263,22 +265,15 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
       }}>
         <div className="container-app">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0" }}>
-
             <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
               <Link href="/" className="btn-ghost" style={{ padding: "10px 12px" }}>
                 <ArrowLeft size={20} />
               </Link>
-
-              {/* Logo 2x */}
               <Image
-                src="/logo.png"
-                alt="Habiticon"
-                width={280}
-                height={80}
+                src="/logo.png" alt="Habiticon" width={280} height={80}
                 style={{ height: "clamp(36px,8vw,56px)", width: "auto", objectFit: "contain", flexShrink: 0 }}
                 priority
               />
-
               <div style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "5px 14px", borderRadius: 100,
@@ -290,26 +285,17 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Link
-                href="/"
-                style={{ fontSize: 13, color: "var(--gray-mid)", textDecoration: "none", display: "flex", alignItems: "center", gap: 6, padding: "8px 10px" }}
-                className="btn-ghost"
-                title="Ver site"
-              >
+              <Link href="/" style={{ fontSize: 13, color: "var(--gray-mid)", textDecoration: "none", display: "flex", alignItems: "center", gap: 6, padding: "8px 10px" }} className="btn-ghost">
                 <ExternalLink size={14} />
                 <span className="hidden sm:inline">Ver site</span>
               </Link>
               <div style={{ width: 1, height: 20, background: "var(--border-subtle)" }} />
-              <button
-                onClick={fazerLogout}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  padding: "8px 14px", borderRadius: 8, cursor: "pointer",
-                  background: "rgba(239,68,68,0.08)",
-                  border: "1px solid rgba(239,68,68,0.2)",
-                  color: "#f87171", fontSize: 13, fontWeight: 600,
-                }}
-              >
+              <button onClick={fazerLogout} style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 8, cursor: "pointer",
+                background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+                color: "#f87171", fontSize: 13, fontWeight: 600,
+              }}>
                 <LogOut size={14} />
                 <span className="hidden sm:inline">Sair</span>
               </button>
@@ -319,49 +305,33 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
       </header>
 
       <main className="container-app" style={{ padding: "clamp(20px,4vw,40px) clamp(16px,4vw,32px) 80px" }}>
-
         {/* ── STATS ───────────────────────────────────────────── */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, marginBottom: 32 }}>
           {[
             {
               label: "Empreendimentos",
               value: loading ? "…" : empreendimentos.length,
-              icon: Building2,
-              color: "var(--terracota)",
-              bg: "rgba(175,111,83,0.12)",
-              border: "rgba(175,111,83,0.25)",
+              icon: Building2, color: "var(--terracota)", bg: "rgba(175,111,83,0.12)", border: "rgba(175,111,83,0.25)",
             },
             {
               label: "Ativos",
               value: loading ? "…" : ativos,
-              icon: CheckCircle2,
-              color: "#4ade80",
-              bg: "rgba(22,163,74,0.1)",
-              border: "rgba(22,163,74,0.2)",
+              icon: CheckCircle2, color: "#4ade80", bg: "rgba(22,163,74,0.1)", border: "rgba(22,163,74,0.2)",
             },
             {
               label: "Leads capturados",
-              value: loading ? "…" : totalLeads,
-              icon: Users,
-              color: "#60a5fa",
-              bg: "rgba(59,130,246,0.1)",
-              border: "rgba(59,130,246,0.2)",
+              value: loading ? "…" : todosLeads.length,
+              icon: Users, color: "#60a5fa", bg: "rgba(59,130,246,0.1)", border: "rgba(59,130,246,0.2)",
             },
           ].map((stat) => {
             const Icon = stat.icon;
             return (
-              <div key={stat.label} style={{
-                padding: "18px 16px 16px",
-                background: stat.bg,
-                border: `1px solid ${stat.border}`,
-                borderRadius: 16,
-              }}>
+              <div key={stat.label} style={{ padding: "18px 16px 16px", background: stat.bg, border: `1px solid ${stat.border}`, borderRadius: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                   <div style={{
                     width: 36, height: 36, borderRadius: 10, flexShrink: 0,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    background: `${stat.color}22`,
-                    border: `1px solid ${stat.color}44`,
+                    background: `${stat.color}22`, border: `1px solid ${stat.color}44`,
                   }}>
                     <Icon size={18} color={stat.color} />
                   </div>
@@ -379,23 +349,18 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
 
         {/* ── TABS ────────────────────────────────────────────── */}
         <div style={{
-          display: "flex", gap: 4,
-          background: "rgba(0,0,0,0.3)",
-          padding: 4, borderRadius: 12,
-          width: "fit-content", maxWidth: "100%",
-          marginBottom: 24,
+          display: "flex", gap: 4, background: "rgba(0,0,0,0.3)", padding: 4, borderRadius: 12,
+          width: "fit-content", maxWidth: "100%", marginBottom: 24,
         }}>
           {([
             { id: "empreendimentos", label: "Empreendimentos" },
-            { id: "leads", label: `Leads (${totalLeads})` },
+            { id: "leads", label: `Leads (${todosLeads.length})` },
           ] as const).map((t) => (
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
+              key={t.id} onClick={() => setTab(t.id)}
               style={{
                 padding: "10px 20px", borderRadius: 9, border: "none",
-                fontSize: 14, fontWeight: 600, cursor: "pointer",
-                transition: "all 150ms ease",
+                fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all 150ms ease",
                 background: tab === t.id ? "var(--terracota)" : "transparent",
                 color: tab === t.id ? "white" : "var(--gray-mid)",
                 boxShadow: tab === t.id ? "0 2px 12px rgba(175,111,83,0.3)" : "none",
@@ -409,32 +374,25 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
         {/* ── LISTA DE EMPREENDIMENTOS ─────────────────────────── */}
         {tab === "empreendimentos" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {empreendimentos.map((emp) => (
+            {empreendimentos.map((emp) => {
+              const leadsDoEmp = todosLeads.filter(l => l.empreendimentoId === emp.slug);
+              return (
               <motion.div
-                key={emp.slug}
-                layout
+                key={emp.slug} layout
                 style={{
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--border-subtle)",
-                  borderRadius: 16,
-                  overflow: "hidden",
-                  boxShadow: "var(--shadow-card)",
+                  background: "var(--bg-card)", border: "1px solid var(--border-subtle)",
+                  borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)",
                 }}
               >
-                {/* Linha principal */}
                 <div style={{ padding: "18px 18px 16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
-
-                  {/* Esquerda: ícone + info */}
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flex: 1 }}>
                     <div style={{
                       width: 52, height: 52, borderRadius: 14, flexShrink: 0,
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      background: "var(--terracota-glow)",
-                      border: "1px solid var(--border-active)",
+                      background: "var(--terracota-glow)", border: "1px solid var(--border-active)",
                     }}>
                       <Building2 size={22} color="var(--terracota)" />
                     </div>
-
                     <div style={{ flex: 1 }}>
                       <h3 style={{ fontSize: 17, fontWeight: 700, color: "var(--gray-light)", marginBottom: 5 }}>
                         {emp.nome}
@@ -443,17 +401,13 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                         <MapPin size={13} />
                         <span style={{ fontSize: 13 }}>{emp.cidade} · {emp.estado}</span>
                       </div>
-
-                      {/* Badges dos modelos */}
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        {emp.modelos.map((m) => (
+                        {emp.modelos?.map((m) => (
                           <span key={m.id} style={{
                             display: "inline-flex", alignItems: "center", gap: 5,
                             padding: "5px 12px", borderRadius: 8,
-                            background: "rgba(175,111,83,0.12)",
-                            border: "1px solid rgba(175,111,83,0.25)",
-                            fontSize: 12, fontWeight: 700,
-                            color: "var(--terracota-light)",
+                            background: "rgba(175,111,83,0.12)", border: "1px solid rgba(175,111,83,0.25)",
+                            fontSize: 12, fontWeight: 700, color: "var(--terracota-light)",
                           }}>
                             {m.nome}
                             <span style={{ color: "var(--gray-dark)" }}>·</span>
@@ -462,40 +416,30 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                             </span>
                           </span>
                         ))}
-                        {emp.modelos.length === 0 && (
+                        {(!emp.modelos || emp.modelos.length === 0) && (
                           <span style={{ fontSize: 12, color: "var(--gray-dark)" }}>Sem modelos</span>
                         )}
                       </div>
                     </div>
                   </div>
-
-                  {/* Direita: ações */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    {/* Toggle status */}
                     <button
                       onClick={() => toggleStatus(emp.slug, emp.status)}
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 7,
-                        padding: "7px 14px", borderRadius: 8, cursor: "pointer",
-                        border: "none", fontSize: 12, fontWeight: 700,
-                        transition: "all 150ms ease",
+                        padding: "7px 14px", borderRadius: 8, cursor: "pointer", border: "none", fontSize: 12, fontWeight: 700, transition: "all 150ms ease",
                         background: emp.status === "ativo" ? "rgba(22,163,74,0.15)" : "rgba(249,115,22,0.12)",
                         color: emp.status === "ativo" ? "#4ade80" : "#fb923c",
                       }}
                     >
-                      {emp.status === "ativo"
-                        ? <><ToggleRight size={15} /> Ativo</>
-                        : <><ToggleLeft size={15} /> Inativo</>
-                      }
+                      {emp.status === "ativo" ? <><ToggleRight size={15} /> Ativo</> : <><ToggleLeft size={15} /> Inativo</>}
                     </button>
-
                     <button
                       onClick={() => excluirEmpreendimento(emp.slug, emp.nome)}
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 7,
                         padding: "9px 14px", borderRadius: 10, cursor: "pointer",
-                        background: "rgba(239,68,68,0.08)",
-                        border: "1px solid rgba(239,68,68,0.2)",
+                        background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
                         color: "#f87171", fontSize: 13, fontWeight: 600,
                       }}
                     >
@@ -507,8 +451,7 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 7,
                         padding: "9px 16px", borderRadius: 10, cursor: "pointer",
-                        background: "rgba(96,165,250,0.08)",
-                        border: "1px solid rgba(96,165,250,0.25)",
+                        background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.25)",
                         color: "#93c5fd", fontSize: 13, fontWeight: 600,
                       }}
                     >
@@ -518,47 +461,33 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                       href={`/admin/${emp.slug}`}
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 7,
-                        padding: "9px 18px", borderRadius: 10,
-                        background: "transparent",
-                        border: "1.5px solid var(--border-active)",
-                        color: "var(--terracota)",
-                        fontSize: 13, fontWeight: 600,
-                        textDecoration: "none",
-                        transition: "all 150ms ease",
+                        padding: "9px 18px", borderRadius: 10, background: "transparent",
+                        border: "1.5px solid var(--border-active)", color: "var(--terracota)",
+                        fontSize: 13, fontWeight: 600, textDecoration: "none", transition: "all 150ms ease",
                       }}
                     >
-                      <Settings size={14} />
-                      Editar
+                      <Settings size={14} /> Editar
                     </Link>
-
                     <Link
-                      href={`/${emp.slug}`}
-                      target="_blank"
+                      href={`/${emp.slug}`} target="_blank"
                       style={{
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        width: 38, height: 38, borderRadius: 10,
-                        border: "1px solid var(--border-subtle)",
-                        color: "var(--gray-mid)", textDecoration: "none",
-                        transition: "all 150ms ease",
-                        background: "transparent",
+                        width: 38, height: 38, borderRadius: 10, border: "1px solid var(--border-subtle)",
+                        color: "var(--gray-mid)", textDecoration: "none", transition: "all 150ms ease", background: "transparent",
                       }}
                     >
                       <ExternalLink size={15} />
                     </Link>
                   </div>
                 </div>
-
-                {/* Rodapé do card: contagem de leads */}
-                {(emp.leads?.length || 0) > 0 && (
+                {leadsDoEmp.length > 0 && (
                   <div style={{
-                    padding: "12px 24px",
-                    borderTop: "1px solid var(--border-subtle)",
-                    display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-                    background: "rgba(0,0,0,0.15)",
+                    padding: "12px 24px", borderTop: "1px solid var(--border-subtle)",
+                    display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "rgba(0,0,0,0.15)",
                   }}>
                     <Users size={14} color="var(--gray-dark)" />
                     <span style={{ fontSize: 13, color: "var(--gray-mid)" }}>
-                      {emp.leads.length} lead{emp.leads.length !== 1 ? "s" : ""} capturado{emp.leads.length !== 1 ? "s" : ""}
+                      {leadsDoEmp.length} lead{leadsDoEmp.length !== 1 ? "s" : ""} capturado{leadsDoEmp.length !== 1 ? "s" : ""}
                     </span>
                     <ChevronRight size={13} color="var(--gray-dark)" />
                     <button
@@ -570,24 +499,19 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                   </div>
                 )}
               </motion.div>
-            ))}
-
+            )})}
             {/* Novo Empreendimento */}
             <button
               onClick={criarEmpreendimento}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 12,
-                padding: "28px 24px", borderRadius: 16,
-                border: "2px dashed var(--border-subtle)",
-                background: "transparent",
-                transition: "all 150ms ease", cursor: "pointer", width: "100%",
+                padding: "28px 24px", borderRadius: 16, border: "2px dashed var(--border-subtle)",
+                background: "transparent", transition: "all 150ms ease", cursor: "pointer", width: "100%",
               }}
             >
               <div style={{
-                width: 36, height: 36, borderRadius: 10,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: "var(--terracota-glow)",
-                border: "1px solid var(--border-active)",
+                width: 36, height: 36, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
+                background: "var(--terracota-glow)", border: "1px solid var(--border-active)",
               }}>
                 <Plus size={18} color="var(--terracota)" />
               </div>
@@ -609,9 +533,10 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
               </div>
             ) : (
               empreendimentos.map((emp) => {
-                const leadsEmp = (emp.leads || [])
-                  .slice()
+                const leadsEmp = todosLeads
+                  .filter(l => l.empreendimentoId === emp.slug)
                   .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                
                 const linkLista = `${typeof window !== "undefined" ? window.location.origin : ""}/leads/${emp.slug}`;
 
                 return (
@@ -636,8 +561,6 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                           </p>
                         </div>
                       </div>
-
-                      {/* Botão copiar link */}
                       <CopyLinkButton link={linkLista} />
                     </div>
 
@@ -653,72 +576,58 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         {leadsEmp.map((lead, i) => (
                           <motion.div
-                            key={lead.id || i}
-                            initial={{ opacity: 0, y: 6 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.97 }}
-                            transition={{ delay: i * 0.03 }}
+                            key={lead.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ delay: i * 0.03 }}
                             style={{
-                              padding: "14px 16px",
-                              background: "var(--bg-card)",
+                              padding: "14px 16px", background: "var(--bg-card)",
                               border: `1px solid ${STATUS_LEAD[lead.status as LeadStatus]?.border ?? "var(--border-subtle)"}`,
-                              borderRadius: 14,
-                              display: "flex", flexDirection: "column", gap: 12,
+                              borderRadius: 14, display: "flex", flexDirection: "column", gap: 12,
                             }}
                           >
-                            {/* Linha 1: Avatar + info */}
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
-                              {/* Avatar com cor do status */}
-                              <div style={{
-                                width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                background: STATUS_LEAD[lead.status as LeadStatus]?.bg ?? "var(--terracota-glow)",
-                                border: `1px solid ${STATUS_LEAD[lead.status as LeadStatus]?.border ?? "var(--border-active)"}`,
-                                fontSize: 14, fontWeight: 800,
-                                color: STATUS_LEAD[lead.status as LeadStatus]?.cor ?? "var(--terracota)",
-                              }}>
-                                {(lead.nome || "?")[0].toUpperCase()}
-                              </div>
-                              <div style={{ minWidth: 0 }}>
-                                <p style={{ fontSize: 14, fontWeight: 700, color: "var(--gray-light)", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                  {lead.nome}
-                                </p>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                  <span style={{ fontSize: 12, color: "var(--gray-mid)", display: "flex", alignItems: "center", gap: 4 }}>
-                                    <Phone size={11} /> {lead.whatsapp}
-                                  </span>
-                                  {lead.modelo && (
-                                    <span style={{ fontSize: 11, color: "var(--terracota-light)", fontWeight: 600, padding: "1px 8px", borderRadius: 5, background: "rgba(175,111,83,0.1)" }}>
-                                      {lead.modelo}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+                                <div style={{
+                                  width: 40, height: 40, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                                  background: STATUS_LEAD[lead.status as LeadStatus]?.bg ?? "var(--terracota-glow)",
+                                  border: `1px solid ${STATUS_LEAD[lead.status as LeadStatus]?.border ?? "var(--border-active)"}`,
+                                  fontSize: 14, fontWeight: 800, color: STATUS_LEAD[lead.status as LeadStatus]?.cor ?? "var(--terracota)",
+                                }}>
+                                  {(lead.nome || "?")[0].toUpperCase()}
+                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <p style={{ fontSize: 14, fontWeight: 700, color: "var(--gray-light)", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {lead.nome}
+                                  </p>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: 12, color: "var(--gray-mid)", display: "flex", alignItems: "center", gap: 4 }}>
+                                      <Phone size={11} /> {lead.whatsapp}
                                     </span>
-                                  )}
-                                  {lead.nomeCorretor && (
-                                    <span style={{ fontSize: 11, color: "#93c5fd", fontWeight: 600, padding: "1px 8px", borderRadius: 5, background: "rgba(96,165,250,0.1)" }}>
-                                      {lead.nomeCorretor}
-                                    </span>
-                                  )}
-                                  {lead.timestamp && (
-                                    <span style={{ fontSize: 11, color: "var(--gray-dark)", display: "flex", alignItems: "center", gap: 3 }}>
-                                      <Calendar size={11} />
-                                      {new Date(lead.timestamp).toLocaleDateString("pt-BR")}
-                                    </span>
-                                  )}
+                                    {lead.modelo && (
+                                      <span style={{ fontSize: 11, color: "var(--terracota-light)", fontWeight: 600, padding: "1px 8px", borderRadius: 5, background: "rgba(175,111,83,0.1)" }}>
+                                        {lead.modelo}
+                                      </span>
+                                    )}
+                                    {lead.nomeCorretor && (
+                                      <span style={{ fontSize: 11, color: "#93c5fd", fontWeight: 600, padding: "1px 8px", borderRadius: 5, background: "rgba(96,165,250,0.1)" }}>
+                                        {lead.nomeCorretor}
+                                      </span>
+                                    )}
+                                    {lead.timestamp && (
+                                      <span style={{ fontSize: 11, color: "var(--gray-dark)", display: "flex", alignItems: "center", gap: 3 }}>
+                                        <Calendar size={11} />
+                                        {new Date(lead.timestamp).toLocaleDateString("pt-BR")}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </div>
 
-                            </div>{/* fecha linha 1 space-between */}
-
-                            {/* Linha 2: Ações */}
                             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                              {/* Seletor de status */}
                               <select
                                 value={lead.status ?? "novo"}
-                                onChange={(e) => atualizarStatusLead(emp.slug, lead.id, e.target.value as LeadStatus)}
+                                onChange={(e) => atualizarStatusLead(lead.id, e.target.value as LeadStatus)}
                                 style={{
-                                  padding: "5px 10px", borderRadius: 8, cursor: "pointer",
-                                  fontSize: 11, fontWeight: 700, border: "none",
+                                  padding: "5px 10px", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: 700, border: "none",
                                   background: STATUS_LEAD[lead.status as LeadStatus]?.bg ?? STATUS_LEAD.novo.bg,
                                   color: STATUS_LEAD[lead.status as LeadStatus]?.cor ?? STATUS_LEAD.novo.cor,
                                   outline: `1px solid ${STATUS_LEAD[lead.status as LeadStatus]?.border ?? STATUS_LEAD.novo.border}`,
@@ -730,34 +639,23 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
                                   </option>
                                 ))}
                               </select>
-
-                              {/* WhatsApp */}
                               <a
                                 href={`https://wa.me/55${lead.whatsapp?.replace(/\D/g, "")}`}
                                 target="_blank" rel="noopener noreferrer"
                                 style={{
-                                  display: "inline-flex", alignItems: "center", gap: 5,
-                                  padding: "6px 12px", borderRadius: 8,
-                                  background: "rgba(22,163,74,0.15)",
-                                  border: "1px solid rgba(22,163,74,0.3)",
-                                  color: "#4ade80", fontSize: 12, fontWeight: 700,
-                                  textDecoration: "none",
+                                  display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8,
+                                  background: "rgba(22,163,74,0.15)", border: "1px solid rgba(22,163,74,0.3)",
+                                  color: "#4ade80", fontSize: 12, fontWeight: 700, textDecoration: "none",
                                 }}
                               >
                                 WhatsApp
                               </a>
-
-                              {/* Excluir */}
                               <button
-                                onClick={() => deletarLead(emp.slug, lead.id)}
+                                onClick={() => deletarLead(lead.id)}
                                 style={{
-                                  width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                                  display: "flex", alignItems: "center", justifyContent: "center",
-                                  background: "rgba(239,68,68,0.1)",
-                                  border: "1px solid rgba(239,68,68,0.25)",
-                                  color: "#f87171", cursor: "pointer",
-                                }}
-                                title="Excluir lead"
+                                  width: 32, height: 32, borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                                  background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", cursor: "pointer",
+                                }} title="Excluir lead"
                               >
                                 <Trash2 size={13} />
                               </button>
@@ -772,7 +670,6 @@ Esta ação é permanente e irá remover todos os leads e configurações. Não 
             )}
           </div>
         )}
-
       </main>
     </div>
   );
