@@ -109,8 +109,8 @@ interface Empreendimento {
 
 const MODULOS = [
   { id: "renda",     label: "1. Renda & Subsídio", shortLabel: "Renda",    icon: TrendingUp, hint: "Identifique o enquadramento MCMV" },
-  { id: "simulador", label: "2. Simulador",         shortLabel: "Simulador",icon: Home,       hint: "Motor 50/50 com SAC e PRICE" },
-  { id: "obra",      label: "3. Obra PCI",           shortLabel: "Obra",     icon: HardHat,    hint: "Juros durante a construção" },
+  { id: "simulador", label: "2. Simulador",        shortLabel: "Simulador",icon: Home,       hint: "Motor 50/50 com SAC e PRICE" },
+  { id: "obra",      label: "3. Obra PCI",         shortLabel: "Obra",     icon: HardHat,    hint: "Juros durante a construção" },
   { id: "proposta",  label: "4. Proposta PDF",       shortLabel: "Proposta", icon: FileText,   hint: "Gere o documento personalizado" },
   { id: "vitrine",   label: "5. Vitrine",            shortLabel: "Vitrine",  icon: ImageIcon,  hint: "Fotos, plantas e localização" },
 ];
@@ -269,7 +269,20 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
     valorLoteEmpreendimento,
   ]);
 
-  const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entradaMin;
+  // Laudo CUB do modelo atual — passado para ResultCards corrigir a tabela de composição
+const laudoCUBAtual = useMemo(() => {
+  if (!modelo) return 0;
+  const cubCfg = emp.simulador.cub;
+  if (!cubCfg || !cubCfg.cubVigente) return 0;
+  return calcularLaudoCUB(
+    valorLoteEmpreendimento,
+    modelo.area,
+    cubCfg.cubVigente,
+    cubCfg.bdi
+  ).laudoTotal;
+}, [modelo, emp.simulador.cub, valorLoteEmpreendimento]);
+
+const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entradaMin;
 
   // ─── Motor de Faixa Efetiva ─────────────────────────────────
   // Cruza: faixa exigida pelo LAUDO CUB (R2) vs faixa da RENDA (R3)
@@ -330,14 +343,11 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
   }, [modelo, entrada, emp.simulador.prazoMeses, taxaAtual, subsidio, usarSubsidio, rendaFamiliar, tetoEfetivo]);
 
   // ─────────────────────────────────────────────────────
-  // DADOS DA PROPOSTA PDF
+  // DADOS DA PROPOSTA PDF E API
   // ─────────────────────────────────────────────────────
   const propostaData = useMemo(() => {
     if (!modelo || !resultadoSimulacao) return null;
 
-    // SAC para o PDF: calculado sobre finLiberadoPRICE (consistente com o que é exibido)
-    // parcelaSACPrimeira do simular() usa finLiberadoSAC (limitado pela renda para SAC)
-    // — é correto para o motor interno, mas inconsistente com o financiamento exibido.
     const pv = resultadoSimulacao.finLiberadoPRICE;
     const i  = taxaAtual / 100 / 12;
     const amort = pv / emp.simulador.prazoMeses;
@@ -349,10 +359,19 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
       + modelo.valor * 0.000071018         // DFI sobre valor do imóvel
       + 25;                                // Taxa administrativa
 
-    // Motor de bloqueio SAC: se 1ª parcela SAC > 30% da renda → não mostrar no PDF
     const sacAprovadoPDF = rendaFamiliar > 0
       ? sacPrimeiraSobrePrice <= rendaFamiliar * 0.30
-      : true; // sem renda informada, não bloqueia (corretor decide)
+      : true; 
+
+    // ATUALIZADO: Inclui área, quartos e o valorAvaliacao calculado para salvar no firebase!
+    // A função calcularLaudoCUB retorna { laudoTotal }
+    let valorLaudo = modelo.valor;
+    const cubCfg = emp.simulador.cub;
+    if (cubCfg && cubCfg.cubVigente > 0) {
+       valorLaudo = calcularLaudoCUB(valorLoteEmpreendimento, modelo.area, cubCfg.cubVigente, cubCfg.bdi).laudoTotal;
+    } else {
+       valorLaudo = resultadoSimulacao.laudoPRICE || modelo.valor;
+    }
 
     return {
       empreendimento: emp.nome,
@@ -360,7 +379,9 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
       estado: emp.estado,
       modelo: modelo.nome,
       area: modelo.area,
+      quartos: modelo.quartos, // INJETADO
       valorImovel: modelo.valor,
+      valorAvaliacao: valorLaudo, // INJETADO
       entrada,
       ato: entrada * atoPercent,
       valorFinanciado: resultadoSimulacao.finLiberadoPRICE,
@@ -374,7 +395,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
       rendaFamiliar,
       notasLegais: emp.textos.notasLegais,
     };
-  }, [modelo, resultadoSimulacao, emp, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent, rendaFamiliar]);
+  }, [modelo, resultadoSimulacao, emp, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent, rendaFamiliar, valorLoteEmpreendimento]);
 
   const getModuloStatus = (modId: string) => {
     if (modId === "renda")     return rendaPreenchida ? "done" : "active";
@@ -807,7 +828,9 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                           subsidio={usarSubsidio ? subsidio : 0}
                           atoPercent={atoPercent}
                           onAtoPercentChange={setAtoPercent}
+                          laudoCUB={laudoCUBAtual}
                         />
+
                       </div>
 
                       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -911,8 +934,7 @@ export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
                             ["Empreendimento",                       emp.nome],
                             ["Modelo sugerido",                      `${modelo?.nome} · ${modelo?.area}m²`],
                             ["Valor do Contrato",                    formatBRL(modelo?.valor || 0)],
-                            ["Valor de Avaliação Estimado (Laudo)",  formatBRL(resultadoSimulacao?.laudoPRICE || 0)],
-                            // ★ FIX: lote único do empreendimento — igual para todos os modelos
+                            ["Valor de Avaliação Estimado (Laudo)",  formatBRL(propostaData.valorAvaliacao || 0)], // ATUALIZADO
                             ["Valor do Lote",                        formatBRL(valorLoteEmpreendimento)],
                             ["Entrada Real Exigida",                 formatBRL(entrada)],
                             ["  ↳ Ato mínimo no contrato",           formatBRL(entrada * atoPercent)],

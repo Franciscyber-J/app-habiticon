@@ -378,24 +378,90 @@ export interface EntradaEmbutidaInfo {
   cotaCaixa: number;
 }
 
+// ===================================================
+// PATCH — calcularEntradaEmbutida corrigida
+// Substitui a função e interface existentes em calculos.ts
+//
+// ANTES (errado):
+//   valorFinanciadoCaixa = contrato - entrada = 230.000
+//   valorAvaliadoCaixa   = 230.000 / 0.80    = 287.500  ← laudo inventado
+//   entradaEmbutida      = 287.500 × 20% - 10k = 47.500  ← errado
+//
+// DEPOIS (correto):
+//   laudoCUB já vem calculado do calcularLaudoCUB()
+//   cotaCaixa       = laudoCUB × 80%          = 233.601,85
+//   saldoAFinanciar = contrato - entrada       = 230.000
+//   entradaEmbutida = saldoAFinanciar - (contrato × 80%) = 38.000
+// ===================================================
+
+export interface EntradaEmbutidaInfo {
+  valorContratual: number;
+  valorAvaliadoCaixa: number;  // laudo CUB real (lote + construção + BDI)
+  cotaCaixa: number;            // 80% do laudo CUB
+  entradaRealComprador: number;
+  entradaEmbutida: number;      // saldoAFinanciar - (contrato × 80%)
+  saldoAFinanciar: number;      // contrato - entradaRealComprador (o que o banco libera)
+}
+
+// ===================================================
+// PATCH — calcularEntradaEmbutida corrigida
+// Substitui a função e interface existentes em calculos.ts
+//
+// ANTES (errado):
+//   valorFinanciadoCaixa = contrato - entrada = 230.000
+//   valorAvaliadoCaixa   = 230.000 / 0.80    = 287.500  ← laudo inventado
+//   entradaEmbutida      = 287.500 × 20% - 10k = 47.500  ← errado
+//
+// DEPOIS (correto):
+//   laudoCUB já vem calculado do calcularLaudoCUB()
+//   cotaCaixa       = laudoCUB × 80%          = 233.601,85
+//   saldoAFinanciar = contrato - entrada       = 230.000
+//   entradaEmbutida = saldoAFinanciar - (contrato × 80%) = 38.000
+// ===================================================
+
+export interface EntradaEmbutidaInfo {
+  valorContratual: number;
+  valorAvaliadoCaixa: number;  // laudo CUB real (lote + construção + BDI)
+  cotaCaixa: number;            // 80% do laudo CUB
+  entradaCaixa: number;         // mantido por compatibilidade (= cotaCaixa × 20%)
+  entradaRealComprador: number;
+  entradaEmbutida: number;      // saldoAFinanciar - (contrato × 80%)
+  saldoAFinanciar: number;      // contrato - entradaRealComprador (o que o banco libera)
+}
+
 export function calcularEntradaEmbutida(
   valorContratual: number,
   entradaRealComprador: number,
   subsidio = 0,
-  cotaMaxima = COTA_MAXIMA_CAIXA
+  cotaMaxima = COTA_MAXIMA_CAIXA,
+  laudoCUB = 0   // ← NOVO: laudo real via calcularLaudoCUB(). 0 = fallback para comportamento antigo
 ): EntradaEmbutidaInfo {
-  const valorFinanciadoCaixa = Math.max(0, valorContratual - entradaRealComprador - subsidio);
-  const valorAvaliadoCaixa   = valorFinanciadoCaixa / cotaMaxima;
-  const entradaCaixa         = valorAvaliadoCaixa * (1 - cotaMaxima);
-  const entradaEmbutida      = Math.max(0, entradaCaixa - entradaRealComprador);
+
+  // Quanto o banco efetivamente libera ao incorporador
+  const saldoAFinanciar = Math.max(0, valorContratual - entradaRealComprador - subsidio);
+
+  // Se laudoCUB não foi fornecido, usa fallback: deriva o laudo do financiado
+  // (comportamento antigo — mantido para não quebrar chamadas sem CUB configurado)
+  const laudoEfetivo = laudoCUB > 0
+    ? laudoCUB
+    : saldoAFinanciar / cotaMaxima;
+
+  const cotaCaixa = laudoEfetivo * cotaMaxima;
+
+  // Entrada embutida = quanto a mais o banco financia vs os 80% simples do contrato
+  // Sem estratégia: banco financia valorContratual × 80%
+  // Com estratégia: banco financia saldoAFinanciar (pode ser > 80% do contrato)
+  const baseSeEstrategia = valorContratual * cotaMaxima; // 80% simples do contrato
+  const entradaEmbutida = Math.max(0, saldoAFinanciar - baseSeEstrategia);
 
   return {
     valorContratual,
-    valorAvaliadoCaixa,
-    entradaCaixa,
+    valorAvaliadoCaixa: laudoEfetivo,
+    cotaCaixa,
+    entradaCaixa: laudoEfetivo * (1 - cotaMaxima), // mantido por compatibilidade
     entradaRealComprador,
     entradaEmbutida,
-    cotaCaixa: valorFinanciadoCaixa,
+    saldoAFinanciar,
   };
 }
 

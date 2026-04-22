@@ -1,15 +1,17 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { FileText, Send, X, User, Phone, Download, CheckCircle2 } from "lucide-react";
-import Image from "next/image";
 import { formatBRL, formatBRLDecimal } from "@/lib/calculos";
+import { db } from "@/lib/firebase";
+import { collection, query, where, getDocs } from "firebase/firestore";
 
 interface Lead {
   nome: string;
   whatsapp: string;
   nomeCorretor: string;
+  corretorId: string;
 }
 
 interface PropostaData {
@@ -17,18 +19,20 @@ interface PropostaData {
   cidade: string;
   estado: string;
   modelo: string;
+  quartos?: number;       // Adicionado
   area: number;
   valorImovel: number;
+  valorAvaliacao?: number; // Adicionado para suportar o Laudo
   entrada: number;
   ato: number;
   valorFinanciado: number;
   subsidio: number;
   taxa: number;
   prazoMeses: number;
-  parcelaSACPrimeira: number;   // SAC calculado sobre finLiberadoPRICE
+  parcelaSACPrimeira: number;   
   parcelaSACUltima: number;
   parcelaPRICE: number;
-  sacAprovadoPDF: boolean;      // false = SAC excede 30% da renda → ocultar no PDF
+  sacAprovadoPDF: boolean;      
   rendaFamiliar?: number;
   notasLegais: string;
 }
@@ -39,8 +43,35 @@ interface PDFGeneratorProps {
 
 export function PDFGenerator({ proposta }: PDFGeneratorProps) {
   const [etapa, setEtapa] = useState<"closed" | "lead" | "success">("closed");
-  const [lead, setLead] = useState<Lead>({ nome: "", whatsapp: "", nomeCorretor: "" });
+  const [lead, setLead] = useState<Lead>({ nome: "", whatsapp: "", nomeCorretor: "", corretorId: "" });
   const [loading, setLoading] = useState(false);
+  
+  const [listaCorretores, setListaCorretores] = useState<{id: string, nome: string}[]>([]);
+  const [carregandoCorretores, setCarregandoCorretores] = useState(false);
+  const [temCorretor, setTemCorretor] = useState(false);
+
+  useEffect(() => {
+    if (etapa !== "lead") return;
+
+    const fetchCorretores = async () => {
+      setCarregandoCorretores(true);
+      try {
+        const q = query(collection(db, "usuarios"), where("status", "==", "ativo"), where("role", "==", "corretor"));
+        const snap = await getDocs(q);
+        const corretores = snap.docs
+          .map(d => ({ id: d.id, nome: d.data().nome }))
+          .sort((a, b) => a.nome.localeCompare(b.nome));
+        
+        setListaCorretores(corretores);
+      } catch (err) {
+        console.error("Erro ao buscar corretores:", err);
+      } finally {
+        setCarregandoCorretores(false);
+      }
+    };
+
+    fetchCorretores();
+  }, [etapa]);
 
   const formatWhatsApp = (val: string) => {
     const num = val.replace(/\D/g, "").slice(0, 11);
@@ -49,41 +80,63 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
     return `(${num.slice(0, 2)}) ${num.slice(2, 7)}-${num.slice(7)}`;
   };
 
+  const handleToggleTemCorretor = (valor: boolean) => {
+     setTemCorretor(valor);
+     if (!valor) {
+        setLead(prev => ({ ...prev, corretorId: "", nomeCorretor: "" }));
+     }
+  };
+
+  const formValido = Boolean(
+    lead.nome.trim() && 
+    lead.whatsapp.replace(/\D/g, "").length >= 10 && 
+    (!temCorretor || lead.corretorId)
+  );
+
   const gerarPDF = async () => {
-    if (!lead.nome.trim() || lead.whatsapp.replace(/\D/g, "").length < 10 || !lead.nomeCorretor.trim()) return;
+    if (!formValido) return;
     setLoading(true);
 
     try {
-      // Salva o lead via API
+      const finalCorretorId = temCorretor ? lead.corretorId : "";
+      const finalNomeCorretor = temCorretor ? lead.nomeCorretor : "";
+
+      // ATUALIZADO: Inclui área, quartos e valor de avaliação no pacote final enviado à API
       await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...lead,
-          nomeCorretor: lead.nomeCorretor,
+          corretorId: finalCorretorId,
+          nomeCorretor: finalNomeCorretor,
           empreendimento: proposta.empreendimento,
           modelo: proposta.modelo,
+          area: proposta.area || 0,
+          quartos: proposta.quartos || 0,
           valorImovel: proposta.valorImovel,
+          simulacao: {
+            valorImovel: proposta.valorImovel,
+            valorAvaliacao: proposta.valorAvaliacao || proposta.valorImovel, // Garante que o Laudo viaje
+            entrada: proposta.entrada,
+            valorFinanciado: proposta.valorFinanciado,
+            rendaFamiliar: proposta.rendaFamiliar || 0,
+            subsidio: proposta.subsidio
+          },
           timestamp: new Date().toISOString(),
         }),
       }).catch(() => {});
 
-      // Gera o PDF
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ orientation: "portrait", format: "a4" });
-
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
 
-      // Fundo
       doc.setFillColor(15, 30, 22);
       doc.rect(0, 0, pageW, pageH, "F");
 
-      // Cabeçalho com fundo verde escuro
       doc.setFillColor(33, 57, 43);
       doc.rect(0, 0, pageW, 35, "F");
 
-      // Logo text (sem imagem para simplificar)
       doc.setFont("helvetica", "bold");
       doc.setFontSize(20);
       doc.setTextColor(175, 111, 83);
@@ -96,7 +149,6 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       doc.setTextColor(154, 154, 153);
       doc.text("CONSTRUÇÃO INTELIGENTE", 20, 29);
 
-      // Título da proposta
       doc.setFont("helvetica", "bold");
       doc.setFontSize(12);
       doc.setTextColor(216, 216, 215);
@@ -106,7 +158,6 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       doc.setTextColor(154, 154, 153);
       doc.text(new Date().toLocaleDateString("pt-BR"), pageW - 20, 25, { align: "right" });
 
-      // Dados do cliente
       let y = 50;
       doc.setFillColor(33, 57, 43);
       doc.roundedRect(15, y - 6, pageW - 30, 28, 3, 3, "F");
@@ -121,13 +172,13 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       doc.setFontSize(9);
       doc.setTextColor(154, 154, 153);
       doc.text(`WhatsApp: ${lead.whatsapp}`, 20, y + 18);
-      if (lead.nomeCorretor) {
+      
+      if (finalNomeCorretor) {
         doc.setFontSize(8);
         doc.setTextColor(154, 154, 153);
-        doc.text(`Corretor(a): ${lead.nomeCorretor}`, pageW - 20, y + 18, { align: "right" });
+        doc.text(`Corretor(a): ${finalNomeCorretor}`, pageW - 20, y + 18, { align: "right" });
       }
 
-      // Dados do imóvel
       y += 38;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
@@ -142,13 +193,12 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       doc.text(`${proposta.empreendimento} — ${proposta.modelo}`, 20, y + 9);
       doc.setFontSize(10);
       doc.setTextColor(154, 154, 153);
-      doc.text(`${proposta.cidade}, ${proposta.estado} · Área: ${proposta.area}m² · Lote: 250m²`, 20, y + 18);
+      doc.text(`${proposta.cidade}, ${proposta.estado} · Área: ${proposta.area}m²`, 20, y + 18);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
       doc.setTextColor(175, 111, 83);
       doc.text(`R$ ${proposta.valorImovel.toLocaleString("pt-BR")}`, 20, y + 28);
 
-      // Tabela de valores
       y += 46;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
@@ -179,8 +229,6 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
         y += 10;
       });
 
-      // ── PARCELAS DO FINANCIAMENTO ──────────────────────────────────────
-      // Motor de bloqueio SAC: se sacAprovadoPDF=false → só PRICE no PDF
       y += 8;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
@@ -189,7 +237,6 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       y += 8;
 
       if (proposta.sacAprovadoPDF) {
-        // SAC + PRICE lado a lado (cliente aprovado para ambos)
         doc.setFillColor(23, 39, 28);
         doc.roundedRect(15, y - 4, (pageW - 35) / 2, 30, 3, 3, "F");
         doc.setFont("helvetica", "bold");
@@ -217,8 +264,6 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
         doc.setTextColor(154, 154, 153);
         doc.text("parcela fixa", col2X + (pageW - 35) / 4, y + 20, { align: "center" });
       } else {
-        // Apenas PRICE — SAC bloqueado pois excede 30% da renda
-        // Card PRICE centralizado (largura total)
         doc.setFillColor(23, 39, 28);
         doc.roundedRect(15, y - 4, pageW - 30, 30, 3, 3, "F");
         doc.setFont("helvetica", "bold");
@@ -231,16 +276,15 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
         doc.setFontSize(8);
         doc.setTextColor(154, 154, 153);
         doc.text("parcela fixa · 360 meses", pageW / 2, y + 22, { align: "center" });
-        // Nota sutil sobre o SAC
+        
         y += 34;
         doc.setFont("helvetica", "italic");
         doc.setFontSize(7);
         doc.setTextColor(90, 90, 89);
         doc.text("* Sistema SAC não apresentado — parcela inicial excederia o limite de comprometimento de renda (30%).", 20, y);
-        y -= 34; // compensar o y extra para a nota ficar antes do bloco de notas legais
+        y -= 34; 
       }
 
-      // Notas Legais
       y += 40;
       doc.setFillColor(23, 39, 28);
       doc.roundedRect(15, y - 4, pageW - 30, 35, 3, 3, "F");
@@ -254,67 +298,60 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       const notasLinhas = doc.splitTextToSize(proposta.notasLegais, pageW - 40);
       doc.text(notasLinhas, 20, y + 10);
 
-      // Rodapé
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.setTextColor(90, 90, 89);
       doc.text("Habiticon Construção Inteligente · CNPJ: 61.922.155/0001-70", pageW / 2, pageH - 15, { align: "center" });
 
-      // ── Web Share API (mobile) ou Download + WhatsApp Web (desktop) ──
       const nomeArquivo = `Proposta_Habiticon_${lead.nome.replace(/\s+/g, "_")}.pdf`;
       const mensagemWpp = `Olá ${lead.nome}! Segue a proposta da Habiticon referente ao ${proposta.modelo} em ${proposta.cidade}-${proposta.estado}.\n\nValor do imóvel: R$ ${proposta.valorImovel.toLocaleString("pt-BR")}\nEntrada: R$ ${proposta.entrada.toLocaleString("pt-BR")}\nFinanciamento: R$ ${proposta.valorFinanciado.toLocaleString("pt-BR")}\n\nEm caso de dúvidas, estou à disposição!`;
 
       const pdfBlob = doc.output("blob");
       const pdfFile = new File([pdfBlob], nomeArquivo, { type: "application/pdf" });
 
-      // Tenta Web Share API com arquivo (funciona em mobile Chrome/Safari)
       const canShareFile = typeof navigator !== "undefined"
         && "share" in navigator
         && "canShare" in navigator
         && navigator.canShare({ files: [pdfFile] });
 
       if (canShareFile) {
-        // Mobile: compartilha PDF direto (usuário escolhe WhatsApp/Drive/etc)
         try {
-          await navigator.share({
-            files: [pdfFile],
-            title: nomeArquivo,
-            text: mensagemWpp,
-          });
-          // Share concluído com sucesso
+          if (temCorretor) {
+            await navigator.share({
+              files: [pdfFile],
+              title: nomeArquivo,
+              text: mensagemWpp,
+            });
+          } else {
+             doc.save(nomeArquivo);
+          }
           setEtapa("success");
         } catch (shareErr: any) {
-          // Usuário cancelou o share ou share falhou
           if (shareErr?.name === "AbortError") {
-            // Cancelou — não mostrar erro, só fechar loading
             setLoading(false);
             return;
           }
-          // Share falhou — fallback para download
           doc.save(nomeArquivo);
           setEtapa("success");
         }
       } else {
-        // Desktop: baixa o PDF e abre WhatsApp Web com a mensagem
         doc.save(nomeArquivo);
-        const wppUrl = `https://wa.me/55${lead.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(mensagemWpp)}`;
-        window.open(wppUrl, "_blank");
+        if (temCorretor) {
+          const wppUrl = `https://wa.me/55${lead.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(mensagemWpp)}`;
+          window.open(wppUrl, "_blank");
+        }
         setEtapa("success");
       }
     } catch (err: any) {
-      // Erro na geração do PDF
-
       if (err?.name !== "AbortError") {
         console.error("Erro ao gerar PDF:", err);
       }
-      // Ainda assim considera sucesso se o PDF foi gerado
       setEtapa("success");
     } finally {
       setLoading(false);
     }
   };
 
-  // URL do WhatsApp — usada no botão de fallback na tela de sucesso (desktop)
   const whatsappUrl = `https://wa.me/55${lead.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
     `Olá ${lead.nome}! Segue a proposta da Habiticon referente ao ${proposta.modelo} em ${proposta.cidade}-${proposta.estado}.\n\nValor do imóvel: R$ ${proposta.valorImovel.toLocaleString("pt-BR")} | Entrada: R$ ${proposta.entrada.toLocaleString("pt-BR")}\n\nEm caso de dúvidas, estou à disposição!`
   )}`;
@@ -322,7 +359,6 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
 
   return (
     <>
-      {/* Botão de gatilho */}
       <motion.button
         onClick={() => setEtapa("lead")}
         className="btn-primary w-full"
@@ -333,7 +369,6 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
         Gerar Proposta em PDF
       </motion.button>
 
-      {/* Modal */}
       <AnimatePresence>
         {etapa !== "closed" && (
           <motion.div
@@ -351,7 +386,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
             >
               {etapa === "lead" && (
                 <div>
-                  <div className="flex items-center justify-between mb-16">
+                  <div className="flex items-center justify-between mb-8">
                     <div>
                       <h2 className="text-title" style={{ fontSize: 26, letterSpacing: "-0.02em" }}>Dados do Cliente</h2>
                       <p className="text-muted" style={{ marginTop: 6, fontSize: 13 }}>Informações para a proposta personalizada</p>
@@ -361,7 +396,24 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     </button>
                   </div>
 
-                  <div className="space-y-10 mb-12">
+                  <div style={{ marginBottom: 24, display: "flex", gap: 10, background: "rgba(0,0,0,0.2)", padding: 8, borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
+                    <button 
+                      type="button" 
+                      onClick={() => handleToggleTemCorretor(false)} 
+                      style={{ flex: 1, padding: "10px", borderRadius: 8, background: !temCorretor ? "var(--terracota)" : "transparent", color: !temCorretor ? "white" : "var(--gray-mid)", fontSize: 12, fontWeight: 700, transition: "0.2s" }}
+                    >
+                      Quero ser atendido
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => handleToggleTemCorretor(true)} 
+                      style={{ flex: 1, padding: "10px", borderRadius: 8, background: temCorretor ? "var(--terracota)" : "transparent", color: temCorretor ? "white" : "var(--gray-mid)", fontSize: 12, fontWeight: 700, transition: "0.2s" }}
+                    >
+                      Já tenho corretor
+                    </button>
+                  </div>
+
+                  <div className="space-y-6 mb-8">
                     <div>
                       <label className="text-[10px] font-black uppercase tracking-[0.15em] mb-4 block" style={{ color: "var(--gray-mid)" }}>
                         Nome completo
@@ -371,7 +423,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                         <input
                           type="text"
                           className="input-field"
-                          style={{ height: 64, fontSize: 16, paddingLeft: 64 }}
+                          style={{ height: 56, fontSize: 16, paddingLeft: 64 }}
                           placeholder="Nome do cliente"
                           value={lead.nome}
                           onChange={(e) => setLead((p) => ({ ...p, nome: e.target.value }))}
@@ -388,7 +440,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                         <input
                           type="tel"
                           className="input-field"
-                          style={{ height: 64, fontSize: 16, paddingLeft: 64 }}
+                          style={{ height: 56, fontSize: 16, paddingLeft: 64 }}
                           placeholder="(62) 99999-9999"
                           value={lead.whatsapp}
                           onChange={(e) => setLead((p) => ({ ...p, whatsapp: formatWhatsApp(e.target.value) }))}
@@ -399,15 +451,13 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     </div>
                   </div>
 
-                  {/* Preview da proposta */}
                   <div
                     style={{ 
                       background: "rgba(0,0,0,0.6)", 
                       border: "1px solid var(--border-subtle)",
                       borderRadius: "24px",
                       padding: "32px 40px",
-                      marginBottom: "40px",
-                      marginTop: "32px"
+                      marginBottom: "32px"
                     }}
                   >
                     <p 
@@ -432,7 +482,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                         <span style={{ color: "var(--gray-dark)", fontWeight: "bold", textTransform: "uppercase", fontSize: "10px", letterSpacing: "0.15em" }} className="whitespace-nowrap">Entrada Total</span>
                         <span style={{ color: "var(--gray-light)", fontWeight: 600 }}>{formatBRL(proposta.entrada)}</span>
                       </div>
-                      {/* SAC: só mostrar no preview se aprovado */}
+                      
                       {proposta.sacAprovadoPDF ? (
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-sm">
                           <span style={{ color: "var(--gray-dark)", fontWeight: "bold", textTransform: "uppercase", fontSize: "10px", letterSpacing: "0.15em" }} className="whitespace-nowrap">Parcela SAC (1ª)</span>
@@ -444,6 +494,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                           <span style={{ color: "var(--terracota-light)", fontWeight: 800, fontSize: 20 }}>{formatBRLDecimal(proposta.parcelaPRICE)}</span>
                         </div>
                       )}
+                      
                       {!proposta.sacAprovadoPDF && (
                         <div style={{ fontSize: 11, color: "var(--gray-dark)", paddingTop: 4, display: "flex", gap: 6, alignItems: "center" }}>
                           <span style={{ color: "#fb923c" }}>⚠️</span>
@@ -453,40 +504,81 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     </div>
                   </div>
 
-                    <div>
+                  {temCorretor && (
+                    <div style={{ marginBottom: 24 }}>
                       <label className="text-[10px] font-black uppercase tracking-[0.15em] mb-4 block" style={{ color: "var(--gray-mid)" }}>
-                        Nome do Corretor (a) <span style={{ color: "var(--terracota)" }}>*</span>
+                        Selecione o Corretor(a) <span style={{ color: "var(--terracota)" }}>*</span>
                       </label>
                       <div className="relative">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: 24, top: "50%", transform: "translateY(-50%)", color: "var(--terracota)", zIndex: 10 }}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                        <input
-                          type="text"
+                        <User size={20} className="absolute left-6 top-1/2 -translate-y-1/2 z-10" style={{ color: "var(--terracota)", pointerEvents: "none" }} />
+                        
+                        <select
                           className="input-field"
-                          style={{ height: 64, fontSize: 16, paddingLeft: 64 }}
-                          placeholder="Seu nome completo"
-                          value={lead.nomeCorretor}
-                          onChange={(e) => setLead((p) => ({ ...p, nomeCorretor: e.target.value }))}
-                          autoComplete="name"
-                        />
+                          style={{ height: 56, fontSize: 16, paddingLeft: 64, appearance: "none", cursor: "pointer", color: lead.corretorId ? "white" : "var(--gray-dark)" }}
+                          value={lead.corretorId}
+                          onChange={(e) => {
+                            const selecionado = listaCorretores.find(c => c.id === e.target.value);
+                            setLead(p => ({ ...p, corretorId: e.target.value, nomeCorretor: selecionado?.nome || "" }));
+                          }}
+                          disabled={carregandoCorretores}
+                        >
+                          <option value="" disabled>
+                            {carregandoCorretores ? "Carregando equipe..." : "Selecione quem está te atendendo"}
+                          </option>
+                          {listaCorretores.map(c => (
+                             <option key={c.id} value={c.id} style={{ background: "#17271C", color: "#D8D8D7" }}>
+                               {c.nome}
+                             </option>
+                          ))}
+                        </select>
+                        <div style={{ position: "absolute", right: 24, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
+                           <svg width="14" height="8" viewBox="0 0 14 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                             <path d="M1 1L7 7L13 1" stroke="var(--terracota)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                           </svg>
+                        </div>
                       </div>
                     </div>
+                  )}
 
-                  <div style={{ height: 8 }} />
+                  {!temCorretor && (
+                    <div style={{ marginBottom: 24, padding: "16px", borderRadius: 12, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)" }}>
+                       <p style={{ fontSize: 13, color: "#4ade80", textAlign: "center", lineHeight: 1.5 }}>
+                         Após gerar a proposta, um de nossos especialistas em financiamento analisará seu perfil e entrará em contato!
+                       </p>
+                    </div>
+                  )}
+
                   <button
                     onClick={gerarPDF}
-                    disabled={!lead.nome.trim() || lead.whatsapp.replace(/\D/g, "").length < 10 || !lead.nomeCorretor.trim() || loading}
-                    className="btn-primary w-full"
-                    style={{ opacity: !lead.nome.trim() || lead.whatsapp.replace(/\D/g, "").length < 10 || !lead.nomeCorretor.trim() ? 0.5 : 1 }}
+                    disabled={!formValido || loading}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
+                      width: "100%", padding: "18px", borderRadius: "14px", border: "none",
+                      fontSize: "16px", fontWeight: 800, transition: "all 0.3s ease",
+                      background: formValido ? "var(--terracota)" : "rgba(255,255,255,0.08)",
+                      color: formValido ? "#ffffff" : "var(--gray-mid)",
+                      boxShadow: formValido ? "0 8px 24px rgba(175,111,83,0.4)" : "none",
+                      cursor: formValido ? "pointer" : "not-allowed",
+                      transform: formValido ? "translateY(-2px)" : "none"
+                    }}
                   >
                     {loading ? (
-                      <span>Gerando PDF...</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 1s linear infinite" }}>
+                           <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                         </svg>
+                         Gerando Proposta...
+                      </span>
                     ) : (
                       <>
-                        <Download size={18} />
+                        <Download size={22} />
                         Gerar e Baixar Proposta
                       </>
                     )}
                   </button>
+                  <style dangerouslySetInnerHTML={{__html: `
+                    @keyframes spin { 100% { transform: rotate(360deg); } }
+                  `}} />
                 </div>
               )}
 
@@ -507,14 +599,19 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                   </motion.div>
 
                   <h2 className="text-title mb-2">PDF Gerado com Sucesso!</h2>
-                  <p className="text-muted mb-6">
-                    A proposta de <strong style={{ color: "var(--gray-light)" }}>{lead.nome}</strong> foi gerada com sucesso.
-                  </p>
+                  
+                  {temCorretor ? (
+                     <p className="text-muted mb-6">
+                       A proposta de <strong style={{ color: "var(--gray-light)" }}>{lead.nome}</strong> foi gerada com sucesso e vinculada ao corretor(a) {lead.nomeCorretor}.
+                     </p>
+                  ) : (
+                     <p className="text-muted mb-6">
+                       A sua proposta foi gerada! <strong style={{ color: "var(--gray-light)" }}>A nossa equipe entrará em contato em breve pelo WhatsApp.</strong>
+                     </p>
+                  )}
 
                   <div className="space-y-3">
-                    {/* No mobile, o share já aconteceu durante a geração.
-                        No desktop, oferece o link do WhatsApp Web como fallback. */}
-                    {!podeCompartilharNativo && (
+                    {temCorretor && !podeCompartilharNativo && (
                       <a
                         href={whatsappUrl}
                         target="_blank"
@@ -526,13 +623,14 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                         Abrir WhatsApp Web
                       </a>
                     )}
-                    {podeCompartilharNativo && (
+                    {temCorretor && podeCompartilharNativo && (
                       <p style={{ fontSize: 13, color: "var(--gray-mid)", textAlign: "center" }}>
                         PDF enviado via compartilhamento nativo 📲
                       </p>
                     )}
+                    
                     <button
-                      onClick={() => { setEtapa("closed"); setLead({ nome: "", whatsapp: "", nomeCorretor: "" }); }}
+                      onClick={() => { setEtapa("closed"); setLead({ nome: "", whatsapp: "", nomeCorretor: "", corretorId: "" }); }}
                       className="btn-ghost w-full"
                     >
                       Fechar

@@ -6,10 +6,10 @@ const TOKEN  = "hbt_adm_2026_ipora";
 function checkAuth(request: NextRequest): NextResponse | null {
   const { pathname } = request.nextUrl;
 
-  if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
+  if (pathname.startsWith("/admin") && pathname !== "/login") {
     const auth = request.cookies.get(COOKIE);
     if (!auth || auth.value !== TOKEN) {
-      const loginUrl = new URL("/admin/login", request.url);
+      const loginUrl = new URL("/login", request.url);
       return NextResponse.redirect(loginUrl);
     }
   }

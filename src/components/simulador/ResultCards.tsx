@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CreditCard, FileText, AlertTriangle, Percent, CheckCircle2, SlidersHorizontal, Info } from "lucide-react";
+import { CreditCard, FileText, AlertTriangle, CheckCircle2, SlidersHorizontal, Info } from "lucide-react";
 import {
   formatBRL, formatBRLDecimal,
   parcelamentoCartao, parcelamentoBoleto,
@@ -10,13 +10,22 @@ import {
 } from "@/lib/calculos";
 import { useAnimatedNumber } from "@/hooks/useAnimatedNumber";
 
+// ─────────────────────────────────────────────────────────
+// TIPAGENS
+// ─────────────────────────────────────────────────────────
+
 interface ResultCardsProps {
   valorImovel: number;
   entrada: number;
   subsidio: number;
-  atoPercent: number;           // 0.50 a 1.00
+  atoPercent: number;
   onAtoPercentChange: (v: number) => void;
+  laudoCUB?: number; // ← NOVO: laudo real calculado via calcularLaudoCUB() no pai
 }
+
+// ─────────────────────────────────────────────────────────
+// AUXILIARES
+// ─────────────────────────────────────────────────────────
 
 function AnimatedValue({ value, prefix = "R$ " }: { value: number; prefix?: string }) {
   const animated = useAnimatedNumber(value, 450, "easeOut");
@@ -43,47 +52,51 @@ function InfoLine({ label, value, valueColor, last = false }: {
   );
 }
 
-export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoPercentChange }: ResultCardsProps) {
+// ─────────────────────────────────────────────────────────
+// COMPONENTE PRINCIPAL
+// ─────────────────────────────────────────────────────────
+
+export function ResultCards({
+  valorImovel, entrada, subsidio,
+  atoPercent, onAtoPercentChange,
+  laudoCUB = 0,
+}: ResultCardsProps) {
   const [tabAtiva, setTabAtiva] = useState<"cartao" | "boleto">("cartao");
-  
-  // NOVO: Estado para controlar a quantidade de parcelas (inicia em 5x)
   const [qtdParcelas, setQtdParcelas] = useState<number>(5);
 
-  const ato = entrada * atoPercent;
+  const ato             = entrada * atoPercent;
   const restanteEntrada = entrada - ato;
   const valorFinanciado = Math.max(0, valorImovel - entrada - subsidio);
 
-  // Dados entrada embutida para info
-  const embutida = calcularEntradaEmbutida(valorImovel, entrada, subsidio);
+  // Passa o laudoCUB real para o motor — se 0, fallback automático para comportamento antigo
+  const embutida = calcularEntradaEmbutida(valorImovel, entrada, subsidio, 0.80, laudoCUB);
 
-  // NOVO: Passando a variável qtdParcelas para o motor de cálculo
   const cartao = parcelamentoCartao(restanteEntrada, qtdParcelas);
   const boleto = parcelamentoBoleto(restanteEntrada, qtdParcelas);
+
+  // Mostra entrada embutida somente quando laudoCUB foi fornecido e há ganho real
+  const temEntradaEmbutida = laudoCUB > 0 && embutida.entradaEmbutida > 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-      {/* ── Card: Ato (editável 50–100%) ── */}
+      {/* ── CARD: ATO (editável 50–100%) ── */}
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         style={{
-          padding: "22px 24px",
-          borderRadius: 16,
+          padding: "22px 24px", borderRadius: 16,
           background: "linear-gradient(135deg, rgba(175,111,83,0.15), var(--bg-card))",
           border: "1px solid rgba(175,111,83,0.4)",
           boxShadow: "var(--shadow-card)",
         }}
       >
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
           <div>
             <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--terracota)", marginBottom: 3 }}>
               Ato mínimo
             </p>
-            <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>
-              Pago na assinatura do contrato
-            </p>
+            <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>Pago na assinatura do contrato</p>
           </div>
           <div style={{
             display: "flex", alignItems: "center", gap: 5,
@@ -95,12 +108,10 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
           </div>
         </div>
 
-        {/* Valor animado */}
         <div style={{ fontSize: 36, fontWeight: 800, color: "var(--terracota)", marginBottom: 18, lineHeight: 1 }}>
           <AnimatedValue value={ato} />
         </div>
 
-        {/* Slider do percentual do ato */}
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
             <span style={{ fontSize: 11, color: "var(--gray-dark)" }}>Mínimo (50%)</span>
@@ -109,21 +120,23 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
           <input
             type="range"
             className="slider-custom"
-            min={50}
-            max={100}
-            step={5}
+            min={50} max={100} step={5}
             value={Math.round(atoPercent * 100)}
             onChange={(e) => onAtoPercentChange(Number(e.target.value) / 100)}
             style={{ width: "100%" }}
           />
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-            <span style={{ fontSize: 12, color: "var(--gray-mid)" }}>Parcela: <strong style={{ color: "var(--gray-light)" }}>{formatBRL(restanteEntrada)}</strong></span>
-            <span style={{ fontSize: 12, color: "var(--gray-mid)" }}>Ato: <strong style={{ color: "var(--terracota)" }}>{(atoPercent * 100).toFixed(0)}%</strong></span>
+            <span style={{ fontSize: 12, color: "var(--gray-mid)" }}>
+              Parcela: <strong style={{ color: "var(--gray-light)" }}>{formatBRL(restanteEntrada)}</strong>
+            </span>
+            <span style={{ fontSize: 12, color: "var(--gray-mid)" }}>
+              Ato: <strong style={{ color: "var(--terracota)" }}>{(atoPercent * 100).toFixed(0)}%</strong>
+            </span>
           </div>
         </div>
       </motion.div>
 
-      {/* ── Card: Parcelamento do restante ── */}
+      {/* ── CARD: PARCELAMENTO DO RESTANTE ── */}
       <AnimatePresence>
         {restanteEntrada > 0 && (
           <motion.div
@@ -133,12 +146,9 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.25 }}
             style={{
-              padding: "22px 24px",
-              borderRadius: 16,
-              background: "var(--bg-card)",
-              border: "1px solid var(--border-subtle)",
-              boxShadow: "var(--shadow-card)",
-              overflow: "hidden",
+              padding: "22px 24px", borderRadius: 16,
+              background: "var(--bg-card)", border: "1px solid var(--border-subtle)",
+              boxShadow: "var(--shadow-card)", overflow: "hidden",
             }}
           >
             <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 4 }}>
@@ -148,7 +158,7 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
               Valor a parcelar: <strong style={{ color: "var(--gray-light)" }}>{formatBRL(restanteEntrada)}</strong>
             </p>
 
-            {/* NOVO: Seletor de Parcelas (1x a 5x) */}
+            {/* Seletor de parcelas */}
             <div style={{ marginBottom: 20 }}>
               <p style={{ fontSize: 12, color: "var(--gray-mid)", marginBottom: 8 }}>Em quantas vezes?</p>
               <div style={{ display: "flex", gap: 8 }}>
@@ -157,16 +167,11 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
                     key={num}
                     onClick={() => setQtdParcelas(num)}
                     style={{
-                      flex: 1,
-                      padding: "8px 0",
-                      borderRadius: 8,
+                      flex: 1, padding: "8px 0", borderRadius: 8,
                       background: qtdParcelas === num ? "var(--terracota)" : "rgba(255,255,255,0.05)",
                       border: `1px solid ${qtdParcelas === num ? "var(--terracota)" : "var(--border-subtle)"}`,
                       color: qtdParcelas === num ? "#fff" : "var(--gray-mid)",
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      transition: "all 0.2s"
+                      fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all 0.2s"
                     }}
                   >
                     {num}x
@@ -175,18 +180,17 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
               </div>
             </div>
 
-            {/* Tabs */}
+            {/* Tabs Cartão / Boleto */}
             <div className="tab-group" style={{ marginBottom: 20 }}>
               <button className={`tab-item flex items-center justify-center gap-2 ${tabAtiva === "cartao" ? "active" : ""}`} onClick={() => setTabAtiva("cartao")}>
-                <CreditCard size={13} />Cartão {qtdParcelas}x
+                <CreditCard size={13} /> Cartão {qtdParcelas}x
               </button>
               <button className={`tab-item flex items-center justify-center gap-2 ${tabAtiva === "boleto" ? "active" : ""}`} onClick={() => setTabAtiva("boleto")}>
-                <FileText size={13} />Boleto {qtdParcelas}x
+                <FileText size={13} /> Boleto {qtdParcelas}x
               </button>
             </div>
 
             <AnimatePresence mode="wait">
-              {/* ── Cartão ── */}
               {tabAtiva === "cartao" && (
                 <motion.div key="c" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} transition={{ duration: 0.15 }}>
                   <div style={{ marginBottom: 18 }}>
@@ -199,9 +203,7 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
                   <div style={{ padding: "14px 16px", borderRadius: 12, background: "rgba(0,0,0,0.25)", border: "1px solid var(--border-subtle)" }}>
                     <InfoLine label="Valor parcelado" value={formatBRL(restanteEntrada)} />
                     <InfoLine label={qtdParcelas === 1 ? "Taxa à vista" : "Taxa MDR Base"} value={qtdParcelas === 1 ? "2.89%" : "2.14%"} />
-                    {qtdParcelas > 1 && (
-                      <InfoLine label="Adicional por parcela" value="0.65%" />
-                    )}
+                    {qtdParcelas > 1 && <InfoLine label="Adicional por parcela" value="0.65%" />}
                     <InfoLine label={`Total com taxas (${qtdParcelas}x)`} value={formatBRLDecimal(cartao.totalComJuros)} />
                     <InfoLine label={`Custo total (${cartao.taxaEfetiva?.toFixed(2) || "0.00"}%)`} value={formatBRLDecimal(cartao.totalJuros)} valueColor="#fb923c" last />
                   </div>
@@ -212,7 +214,6 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
                 </motion.div>
               )}
 
-              {/* ── Boleto ── */}
               {tabAtiva === "boleto" && (
                 <motion.div key="b" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.15 }}>
                   <div style={{ marginBottom: 18 }}>
@@ -240,7 +241,6 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
           </motion.div>
         )}
 
-        {/* Ato = 100%: tudo pago à vista */}
         {restanteEntrada === 0 && (
           <motion.div
             key="avista"
@@ -260,32 +260,68 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
         )}
       </AnimatePresence>
 
-      {/* ── Card: Saldo a Financiar + Entrada Embutida ── */}
+      {/* ── CARD: COMPOSIÇÃO DO FINANCIAMENTO CAIXA ── */}
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.14 }}
         style={{
-          padding: "20px 24px",
-          borderRadius: 16,
-          background: "var(--bg-card)",
-          border: "1px solid var(--border-subtle)",
+          padding: "20px 24px", borderRadius: 16,
+          background: "var(--bg-card)", border: "1px solid var(--border-subtle)",
           boxShadow: "var(--shadow-card)",
         }}
       >
         <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 14 }}>
           Composição do Financiamento Caixa
         </p>
-        <InfoLine label="Valor contratual (imóvel)" value={formatBRL(embutida.valorContratual)} />
-        <InfoLine label="Valor avaliado estimado (laudo)" value={formatBRL(embutida.valorAvaliadoCaixa)} valueColor="var(--terracota)" />
-        <InfoLine label="Cota Caixa (80% do avaliado)" value={formatBRL(embutida.cotaCaixa)} valueColor="#4ade80" />
-        <InfoLine label="Entrada real do comprador" value={formatBRL(embutida.entradaRealComprador)} />
-        {embutida.entradaEmbutida > 0 && (
-          <InfoLine label="Entrada embutida na avaliação" value={formatBRL(embutida.entradaEmbutida)} valueColor="#facc15" />
+
+        {/* Valor contratual */}
+        <InfoLine
+          label="Valor contratual (imóvel)"
+          value={formatBRL(embutida.valorContratual)}
+        />
+
+        {/* Laudo CUB — exibe só se foi fornecido, senão esconde a linha para não confundir */}
+        {laudoCUB > 0 && (
+          <InfoLine
+            label="Valor avaliado estimado (laudo CUB)"
+            value={formatBRL(embutida.valorAvaliadoCaixa)}
+            valueColor="var(--terracota)"
+          />
         )}
+
+        {/* Cota Caixa — 80% do laudo CUB (ou 80% do financiado no fallback) */}
+        <InfoLine
+          label={laudoCUB > 0 ? "Cota Caixa (80% do laudo CUB)" : "Cota Caixa (80% do imóvel)"}
+          value={formatBRL(embutida.cotaCaixa)}
+          valueColor="#4ade80"
+        />
+
+        {/* Entrada real */}
+        <InfoLine
+          label="Entrada real do comprador"
+          value={formatBRL(embutida.entradaRealComprador)}
+        />
+
+        {/* Entrada embutida — só aparece quando laudoCUB foi fornecido e há ganho */}
+        {temEntradaEmbutida && (
+          <InfoLine
+            label="Entrada embutida na avaliação"
+            value={formatBRL(embutida.entradaEmbutida)}
+            valueColor="#facc15"
+          />
+        )}
+
+        {/* Subsídio */}
         {subsidio > 0 && (
-          <InfoLine label="Subsídio MCMV estimado" value={formatBRL(subsidio)} valueColor="#4ade80" />
+          <InfoLine
+            label="Subsídio MCMV estimado"
+            value={formatBRL(subsidio)}
+            valueColor="#4ade80"
+          />
         )}
+
+        {/* Saldo a financiar — destaque final */}
         <div style={{ paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 4 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gray-mid)" }}>Saldo a financiar</span>
@@ -295,6 +331,7 @@ export function ResultCards({ valorImovel, entrada, subsidio, atoPercent, onAtoP
           </div>
         </div>
       </motion.div>
+
     </div>
   );
 }

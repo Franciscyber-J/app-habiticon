@@ -278,7 +278,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
   const fazerLogout = useCallback(async () => {
     if (!confirm("Sair do painel administrativo?")) return;
     await fetch("/api/auth", { method: "DELETE" });
-    window.location.href = "/admin/login";
+    window.location.href = "/login";
   }, []);
 
   const salvar = useCallback(async () => {
