@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FileText, Send, X, User, Phone, Download, CheckCircle2 } from "lucide-react";
+import { FileText, Send, X, User, Phone, Download, CheckCircle2, ShieldCheck } from "lucide-react";
 import { formatBRL, formatBRLDecimal } from "@/lib/calculos";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, addDoc, doc, getDoc } from "firebase/firestore";
 
 interface Lead {
   nome: string;
@@ -35,6 +35,8 @@ interface PropostaData {
   sacAprovadoPDF: boolean;      
   rendaFamiliar?: number;
   notasLegais: string;
+  corretorId?: string; // NOVO: ID do corretor que vem do link
+  origem?: string;     // NOVO: Origem do lead
 }
 
 interface PDFGeneratorProps {
@@ -49,6 +51,15 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
   const [listaCorretores, setListaCorretores] = useState<{id: string, nome: string}[]>([]);
   const [carregandoCorretores, setCarregandoCorretores] = useState(false);
   const [temCorretor, setTemCorretor] = useState(false);
+
+  const isLinkProtegido = Boolean(proposta.corretorId);
+
+  useEffect(() => {
+    if (isLinkProtegido) {
+      setTemCorretor(true);
+      setLead(prev => ({ ...prev, corretorId: proposta.corretorId! }));
+    }
+  }, [isLinkProtegido, proposta.corretorId]);
 
   useEffect(() => {
     if (etapa !== "lead") return;
@@ -81,6 +92,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
   };
 
   const handleToggleTemCorretor = (valor: boolean) => {
+     if (isLinkProtegido) return;
      setTemCorretor(valor);
      if (!valor) {
         setLead(prev => ({ ...prev, corretorId: "", nomeCorretor: "" }));
@@ -99,9 +111,22 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
 
     try {
       const finalCorretorId = temCorretor ? lead.corretorId : "";
-      const finalNomeCorretor = temCorretor ? lead.nomeCorretor : "";
+      let finalNomeCorretor = temCorretor ? lead.nomeCorretor : "";
 
-      // ATUALIZADO: Inclui área, quartos e valor de avaliação no pacote final enviado à API
+      if (isLinkProtegido && !finalNomeCorretor) {
+         try {
+           const corretorDoc = await getDoc(doc(db, "usuarios", proposta.corretorId!));
+           if(corretorDoc.exists()){
+             finalNomeCorretor = (corretorDoc.data() as any).nome;
+           }
+         } catch(err){
+           console.error("Erro ao resgatar nome do corretor dono do link", err);
+         }
+      } else if (temCorretor && lead.corretorId) {
+          const c = listaCorretores.find(x => x.id === lead.corretorId);
+          if (c) finalNomeCorretor = c.nome;
+      }
+
       await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -114,9 +139,10 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
           area: proposta.area || 0,
           quartos: proposta.quartos || 0,
           valorImovel: proposta.valorImovel,
+          origem: proposta.origem || "organico",
           simulacao: {
             valorImovel: proposta.valorImovel,
-            valorAvaliacao: proposta.valorAvaliacao || proposta.valorImovel, // Garante que o Laudo viaje
+            valorAvaliacao: proposta.valorAvaliacao || proposta.valorImovel,
             entrada: proposta.entrada,
             valorFinanciado: proposta.valorFinanciado,
             rendaFamiliar: proposta.rendaFamiliar || 0,
@@ -127,83 +153,83 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       }).catch(() => {});
 
       const { jsPDF } = await import("jspdf");
-      const doc = new jsPDF({ orientation: "portrait", format: "a4" });
-      const pageW = doc.internal.pageSize.getWidth();
-      const pageH = doc.internal.pageSize.getHeight();
+      const pdfDoc = new jsPDF({ orientation: "portrait", format: "a4" });
+      const pageW = pdfDoc.internal.pageSize.getWidth();
+      const pageH = pdfDoc.internal.pageSize.getHeight();
 
-      doc.setFillColor(15, 30, 22);
-      doc.rect(0, 0, pageW, pageH, "F");
+      pdfDoc.setFillColor(15, 30, 22);
+      pdfDoc.rect(0, 0, pageW, pageH, "F");
 
-      doc.setFillColor(33, 57, 43);
-      doc.rect(0, 0, pageW, 35, "F");
+      pdfDoc.setFillColor(33, 57, 43);
+      pdfDoc.rect(0, 0, pageW, 35, "F");
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(20);
-      doc.setTextColor(175, 111, 83);
-      doc.text("HABITI", 20, 22);
-      doc.setTextColor(216, 216, 215);
-      doc.text("CON", 20 + doc.getTextWidth("HABITI"), 22);
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(20);
+      pdfDoc.setTextColor(175, 111, 83);
+      pdfDoc.text("HABITI", 20, 22);
+      pdfDoc.setTextColor(216, 216, 215);
+      pdfDoc.text("CON", 20 + pdfDoc.getTextWidth("HABITI"), 22);
 
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(154, 154, 153);
-      doc.text("CONSTRUÇÃO INTELIGENTE", 20, 29);
+      pdfDoc.setFontSize(9);
+      pdfDoc.setFont("helvetica", "normal");
+      pdfDoc.setTextColor(154, 154, 153);
+      pdfDoc.text("CONSTRUÇÃO INTELIGENTE", 20, 29);
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(216, 216, 215);
-      doc.text("PROPOSTA COMERCIAL", pageW - 20, 18, { align: "right" });
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(154, 154, 153);
-      doc.text(new Date().toLocaleDateString("pt-BR"), pageW - 20, 25, { align: "right" });
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(12);
+      pdfDoc.setTextColor(216, 216, 215);
+      pdfDoc.text("PROPOSTA COMERCIAL", pageW - 20, 18, { align: "right" });
+      pdfDoc.setFontSize(9);
+      pdfDoc.setFont("helvetica", "normal");
+      pdfDoc.setTextColor(154, 154, 153);
+      pdfDoc.text(new Date().toLocaleDateString("pt-BR"), pageW - 20, 25, { align: "right" });
 
       let y = 50;
-      doc.setFillColor(33, 57, 43);
-      doc.roundedRect(15, y - 6, pageW - 30, 28, 3, 3, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.setTextColor(175, 111, 83);
-      doc.text("DADOS DO CLIENTE", 20, y + 2);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(11);
-      doc.setTextColor(216, 216, 215);
-      doc.text(lead.nome.toUpperCase(), 20, y + 11);
-      doc.setFontSize(9);
-      doc.setTextColor(154, 154, 153);
-      doc.text(`WhatsApp: ${lead.whatsapp}`, 20, y + 18);
+      pdfDoc.setFillColor(33, 57, 43);
+      pdfDoc.roundedRect(15, y - 6, pageW - 30, 28, 3, 3, "F");
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(10);
+      pdfDoc.setTextColor(175, 111, 83);
+      pdfDoc.text("DADOS DO CLIENTE", 20, y + 2);
+      pdfDoc.setFont("helvetica", "normal");
+      pdfDoc.setFontSize(11);
+      pdfDoc.setTextColor(216, 216, 215);
+      pdfDoc.text(lead.nome.toUpperCase(), 20, y + 11);
+      pdfDoc.setFontSize(9);
+      pdfDoc.setTextColor(154, 154, 153);
+      pdfDoc.text(`WhatsApp: ${lead.whatsapp}`, 20, y + 18);
       
       if (finalNomeCorretor) {
-        doc.setFontSize(8);
-        doc.setTextColor(154, 154, 153);
-        doc.text(`Corretor(a): ${finalNomeCorretor}`, pageW - 20, y + 18, { align: "right" });
+        pdfDoc.setFontSize(8);
+        pdfDoc.setTextColor(154, 154, 153);
+        pdfDoc.text(`Corretor(a): ${finalNomeCorretor}`, pageW - 20, y + 18, { align: "right" });
       }
 
       y += 38;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.setTextColor(175, 111, 83);
-      doc.text("IMÓVEL SELECIONADO", 20, y);
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(10);
+      pdfDoc.setTextColor(175, 111, 83);
+      pdfDoc.text("IMÓVEL SELECIONADO", 20, y);
       y += 6;
-      doc.setFillColor(33, 57, 43);
-      doc.roundedRect(15, y - 2, pageW - 30, 34, 3, 3, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(14);
-      doc.setTextColor(216, 216, 215);
-      doc.text(`${proposta.empreendimento} — ${proposta.modelo}`, 20, y + 9);
-      doc.setFontSize(10);
-      doc.setTextColor(154, 154, 153);
-      doc.text(`${proposta.cidade}, ${proposta.estado} · Área: ${proposta.area}m²`, 20, y + 18);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.setTextColor(175, 111, 83);
-      doc.text(`R$ ${proposta.valorImovel.toLocaleString("pt-BR")}`, 20, y + 28);
+      pdfDoc.setFillColor(33, 57, 43);
+      pdfDoc.roundedRect(15, y - 2, pageW - 30, 34, 3, 3, "F");
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(14);
+      pdfDoc.setTextColor(216, 216, 215);
+      pdfDoc.text(`${proposta.empreendimento} — ${proposta.modelo}`, 20, y + 9);
+      pdfDoc.setFontSize(10);
+      pdfDoc.setTextColor(154, 154, 153);
+      pdfDoc.text(`${proposta.cidade}, ${proposta.estado} · Área: ${proposta.area}m²`, 20, y + 18);
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(13);
+      pdfDoc.setTextColor(175, 111, 83);
+      pdfDoc.text(`R$ ${proposta.valorImovel.toLocaleString("pt-BR")}`, 20, y + 28);
 
       y += 46;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.setTextColor(175, 111, 83);
-      doc.text("COMPOSIÇÃO FINANCEIRA", 20, y);
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(10);
+      pdfDoc.setTextColor(175, 111, 83);
+      pdfDoc.text("COMPOSIÇÃO FINANCEIRA", 20, y);
       y += 8;
 
       const linhas = [
@@ -218,95 +244,95 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
 
       linhas.forEach((linha, i) => {
         const isAlt = i % 2 === 0;
-        doc.setFillColor(isAlt ? 23 : 33, isAlt ? 39 : 57, isAlt ? 28 : 43);
-        doc.rect(15, y - 4, pageW - 30, 10, "F");
-        doc.setFont("helvetica", linha[0].startsWith("→") ? "normal" : "bold");
-        doc.setFontSize(9);
-        doc.setTextColor(linha[0].startsWith("→") ? 154 : 216, linha[0].startsWith("→") ? 154 : 216, linha[0].startsWith("→") ? 153 : 215);
-        doc.text(linha[0], 20, y + 2);
-        doc.setTextColor(175, 111, 83);
-        doc.text(linha[1], pageW - 20, y + 2, { align: "right" });
+        pdfDoc.setFillColor(isAlt ? 23 : 33, isAlt ? 39 : 57, isAlt ? 28 : 43);
+        pdfDoc.rect(15, y - 4, pageW - 30, 10, "F");
+        pdfDoc.setFont("helvetica", linha[0].startsWith("→") ? "normal" : "bold");
+        pdfDoc.setFontSize(9);
+        pdfDoc.setTextColor(linha[0].startsWith("→") ? 154 : 216, linha[0].startsWith("→") ? 154 : 216, linha[0].startsWith("→") ? 153 : 215);
+        pdfDoc.text(linha[0], 20, y + 2);
+        pdfDoc.setTextColor(175, 111, 83);
+        pdfDoc.text(linha[1], pageW - 20, y + 2, { align: "right" });
         y += 10;
       });
 
       y += 8;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.setTextColor(175, 111, 83);
-      doc.text("PARCELAS DO FINANCIAMENTO", 20, y);
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(10);
+      pdfDoc.setTextColor(175, 111, 83);
+      pdfDoc.text("PARCELAS DO FINANCIAMENTO", 20, y);
       y += 8;
 
       if (proposta.sacAprovadoPDF) {
-        doc.setFillColor(23, 39, 28);
-        doc.roundedRect(15, y - 4, (pageW - 35) / 2, 30, 3, 3, "F");
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.setTextColor(74, 222, 128);
-        doc.text("SISTEMA SAC", 15 + (pageW - 35) / 4, y + 3, { align: "center" });
-        doc.setFontSize(10);
-        doc.setTextColor(216, 216, 215);
-        doc.text(`1ª: ${formatBRLDecimal(proposta.parcelaSACPrimeira)}`, 15 + (pageW - 35) / 4, y + 12, { align: "center" });
-        doc.setFontSize(8);
-        doc.setTextColor(154, 154, 153);
-        doc.text(`última: ${formatBRLDecimal(proposta.parcelaSACUltima)}`, 15 + (pageW - 35) / 4, y + 20, { align: "center" });
+        pdfDoc.setFillColor(23, 39, 28);
+        pdfDoc.roundedRect(15, y - 4, (pageW - 35) / 2, 30, 3, 3, "F");
+        pdfDoc.setFont("helvetica", "bold");
+        pdfDoc.setFontSize(9);
+        pdfDoc.setTextColor(74, 222, 128);
+        pdfDoc.text("SISTEMA SAC", 15 + (pageW - 35) / 4, y + 3, { align: "center" });
+        pdfDoc.setFontSize(10);
+        pdfDoc.setTextColor(216, 216, 215);
+        pdfDoc.text(`1ª: ${formatBRLDecimal(proposta.parcelaSACPrimeira)}`, 15 + (pageW - 35) / 4, y + 12, { align: "center" });
+        pdfDoc.setFontSize(8);
+        pdfDoc.setTextColor(154, 154, 153);
+        pdfDoc.text(`última: ${formatBRLDecimal(proposta.parcelaSACUltima)}`, 15 + (pageW - 35) / 4, y + 20, { align: "center" });
 
         const col2X = 15 + (pageW - 35) / 2 + 5;
-        doc.setFillColor(23, 39, 28);
-        doc.roundedRect(col2X, y - 4, (pageW - 35) / 2, 30, 3, 3, "F");
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.setTextColor(175, 111, 83);
-        doc.text("SISTEMA PRICE", col2X + (pageW - 35) / 4, y + 3, { align: "center" });
-        doc.setFontSize(10);
-        doc.setTextColor(216, 216, 215);
-        doc.text(formatBRLDecimal(proposta.parcelaPRICE), col2X + (pageW - 35) / 4, y + 12, { align: "center" });
-        doc.setFontSize(8);
-        doc.setTextColor(154, 154, 153);
-        doc.text("parcela fixa", col2X + (pageW - 35) / 4, y + 20, { align: "center" });
+        pdfDoc.setFillColor(23, 39, 28);
+        pdfDoc.roundedRect(col2X, y - 4, (pageW - 35) / 2, 30, 3, 3, "F");
+        pdfDoc.setFont("helvetica", "bold");
+        pdfDoc.setFontSize(9);
+        pdfDoc.setTextColor(175, 111, 83);
+        pdfDoc.text("SISTEMA PRICE", col2X + (pageW - 35) / 4, y + 3, { align: "center" });
+        pdfDoc.setFontSize(10);
+        pdfDoc.setTextColor(216, 216, 215);
+        pdfDoc.text(formatBRLDecimal(proposta.parcelaPRICE), col2X + (pageW - 35) / 4, y + 12, { align: "center" });
+        pdfDoc.setFontSize(8);
+        pdfDoc.setTextColor(154, 154, 153);
+        pdfDoc.text("parcela fixa", col2X + (pageW - 35) / 4, y + 20, { align: "center" });
       } else {
-        doc.setFillColor(23, 39, 28);
-        doc.roundedRect(15, y - 4, pageW - 30, 30, 3, 3, "F");
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.setTextColor(175, 111, 83);
-        doc.text("SISTEMA PRICE — TABELA INDICADA", pageW / 2, y + 3, { align: "center" });
-        doc.setFontSize(13);
-        doc.setTextColor(216, 216, 215);
-        doc.text(formatBRLDecimal(proposta.parcelaPRICE), pageW / 2, y + 15, { align: "center" });
-        doc.setFontSize(8);
-        doc.setTextColor(154, 154, 153);
-        doc.text("parcela fixa · 360 meses", pageW / 2, y + 22, { align: "center" });
+        pdfDoc.setFillColor(23, 39, 28);
+        pdfDoc.roundedRect(15, y - 4, pageW - 30, 30, 3, 3, "F");
+        pdfDoc.setFont("helvetica", "bold");
+        pdfDoc.setFontSize(9);
+        pdfDoc.setTextColor(175, 111, 83);
+        pdfDoc.text("SISTEMA PRICE — TABELA INDICADA", pageW / 2, y + 3, { align: "center" });
+        pdfDoc.setFontSize(13);
+        pdfDoc.setTextColor(216, 216, 215);
+        pdfDoc.text(formatBRLDecimal(proposta.parcelaPRICE), pageW / 2, y + 15, { align: "center" });
+        pdfDoc.setFontSize(8);
+        pdfDoc.setTextColor(154, 154, 153);
+        pdfDoc.text("parcela fixa · 360 meses", pageW / 2, y + 22, { align: "center" });
         
         y += 34;
-        doc.setFont("helvetica", "italic");
-        doc.setFontSize(7);
-        doc.setTextColor(90, 90, 89);
-        doc.text("* Sistema SAC não apresentado — parcela inicial excederia o limite de comprometimento de renda (30%).", 20, y);
+        pdfDoc.setFont("helvetica", "italic");
+        pdfDoc.setFontSize(7);
+        pdfDoc.setTextColor(90, 90, 89);
+        pdfDoc.text("* Sistema SAC não apresentado — parcela inicial excederia o limite de comprometimento de renda (30%).", 20, y);
         y -= 34; 
       }
 
       y += 40;
-      doc.setFillColor(23, 39, 28);
-      doc.roundedRect(15, y - 4, pageW - 30, 35, 3, 3, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.setTextColor(154, 154, 153);
-      doc.text("NOTAS LEGAIS", 20, y + 2);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      doc.setTextColor(90, 90, 89);
-      const notasLinhas = doc.splitTextToSize(proposta.notasLegais, pageW - 40);
-      doc.text(notasLinhas, 20, y + 10);
+      pdfDoc.setFillColor(23, 39, 28);
+      pdfDoc.roundedRect(15, y - 4, pageW - 30, 35, 3, 3, "F");
+      pdfDoc.setFont("helvetica", "bold");
+      pdfDoc.setFontSize(8);
+      pdfDoc.setTextColor(154, 154, 153);
+      pdfDoc.text("NOTAS LEGAIS", 20, y + 2);
+      pdfDoc.setFont("helvetica", "normal");
+      pdfDoc.setFontSize(7);
+      pdfDoc.setTextColor(90, 90, 89);
+      const notasLinhas = pdfDoc.splitTextToSize(proposta.notasLegais, pageW - 40);
+      pdfDoc.text(notasLinhas, 20, y + 10);
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(90, 90, 89);
-      doc.text("Habiticon Construção Inteligente · CNPJ: 61.922.155/0001-70", pageW / 2, pageH - 15, { align: "center" });
+      pdfDoc.setFont("helvetica", "normal");
+      pdfDoc.setFontSize(8);
+      pdfDoc.setTextColor(90, 90, 89);
+      pdfDoc.text("Habiticon Construção Inteligente · CNPJ: 61.922.155/0001-70", pageW / 2, pageH - 15, { align: "center" });
 
       const nomeArquivo = `Proposta_Habiticon_${lead.nome.replace(/\s+/g, "_")}.pdf`;
       const mensagemWpp = `Olá ${lead.nome}! Segue a proposta da Habiticon referente ao ${proposta.modelo} em ${proposta.cidade}-${proposta.estado}.\n\nValor do imóvel: R$ ${proposta.valorImovel.toLocaleString("pt-BR")}\nEntrada: R$ ${proposta.entrada.toLocaleString("pt-BR")}\nFinanciamento: R$ ${proposta.valorFinanciado.toLocaleString("pt-BR")}\n\nEm caso de dúvidas, estou à disposição!`;
 
-      const pdfBlob = doc.output("blob");
+      const pdfBlob = pdfDoc.output("blob");
       const pdfFile = new File([pdfBlob], nomeArquivo, { type: "application/pdf" });
 
       const canShareFile = typeof navigator !== "undefined"
@@ -323,7 +349,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
               text: mensagemWpp,
             });
           } else {
-             doc.save(nomeArquivo);
+             pdfDoc.save(nomeArquivo);
           }
           setEtapa("success");
         } catch (shareErr: any) {
@@ -331,11 +357,11 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
             setLoading(false);
             return;
           }
-          doc.save(nomeArquivo);
+          pdfDoc.save(nomeArquivo);
           setEtapa("success");
         }
       } else {
-        doc.save(nomeArquivo);
+        pdfDoc.save(nomeArquivo);
         if (temCorretor) {
           const wppUrl = `https://wa.me/55${lead.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(mensagemWpp)}`;
           window.open(wppUrl, "_blank");
@@ -396,22 +422,35 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     </button>
                   </div>
 
-                  <div style={{ marginBottom: 24, display: "flex", gap: 10, background: "rgba(0,0,0,0.2)", padding: 8, borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
-                    <button 
-                      type="button" 
-                      onClick={() => handleToggleTemCorretor(false)} 
-                      style={{ flex: 1, padding: "10px", borderRadius: 8, background: !temCorretor ? "var(--terracota)" : "transparent", color: !temCorretor ? "white" : "var(--gray-mid)", fontSize: 12, fontWeight: 700, transition: "0.2s" }}
-                    >
-                      Quero ser atendido
-                    </button>
-                    <button 
-                      type="button" 
-                      onClick={() => handleToggleTemCorretor(true)} 
-                      style={{ flex: 1, padding: "10px", borderRadius: 8, background: temCorretor ? "var(--terracota)" : "transparent", color: temCorretor ? "white" : "var(--gray-mid)", fontSize: 12, fontWeight: 700, transition: "0.2s" }}
-                    >
-                      Já tenho corretor
-                    </button>
-                  </div>
+                  {/* LÓGICA DO CORRETOR — BLOQUEADA SE O LINK FOR PROTEGIDO */}
+                  {isLinkProtegido ? (
+                    <div style={{ marginBottom: 24, padding: "14px 16px", borderRadius: 12, background: "rgba(175,111,83,0.1)", border: "1px solid rgba(175,111,83,0.25)", display: "flex", alignItems: "flex-start", gap: 12 }}>
+                       <ShieldCheck size={18} color="var(--terracota)" style={{ marginTop: 2, flexShrink: 0 }} />
+                       <div>
+                         <p style={{ fontSize: 13, fontWeight: 700, color: "var(--terracota-light)", marginBottom: 4 }}>Atendimento Exclusivo</p>
+                         <p style={{ fontSize: 12, color: "var(--gray-mid)", lineHeight: 1.5 }}>
+                           Você está a ser atendido de forma exclusiva por um dos nossos consultores parceiros. Ele entrará em contacto com a sua simulação guardada.
+                         </p>
+                       </div>
+                    </div>
+                  ) : (
+                    <div style={{ marginBottom: 24, display: "flex", gap: 10, background: "rgba(0,0,0,0.2)", padding: 8, borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
+                      <button 
+                        type="button" 
+                        onClick={() => handleToggleTemCorretor(false)} 
+                        style={{ flex: 1, padding: "10px", borderRadius: 8, background: !temCorretor ? "var(--terracota)" : "transparent", color: !temCorretor ? "white" : "var(--gray-mid)", fontSize: 12, fontWeight: 700, transition: "0.2s", border: "none", cursor: "pointer" }}
+                      >
+                        Quero ser atendido
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => handleToggleTemCorretor(true)} 
+                        style={{ flex: 1, padding: "10px", borderRadius: 8, background: temCorretor ? "var(--terracota)" : "transparent", color: temCorretor ? "white" : "var(--gray-mid)", fontSize: 12, fontWeight: 700, transition: "0.2s", border: "none", cursor: "pointer" }}
+                      >
+                        Já tenho corretor
+                      </button>
+                    </div>
+                  )}
 
                   <div className="space-y-6 mb-8">
                     <div>
@@ -504,7 +543,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     </div>
                   </div>
 
-                  {temCorretor && (
+                  {temCorretor && !isLinkProtegido && (
                     <div style={{ marginBottom: 24 }}>
                       <label className="text-[10px] font-black uppercase tracking-[0.15em] mb-4 block" style={{ color: "var(--gray-mid)" }}>
                         Selecione o Corretor(a) <span style={{ color: "var(--terracota)" }}>*</span>
@@ -540,7 +579,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     </div>
                   )}
 
-                  {!temCorretor && (
+                  {!temCorretor && !isLinkProtegido && (
                     <div style={{ marginBottom: 24, padding: "16px", borderRadius: 12, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)" }}>
                        <p style={{ fontSize: 13, color: "#4ade80", textAlign: "center", lineHeight: 1.5 }}>
                          Após gerar a proposta, um de nossos especialistas em financiamento analisará seu perfil e entrará em contato!
@@ -587,37 +626,38 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   className="text-center"
+                  style={{ padding: "40px 32px", display: "flex", flexDirection: "column", alignItems: "center" }}
                 >
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ delay: 0.2, type: "spring" }}
                     className="w-16 h-16 rounded-full flex-center mx-auto mb-4"
-                    style={{ background: "rgba(34,197,94,0.15)", border: "2px solid rgba(34,197,94,0.4)" }}
+                    style={{ background: "rgba(34,197,94,0.15)", border: "2px solid rgba(34,197,94,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}
                   >
                     <CheckCircle2 size={32} color="#4ade80" />
                   </motion.div>
 
-                  <h2 className="text-title mb-2">PDF Gerado com Sucesso!</h2>
+                  <h2 className="text-title mb-2" style={{ fontSize: 20, fontWeight: 800, color: "white", marginBottom: 8 }}>Proposta Gerada!</h2>
                   
                   {temCorretor ? (
-                     <p className="text-muted mb-6">
-                       A proposta de <strong style={{ color: "var(--gray-light)" }}>{lead.nome}</strong> foi gerada com sucesso e vinculada ao corretor(a) {lead.nomeCorretor}.
+                     <p className="text-muted mb-6" style={{ fontSize: 14, color: "var(--gray-mid)", lineHeight: 1.5, marginBottom: 24 }}>
+                       A proposta de <strong style={{ color: "var(--gray-light)" }}>{lead.nome}</strong> foi gerada com sucesso e vinculada de forma segura ao corretor.
                      </p>
                   ) : (
-                     <p className="text-muted mb-6">
+                     <p className="text-muted mb-6" style={{ fontSize: 14, color: "var(--gray-mid)", lineHeight: 1.5, marginBottom: 24 }}>
                        A sua proposta foi gerada! <strong style={{ color: "var(--gray-light)" }}>A nossa equipe entrará em contato em breve pelo WhatsApp.</strong>
                      </p>
                   )}
 
-                  <div className="space-y-3">
+                  <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
                     {temCorretor && !podeCompartilharNativo && (
                       <a
                         href={whatsappUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="btn-primary w-full"
-                        style={{ background: "#22c55e" }}
+                        style={{ background: "#22c55e", padding: "14px", borderRadius: 12, display: "flex", justifyContent: "center", gap: 8, color: "white", fontWeight: 700, textDecoration: "none" }}
                       >
                         <Send size={18} />
                         Abrir WhatsApp Web
@@ -631,7 +671,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     
                     <button
                       onClick={() => { setEtapa("closed"); setLead({ nome: "", whatsapp: "", nomeCorretor: "", corretorId: "" }); }}
-                      className="btn-ghost w-full"
+                      style={{ padding: "14px", background: "transparent", border: "1px solid var(--border-subtle)", color: "var(--gray-light)", borderRadius: 12, fontWeight: 700, cursor: "pointer", width: "100%" }}
                     >
                       Fechar
                     </button>

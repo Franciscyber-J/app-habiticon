@@ -11,7 +11,7 @@ import {
   Building2, Settings, Users, MapPin,
   ToggleLeft, ToggleRight, Plus, ExternalLink,
   ArrowLeft, ChevronRight, Phone,
-  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info
+  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info, Printer, Wallet, UserCircle
 } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { DocumentosConstrutorModal } from "@/components/admin/DocumentosConstrutorModal";
@@ -31,6 +31,7 @@ type LeadStatus = keyof typeof STATUS_LEAD;
 interface Lead {
   id: string;
   empreendimentoId: string;
+  empreendimentoNome?: string;
   nome: string;
   whatsapp: string;
   timestamp: string;
@@ -55,7 +56,7 @@ interface Empreendimento {
   status: string;
   modelos: { id: string; nome: string; valor: number; area?: number }[];
   leads?: Lead[];
-  documentosPadrao?: DocumentoPadrao[]; // NOVA CHAVE PARA ARQUIVOS PADRÃO
+  documentosPadrao?: DocumentoPadrao[];
 }
 
 // ─────────────────────────────────────────────────────────
@@ -210,8 +211,8 @@ export default function AdminPage() {
   const [empreendimentos, setEmpreendimentos] = useState<Empreendimento[]>([]);
   const [todosLeads, setTodosLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"empreendimentos" | "leads" | "arquivos">("empreendimentos"); // Nova Tab
-  const [listaCorretores, setListaCorretores] = useState<{id: string, nome: string}[]>([]);
+  const [tab, setTab] = useState<"empreendimentos" | "leads" | "arquivos" | "equipe">("empreendimentos"); // Atualizado
+  const [listaCorretores, setListaCorretores] = useState<any[]>([]); // Armazena dados completos
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
   
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
@@ -222,6 +223,8 @@ export default function AdminPage() {
 
   const [uploadingGeral, setUploadingGeral] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [isPrinting, setIsPrinting] = useState(false);
 
   const router = useRouter();
 
@@ -271,7 +274,7 @@ export default function AdminPage() {
     return () => { cleanup.then(unsub => { if (unsub) unsub(); }); };
   }, [carregarDados]);
 
-  // Listener independente para corretores
+  // Listener independente para corretores (Busca os dados bancários também)
   useEffect(() => {
     const qCorretores = query(
       collection(db, "usuarios"),
@@ -280,8 +283,8 @@ export default function AdminPage() {
     );
     const unsub = onSnapshot(qCorretores, (snapshot) => {
       const data = snapshot.docs
-        .map(d => ({ id: d.id, nome: d.data().nome }))
-        .sort((a, b) => a.nome.localeCompare(b.nome));
+        .map(d => ({ id: d.id, ...d.data() } as any))
+        .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
       setListaCorretores(data);
     }, (error) => {
       console.error("Erro ao carregar corretores:", error);
@@ -316,7 +319,7 @@ export default function AdminPage() {
       },
       vitrine: { imagens: [], plantas: [], ambientes: {} },
       textos: { notasLegais: "", tituloObra: "Fluxo de Obra (PCI)", descricaoObra: "", alertaF3: "", alertaF12: "" },
-      documentosPadrao: [] // Nova estrutura
+      documentosPadrao: []
     };
     await setDoc(doc(db, "empreendimentos", slug), novo);
     setEmpreendimentos(prev => [...prev, novo]);
@@ -401,7 +404,7 @@ export default function AdminPage() {
         fd.append("file", file);
         fd.append("slug", empSlug);
         fd.append("tipo", "docs_padrao");
-        fd.append("titulo", file.name); // Passa o nome original
+        fd.append("titulo", file.name);
 
         const res = await fetch("/api/upload", { method: "POST", body: fd });
         const data = await res.json();
@@ -431,14 +434,12 @@ export default function AdminPage() {
     if (!confirm("Deletar este arquivo padrão? Corretores não terão mais acesso a ele.")) return;
     
     try {
-      // Deleta fisicamente via API
       await fetch("/api/upload", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ slug: empSlug, url, tipo: "docs_padrao" })
       });
 
-      // Atualiza o Firestore
       const listaAtual = empreendimentos.find(e => e.slug === empSlug)?.documentosPadrao || [];
       const novaLista = listaAtual.filter(d => d.url !== url);
       
@@ -451,7 +452,7 @@ export default function AdminPage() {
     }
   };
 
-  // ── FILTRAGEM ──
+  // ── FILTRAGEM DE LEADS ──
   const leadsFiltrados = useMemo(() => {
     if (filtroCorretor === "todos") return todosLeads;
     if (filtroCorretor === "roleta") return todosLeads.filter(l => !l.corretorId);
@@ -461,8 +462,76 @@ export default function AdminPage() {
   const ativos = empreendimentos.filter((e) => e.status === "ativo").length;
   const leadsNaRoletaCount = todosLeads.filter(l => !l.corretorId).length;
 
+  // ── EXPORTAÇÃO PDF ──
+  const handlePrint = () => {
+    setIsPrinting(true);
+    // Aguarda um ciclo de render para montar a tabela no DOM
+    setTimeout(() => {
+      window.print();
+      setIsPrinting(false);
+    }, 400);
+  };
+
   // ─────────────────────────────────────────────────────────
-  // RENDERIZAÇÃO
+  // RENDERIZAÇÃO DE IMPRESSÃO (EXCLUSIVA QUANDO isPrinting = TRUE)
+  // ─────────────────────────────────────────────────────────
+  if (isPrinting) {
+    return (
+      <div style={{ background: "white", color: "black", padding: "40px", minHeight: "100vh", fontFamily: "sans-serif" }}>
+        <style dangerouslySetInnerHTML={{__html: `
+          @media print {
+            @page { margin: 15mm; size: landscape; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          }
+        `}} />
+        
+        <div style={{ borderBottom: "2px solid #111", paddingBottom: 16, marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+          <div>
+            <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: "#111" }}>Relatório de Vendas — Habiticon</h1>
+            <p style={{ margin: "4px 0 0 0", fontSize: 14, color: "#444" }}>
+              <strong>Filtro Aplicado:</strong> {filtroCorretor === "todos" ? "Todos os Corretores" : filtroCorretor === "roleta" ? "Leads Livres (Roleta)" : listaCorretores.find(c => c.id === filtroCorretor)?.nome}
+            </p>
+          </div>
+          <div style={{ textAlign: "right", fontSize: 12, color: "#666" }}>
+            <p style={{ margin: 0 }}><strong>Total de Registos:</strong> {leadsFiltrados.length}</p>
+            <p style={{ margin: "2px 0 0 0" }}>Emitido em {new Date().toLocaleString("pt-BR")}</p>
+          </div>
+        </div>
+
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", border: "1px solid #ddd" }}>
+          <thead>
+            <tr style={{ background: "#f3f4f6" }}>
+              <th style={{ padding: "10px 8px", borderBottom: "2px solid #ccc", textAlign: "left" }}>Data</th>
+              <th style={{ padding: "10px 8px", borderBottom: "2px solid #ccc", textAlign: "left" }}>Cliente</th>
+              <th style={{ padding: "10px 8px", borderBottom: "2px solid #ccc", textAlign: "left" }}>Telefone</th>
+              <th style={{ padding: "10px 8px", borderBottom: "2px solid #ccc", textAlign: "left" }}>Empreendimento</th>
+              <th style={{ padding: "10px 8px", borderBottom: "2px solid #ccc", textAlign: "left" }}>Modelo</th>
+              <th style={{ padding: "10px 8px", borderBottom: "2px solid #ccc", textAlign: "left" }}>Corretor Responsável</th>
+              <th style={{ padding: "10px 8px", borderBottom: "2px solid #ccc", textAlign: "left" }}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {leadsFiltrados.map((lead, idx) => (
+              <tr key={lead.id} style={{ background: idx % 2 === 0 ? "white" : "#fafafa", borderBottom: "1px solid #eee" }}>
+                <td style={{ padding: "8px" }}>{new Date(lead.timestamp).toLocaleDateString("pt-BR")}</td>
+                <td style={{ padding: "8px", fontWeight: "bold" }}>{lead.nome}</td>
+                <td style={{ padding: "8px" }}>{lead.whatsapp}</td>
+                <td style={{ padding: "8px" }}>{lead.empreendimentoNome || "-"}</td>
+                <td style={{ padding: "8px" }}>{lead.modelo || "-"}</td>
+                <td style={{ padding: "8px" }}>{lead.corretorId ? lead.nomeCorretor : "Não assumido"}</td>
+                <td style={{ padding: "8px", textTransform: "capitalize" }}>
+                  {(lead.status === "credito_aprovado" ? "Qualificado" : lead.status === "credito_reprovado" ? "Não Qualificado" : lead.status)?.replace(/_/g, " ") || "Novo"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // RENDERIZAÇÃO PADRÃO DO ADMIN
   // ─────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
@@ -555,6 +624,7 @@ export default function AdminPage() {
           {([
             { id: "empreendimentos", label: "Empreendimentos" },
             { id: "leads", label: `Visão de Vendas (${todosLeads.length})` },
+            { id: "equipe", label: `Equipe e Pagamentos` }, // NOVA ABA
             { id: "arquivos", label: "Arquivos Padrão" }
           ] as const).map((t) => (
             <button
@@ -677,26 +747,41 @@ export default function AdminPage() {
         {tab === "leads" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
 
-            {/* FILTRO POR CORRETOR */}
-            <div style={{ background: "var(--bg-card)", padding: "16px 20px", borderRadius: 14, border: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Users size={18} color="var(--terracota)" />
-                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--gray-light)" }}>Filtrar Atendimentos:</span>
+            {/* FILTRO POR CORRETOR & IMPRESSÃO */}
+            <div style={{ background: "var(--bg-card)", padding: "16px 20px", borderRadius: 14, border: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Users size={18} color="var(--terracota)" />
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--gray-light)" }}>Filtrar Atendimentos:</span>
+                </div>
+                <select
+                  value={filtroCorretor}
+                  onChange={(e) => setFiltroCorretor(e.target.value)}
+                  style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 14, outline: "none", minWidth: 200, cursor: "pointer" }}
+                >
+                  <option value="todos">Mostrar Todos os Leads</option>
+                  <option value="roleta">🔥 Leads Livres (Roleta)</option>
+                  {listaCorretores.map(c => (
+                    <option key={c.id} value={c.id}>Corretor: {c.nome}</option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 13, color: "var(--gray-mid)" }}>
+                  {leadsFiltrados.length} resultado(s)
+                </span>
               </div>
-              <select
-                value={filtroCorretor}
-                onChange={(e) => setFiltroCorretor(e.target.value)}
-                style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 14, outline: "none", minWidth: 200, cursor: "pointer" }}
+              
+              {/* BOTÃO EXPORTAR PDF */}
+              <button
+                onClick={handlePrint}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "10px 16px",
+                  background: "var(--terracota-glow)", color: "var(--terracota-light)",
+                  border: "1px solid var(--border-active)", borderRadius: 10,
+                  fontSize: 13, fontWeight: 700, cursor: "pointer"
+                }}
               >
-                <option value="todos">Mostrar Todos os Leads</option>
-                <option value="roleta">🔥 Leads Livres (Roleta)</option>
-                {listaCorretores.map(c => (
-                  <option key={c.id} value={c.id}>Corretor: {c.nome}</option>
-                ))}
-              </select>
-              <span style={{ fontSize: 13, color: "var(--gray-mid)", marginLeft: "auto" }}>
-                {leadsFiltrados.length} resultado(s)
-              </span>
+                <Printer size={16} /> Relatório PDF
+              </button>
             </div>
 
             {empreendimentos.length === 0 ? (
@@ -807,7 +892,6 @@ export default function AdminPage() {
                               {/* LADO DIREITO */}
                               <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }} className="w-full sm:w-auto justify-between sm:justify-end">
                                 
-                                {/* O admin só vê o status, não pode alterar. */}
                                 <div
                                   title={isDecidido ? "O status está bloqueado após a análise de crédito." : "Status atual do lead"}
                                   style={{
@@ -823,7 +907,6 @@ export default function AdminPage() {
                                   {isDecidido && <Lock size={12} />}
                                 </div>
 
-                                {/* Visível apenas quando o lead tem corretor e o status não está bloqueado — devolve para a roleta */}
                                 {!estaSolto && !isDecidido && (
                                   <button
                                     onClick={() => liberarLeadParaRoleta(lead)}
@@ -912,7 +995,104 @@ export default function AdminPage() {
         )}
 
         {/* =========================================================
-            ABA 3: ARQUIVOS PADRÃO
+            ABA 3: EQUIPE E PAGAMENTOS
+            ========================================================= */}
+        {tab === "equipe" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            
+            <div style={{ background: "rgba(167,139,250,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(167,139,250,0.2)", display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <Wallet size={18} color="#a78bfa" style={{ flexShrink: 0 }} />
+              <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>
+                Aqui você visualiza os dados cadastrais e financeiros (PIX/Bancários) que os corretores preencheram nos seus painéis para recebimento de comissões.
+              </p>
+            </div>
+
+            {listaCorretores.length === 0 ? (
+              <div style={{ padding: "64px 24px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.2)", border: "1px dashed var(--border-subtle)" }}>
+                <p style={{ fontSize: 14, color: "var(--gray-mid)" }}>Nenhum corretor na equipa.</p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+                {listaCorretores.map((corretor) => (
+                  <div key={corretor.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
+                    
+                    {/* Header Card Equipe */}
+                    <div style={{ padding: "20px", borderBottom: "1px solid var(--border-subtle)", background: "rgba(0,0,0,0.15)", display: "flex", gap: 14, alignItems: "center" }}>
+                      <div style={{ width: 46, height: 46, borderRadius: 12, background: "rgba(167,139,250,0.15)", color: "#a78bfa", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "1px solid rgba(167,139,250,0.3)" }}>
+                        {(corretor.nome || "?")[0].toUpperCase()}
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <h3 style={{ fontSize: 16, fontWeight: 700, color: "white", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{corretor.nome}</h3>
+                        <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>CRECI: <strong style={{ color: "var(--gray-light)" }}>{corretor.creci || "Não informado"}</strong></p>
+                      </div>
+                    </div>
+
+                    {/* Corpo Card Equipe */}
+                    <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 16 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 11, color: "var(--gray-dark)", textTransform: "uppercase", fontWeight: 700 }}>E-mail</span>
+                          <span style={{ fontSize: 12, color: "var(--gray-light)", fontWeight: 600 }}>{corretor.email}</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 11, color: "var(--gray-dark)", textTransform: "uppercase", fontWeight: 700 }}>WhatsApp</span>
+                          <span style={{ fontSize: 12, color: "var(--gray-light)", fontWeight: 600 }}>{corretor.telefone || "-"}</span>
+                        </div>
+                      </div>
+
+                      <div style={{ height: 1, background: "var(--border-subtle)" }} />
+
+                      <div>
+                        <p style={{ fontSize: 11, color: "#a78bfa", textTransform: "uppercase", fontWeight: 800, marginBottom: 10, display: "flex", alignItems: "center", gap: 4 }}><Wallet size={12} /> Dados Pagamento</p>
+                        
+                        {!corretor.dadosBancarios || (!corretor.dadosBancarios.cpf && !corretor.dadosBancarios.chavePix && !corretor.dadosBancarios.banco) ? (
+                          <p style={{ fontSize: 12, color: "var(--gray-dark)", fontStyle: "italic" }}>O corretor ainda não preencheu os dados bancários/PIX.</p>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6, background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 8, border: "1px dashed rgba(167,139,250,0.2)" }}>
+                            {corretor.dadosBancarios.cpf && (
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ fontSize: 11, color: "var(--gray-mid)" }}>CPF/CNPJ:</span>
+                                <span style={{ fontSize: 12, color: "white", fontWeight: 600 }}>{corretor.dadosBancarios.cpf}</span>
+                              </div>
+                            )}
+                            {corretor.dadosBancarios.chavePix && (
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ fontSize: 11, color: "var(--gray-mid)" }}>Chave PIX:</span>
+                                <span style={{ fontSize: 12, color: "#4ade80", fontWeight: 700 }}>{corretor.dadosBancarios.chavePix}</span>
+                              </div>
+                            )}
+                            {corretor.dadosBancarios.banco && (
+                              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                                <span style={{ fontSize: 11, color: "var(--gray-mid)" }}>Banco:</span>
+                                <span style={{ fontSize: 12, color: "var(--gray-light)" }}>{corretor.dadosBancarios.banco}</span>
+                              </div>
+                            )}
+                            {corretor.dadosBancarios.agencia && (
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ fontSize: 11, color: "var(--gray-mid)" }}>Agência:</span>
+                                <span style={{ fontSize: 12, color: "var(--gray-light)" }}>{corretor.dadosBancarios.agencia}</span>
+                              </div>
+                            )}
+                            {corretor.dadosBancarios.conta && (
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ fontSize: 11, color: "var(--gray-mid)" }}>Conta:</span>
+                                <span style={{ fontSize: 12, color: "var(--gray-light)" }}>{corretor.dadosBancarios.conta}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* =========================================================
+            ABA 4: ARQUIVOS PADRÃO
             ========================================================= */}
         {tab === "arquivos" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>

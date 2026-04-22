@@ -5,7 +5,7 @@ import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs } from "firebase/firestore";
 import Image from "next/image";
-import { Users, LogOut, MessageCircle, Building2, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw, FileText, ExternalLink, Info, ThumbsUp } from "lucide-react";
+import { Users, LogOut, MessageCircle, Building2, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw, FileText, ExternalLink, Info, ThumbsUp, Share2, Copy, UserCircle, Save, X } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 
 // ─────────────────────────────────────────────────────────
@@ -62,6 +62,14 @@ export default function PainelCorretor() {
   const [abaAtiva, setAbaAtiva] = useState<"meus" | "roleta" | "arquivos">("meus");
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
 
+  // Estados do Perfil
+  const [perfilAberto, setPerfilAberto] = useState(false);
+  const [salvandoPerfil, setSalvandoPerfil] = useState(false);
+  const [perfilData, setPerfilData] = useState({
+    nome: "", email: "", telefone: "", creci: "",
+    cpf: "", chavePix: "", banco: "", agencia: "", conta: ""
+  });
+
   const leadDossieSelecionado = meusLeads.find(l => l.id === leadDossieId) || null;
 
   // ── AUTENTICAÇÃO E VALIDAÇÃO DE ROLE ──
@@ -82,6 +90,20 @@ export default function PainelCorretor() {
           return;
         }
         setUserName(userData.nome || user.displayName || "Corretor");
+        
+        // Popula os dados do perfil
+        setPerfilData({
+          nome: userData.nome || "",
+          email: userData.email || user.email || "",
+          telefone: userData.telefone || "",
+          creci: userData.creci || "",
+          cpf: userData.dadosBancarios?.cpf || "",
+          chavePix: userData.dadosBancarios?.chavePix || "",
+          banco: userData.dadosBancarios?.banco || "",
+          agencia: userData.dadosBancarios?.agencia || "",
+          conta: userData.dadosBancarios?.conta || ""
+        });
+
       } else {
         window.location.href = "/login";
         return;
@@ -113,7 +135,7 @@ export default function PainelCorretor() {
     return () => unsubAuth();
   }, []);
 
-  // ── CARREGAMENTO DE EMPREENDIMENTOS (PARA OS ARQUIVOS PADRÃO) ──
+  // ── CARREGAMENTO DE EMPREENDIMENTOS (PARA OS ARQUIVOS PADRÃO E LINKS) ──
   useEffect(() => {
     const carregarEmpreendimentos = async () => {
       try {
@@ -151,8 +173,7 @@ export default function PainelCorretor() {
 
   const assumirLead = async (leadId: string) => {
     try {
-      const userDoc = await getDoc(doc(db, "usuarios", userId));
-      const nomeReal = userDoc.exists() ? userDoc.data().nome : userName;
+      const nomeReal = perfilData.nome || userName;
 
       await updateDoc(doc(db, "leads", leadId), {
         corretorId: userId,
@@ -162,6 +183,38 @@ export default function PainelCorretor() {
     } catch (error) {
       console.error("Erro ao assumir lead:", error);
       alert("Erro de sincronização. Talvez outro corretor já tenha pescado esse lead!");
+    }
+  };
+
+  const copiarLink = (link: string) => {
+    navigator.clipboard.writeText(link);
+    alert("Link copiado para a área de transferência! Cole no seu WhatsApp ou Instagram.");
+  };
+
+  const salvarPerfil = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSalvandoPerfil(true);
+    try {
+      await updateDoc(doc(db, "usuarios", userId), {
+        nome: perfilData.nome,
+        telefone: perfilData.telefone,
+        creci: perfilData.creci,
+        dadosBancarios: {
+          cpf: perfilData.cpf,
+          chavePix: perfilData.chavePix,
+          banco: perfilData.banco,
+          agencia: perfilData.agencia,
+          conta: perfilData.conta
+        }
+      });
+      setUserName(perfilData.nome);
+      alert("Perfil atualizado com sucesso!");
+      setPerfilAberto(false);
+    } catch (error) {
+      console.error("Erro ao salvar perfil:", error);
+      alert("Erro ao atualizar o perfil. Tente novamente.");
+    } finally {
+      setSalvandoPerfil(false);
     }
   };
 
@@ -181,7 +234,10 @@ export default function PainelCorretor() {
           <span style={{ fontSize: 13, color: "var(--gray-light)" }} className="hidden sm:inline">
             Olá, <strong>{userName}</strong>
           </span>
-          <button onClick={() => auth.signOut()} className="btn-ghost" style={{ color: "#f87171" }}>
+          <button onClick={() => setPerfilAberto(true)} title="Meu Perfil" className="btn-ghost" style={{ color: "var(--gray-light)", padding: 8 }}>
+            <UserCircle size={18} />
+          </button>
+          <button onClick={() => auth.signOut()} title="Sair" className="btn-ghost" style={{ color: "#f87171", padding: 8 }}>
             <LogOut size={16} />
           </button>
         </div>
@@ -256,7 +312,7 @@ export default function PainelCorretor() {
                   <Users size={24} color="var(--gray-dark)" />
                 </div>
                 <p style={{ color: "var(--gray-mid)", fontWeight: 600 }}>Você ainda não possui leads.</p>
-                <p style={{ color: "var(--gray-dark)", fontSize: 13, marginTop: 8 }}>Vá para a aba "Leads Livres" ou peça para o cliente gerar a proposta com o seu nome.</p>
+                <p style={{ color: "var(--gray-dark)", fontSize: 13, marginTop: 8 }}>Vá para a aba "Leads Livres" ou compartilhe seu link de divulgação (na aba Material de Vendas).</p>
               </div>
             ) : (
               Object.values(leadsAgrupados).map((grupo: GrupoLeads, index) => (
@@ -426,10 +482,42 @@ export default function PainelCorretor() {
         )}
 
         {/* =========================================================
-            ABA 3: MATERIAL DE VENDAS
+            ABA 3: MATERIAL DE VENDAS & LINKS DE DIVULGAÇÃO
             ========================================================= */}
         {abaAtiva === "arquivos" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+            {/* SEÇÃO DE LINKS DE DIVULGAÇÃO */}
+            <div style={{ background: "var(--terracota-glow)", padding: "20px", borderRadius: 16, border: "1px solid var(--border-active)" }}>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: "white", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                <Share2 size={18} /> Meus Links de Divulgação
+              </h2>
+              <p style={{ fontSize: 13, color: "var(--gray-light)", marginBottom: 16 }}>
+                Use os links abaixo para capturar leads. Leads vindos destes links serão <strong>automaticamente atribuídos a você</strong>.
+              </p>
+              
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {empreendimentos.map(emp => {
+                  const linkPessoal = `${typeof window !== 'undefined' ? window.location.origin : ''}/${emp.slug}?ref=${userId}`;
+                  return (
+                    <div key={`link-${emp.slug}`} style={{ background: "rgba(0,0,0,0.2)", padding: "12px", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--terracota-light)", marginBottom: 4 }}>{emp.nome}</p>
+                        <p style={{ fontSize: 11, color: "var(--gray-mid)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{linkPessoal}</p>
+                      </div>
+                      <button 
+                        onClick={() => copiarLink(linkPessoal)}
+                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, background: "var(--terracota)", color: "white", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}
+                      >
+                        <Copy size={14} /> Copiar Link
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* SEÇÃO DE ARQUIVOS PADRÃO */}
             <div style={{ background: "rgba(56,189,248,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(56,189,248,0.2)", display: "flex", alignItems: "center", gap: 12 }}>
               <Info size={18} color="#38bdf8" style={{ flexShrink: 0 }} />
               <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>
@@ -488,6 +576,105 @@ export default function PainelCorretor() {
         )}
 
       </main>
+
+      {/* =========================================================
+          MODAL DE PERFIL DO CORRETOR
+          ========================================================= */}
+      {perfilAberto && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 100,
+          background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: "20px"
+        }}>
+          <div style={{
+            background: "var(--bg-card)", width: "100%", maxWidth: 600,
+            borderRadius: 24, border: "1px solid var(--border-subtle)",
+            boxShadow: "0 20px 40px rgba(0,0,0,0.5)", overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "90vh"
+          }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.2)" }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 10 }}>
+                <UserCircle size={20} color="var(--terracota)" /> Meu Perfil
+              </h2>
+              <button onClick={() => setPerfilAberto(false)} style={{ background: "transparent", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={salvarPerfil} style={{ padding: "24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 24 }}>
+              
+              {/* DADOS DE IDENTIFICAÇÃO */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 8 }}>Identificação Profissional</h3>
+                
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Nome Completo</label>
+                    <input type="text" required value={perfilData.nome} onChange={(e) => setPerfilData({...perfilData, nome: e.target.value})} className="input-field" style={{ fontSize: 14 }} />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>E-mail (Acesso)</label>
+                    <input type="email" value={perfilData.email} disabled className="input-field" style={{ fontSize: 14, opacity: 0.6, cursor: "not-allowed" }} />
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>WhatsApp</label>
+                    <input type="text" required value={perfilData.telefone} onChange={(e) => setPerfilData({...perfilData, telefone: e.target.value})} className="input-field" style={{ fontSize: 14 }} />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>CRECI</label>
+                    <input type="text" value={perfilData.creci} onChange={(e) => setPerfilData({...perfilData, creci: e.target.value})} className="input-field" style={{ fontSize: 14 }} placeholder="Ex: 12345-F" />
+                  </div>
+                </div>
+              </div>
+
+              {/* DADOS FINANCEIROS */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <h3 style={{ fontSize: 12, fontWeight: 700, color: "#4ade80", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid rgba(74,222,128,0.1)", paddingBottom: 8 }}>Dados Bancários (Comissões)</h3>
+                
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>CPF ou CNPJ</label>
+                    <input type="text" value={perfilData.cpf} onChange={(e) => setPerfilData({...perfilData, cpf: e.target.value})} className="input-field" style={{ fontSize: 14 }} />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Chave PIX</label>
+                    <input type="text" value={perfilData.chavePix} onChange={(e) => setPerfilData({...perfilData, chavePix: e.target.value})} className="input-field" style={{ fontSize: 14 }} />
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Banco</label>
+                    <input type="text" value={perfilData.banco} onChange={(e) => setPerfilData({...perfilData, banco: e.target.value})} className="input-field" style={{ fontSize: 13 }} placeholder="Ex: Nubank" />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Agência</label>
+                    <input type="text" value={perfilData.agencia} onChange={(e) => setPerfilData({...perfilData, agencia: e.target.value})} className="input-field" style={{ fontSize: 13 }} placeholder="0001" />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Conta</label>
+                    <input type="text" value={perfilData.conta} onChange={(e) => setPerfilData({...perfilData, conta: e.target.value})} className="input-field" style={{ fontSize: 13 }} placeholder="12345-6" />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit" disabled={salvandoPerfil}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  padding: "14px", borderRadius: 12, border: "none", cursor: "pointer",
+                  background: "var(--terracota)", color: "white", fontSize: 14, fontWeight: 700,
+                  marginTop: 8, transition: "all 0.2s"
+                }}
+              >
+                <Save size={16} /> {salvandoPerfil ? "A salvar..." : "Guardar Alterações"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* DOSSIÊ FLUTUANTE */}
       <DossieModal

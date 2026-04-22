@@ -10,6 +10,7 @@ import { doc, setDoc } from "firebase/firestore";
 
 export default function CadastroCorretorPage() {
   // Dados de Acesso
+  const [creci, setCreci] = useState("");
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
@@ -57,6 +58,7 @@ export default function CadastroCorretorPage() {
          nome,
          email,
          telefone,
+         creci: creci.trim(),
          role: "corretor",
          status: "ativo",
          dataCriacao: new Date().toISOString(),

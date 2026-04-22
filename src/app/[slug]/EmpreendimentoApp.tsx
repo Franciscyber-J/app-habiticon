@@ -7,7 +7,7 @@ import Link from "next/link";
 import {
   Home, TrendingUp, HardHat, FileText, ImageIcon,
   MapPin, ChevronLeft, CheckCircle2,
-  ChevronRight, Menu, X, Info, AlertTriangle, Ban,
+  ChevronRight, Menu, X, Info, AlertTriangle, Ban, Share2
 } from "lucide-react";
 
 import { ModelSelector } from "@/components/simulador/ModelSelector";
@@ -145,7 +145,15 @@ const TRAVA_CONFIG: Record<LimitadorEntrada, {
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────
 
-export default function EmpreendimentoApp({ emp }: { emp: Empreendimento }) {
+export default function EmpreendimentoApp({ 
+  emp, 
+  corretorIdUrl = "", 
+  origemUrl = "organico" 
+}: { 
+  emp: Empreendimento;
+  corretorIdUrl?: string;
+  origemUrl?: string;
+}) {
   const [moduloAtivo,       setModuloAtivo]       = useState("renda");
   const [empFresh, setEmpFresh] = useState(emp); // dados frescos da API
 
@@ -394,8 +402,11 @@ const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entrada
       sacAprovadoPDF,                               // false → ocultar SAC no PDF
       rendaFamiliar,
       notasLegais: emp.textos.notasLegais,
+      // ── RASTREAMENTO INJETADO ──
+      corretorId: corretorIdUrl, 
+      origem: origemUrl,
     };
-  }, [modelo, resultadoSimulacao, emp, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent, rendaFamiliar, valorLoteEmpreendimento]);
+  }, [modelo, resultadoSimulacao, emp, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent, rendaFamiliar, valorLoteEmpreendimento, corretorIdUrl, origemUrl]);
 
   const getModuloStatus = (modId: string) => {
     if (modId === "renda")     return rendaPreenchida ? "done" : "active";
@@ -528,6 +539,17 @@ const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entrada
           })}
         </div>
       </nav>
+
+      {/* INDICADOR DE CORRETOR LOGADO (RASTREAMENTO ATIVO) */}
+      {(corretorIdUrl || origemUrl !== 'organico') && (
+        <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border-subtle)", background: "rgba(0,0,0,0.15)" }}>
+           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+             <Share2 size={12} color="var(--terracota)" />
+             <span style={{ fontSize: 10, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>Rastreamento Ativo</span>
+           </div>
+           {origemUrl !== 'organico' && <p style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 4, marginLeft: 20 }}>Origem: {origemUrl.replace(/_/g, " ")}</p>}
+        </div>
+      )}
 
       <div style={{ padding: "10px 8px 14px", borderTop: "1px solid var(--border-subtle)", flexShrink: 0 }}>
         {modelo && (
