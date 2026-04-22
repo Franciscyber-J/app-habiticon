@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { User, Lock, Mail, ArrowRight, Eye, EyeOff } from "lucide-react"; // <-- Adicionado Eye e EyeOff
+import { User, Lock, Mail, ArrowRight, Eye, EyeOff } from "lucide-react"; 
 import { auth, db } from "@/lib/firebase";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 
-export default function CadastroPage() {
+// O componente interno que faz a leitura dos parâmetros da URL
+function CadastroForm() {
   const searchParams = useSearchParams();
   const roleUrl = searchParams.get("role");
   
@@ -16,7 +17,7 @@ export default function CadastroPage() {
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
   const [senha, setSenha] = useState("");
-  const [confirmarSenha, setConfirmarSenha] = useState(""); // <-- Novo Estado
+  const [confirmarSenha, setConfirmarSenha] = useState(""); 
   
   // Controles do "Olhinho"
   const [mostrarSenha, setMostrarSenha] = useState(false);
@@ -211,5 +212,18 @@ export default function CadastroPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+// O componente de página exportado que envole o formulário no Suspense
+export default function CadastroPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-base)", color: "var(--gray-mid)" }}>
+        Carregando...
+      </div>
+    }>
+      <CadastroForm />
+    </Suspense>
   );
 }
