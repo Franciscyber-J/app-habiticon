@@ -7,11 +7,11 @@ import Link from "next/link";
 import { use } from "react";
 import {
   ArrowLeft, Upload, Trash2, Image as ImageIcon,
-  DollarSign, FileText, Settings2, Eye, CheckCircle,
-  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X,
+  DollarSign, FileText, Settings2, Eye, CheckCircle, CheckCircle2,
+  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X, Map, Layers
 } from "lucide-react";
 
-type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao";
+type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao" | "mapa";
 type SaveState = "idle" | "saving" | "saved" | "error";
 interface Params { params: Promise<{ slug: string }> }
 
@@ -62,7 +62,7 @@ import React from "react";
 
 // ─── Ambientes disponíveis ───────────────────────────────
 const AMBIENTES_LISTA = [
-  { id:"garagem",         label:"Garagem",          icone:"🚗" },
+  { id:"garagem",         label:"Garagem",           icone:"🚗" },
   { id:"sala",            label:"Sala",              icone:"🛋️" },
   { id:"cozinha",         label:"Cozinha",           icone:"🍳" },
   { id:"copa",            label:"Copa",              icone:"🍽️" },
@@ -91,8 +91,6 @@ function AmbienteUpload({ amb, fotos, slug, onAdd, onAddMulti, onRemove }: {
     const files = Array.from(e.target.files || []); if (!files.length) return;
     setUploading(true);
     try {
-      // Acumula todas as fotos e chama onAddMulti uma única vez
-      // evita bug onde cada onAdd lê estado antigo e sobrescreve as anteriores
       const novas: {url:string;titulo:string}[] = [];
       for (const file of files) {
         const fd = new FormData();
@@ -138,18 +136,12 @@ function AmbienteUpload({ amb, fotos, slug, onAdd, onAddMulti, onRemove }: {
   );
 }
 
-
 // ─── Parser de coordenadas DMS ────────────────────────────
-// Aceita: 16°24'17.1"S 51°06'50.3"W  ← cópia direta do Google Maps
-// Aceita: -16.4047, -51.1140          ← decimal simples
 function parseDMS(input: string): { lat: number; lng: number } | null {
   const trimmed = input.trim();
-
-  // Já está em decimal (ex: -16.4047, -51.1140)
   const dec = trimmed.match(/^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$/);
   if (dec) return { lat: parseFloat(dec[1]), lng: parseFloat(dec[2]) };
 
-  // DMS com símbolos (ex: 16°24'17.1"S 51°06'50.3"W)
   const dms = trimmed.match(
     /(\d+)[°\s](\d+)['\s](\d+\.?\d*)["]?\s*([NSns])[,\s]+(\d+)[°\s](\d+)['\s](\d+\.?\d*)["]?\s*([EWew])/
   );
@@ -231,9 +223,10 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
   const [section, setSection] = useState<Section>("valores");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const fileRef = useRef<HTMLInputElement>(null);
-  const [upType, setUpType] = useState<"imagens"|"plantas">("imagens");
+  const mapRef = useRef<HTMLInputElement>(null);
+  const [upType, setUpType] = useState<"imagens"|"plantas"|"mapa_svg">("imagens");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [editandoAmb, setEditandoAmb] = useState<string|null>(null); // id do ambiente em edição
+  const [editandoAmb, setEditandoAmb] = useState<string|null>(null); 
   const [uploading, setUploading] = useState(false);
 
   const isDirty = emp && orig && JSON.stringify(emp) !== JSON.stringify(orig);
@@ -250,6 +243,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
       if (f) {
         if (!f.simulador.cub) f.simulador.cub = { bdi:0.18, cubVigente:0 };
         if (!f.simulador.taxaFaixa3Cotista) f.simulador.taxaFaixa3Cotista = 7.66;
+        if (!f.vendaEmOrdem) f.vendaEmOrdem = false; // Novo campo para trava de ordem de lotes
         setEmp(f); setOrig(JSON.parse(JSON.stringify(f)));
       }
       setLoading(false);
@@ -263,7 +257,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
       let obj = next;
       for (let i = 0; i < parts.length - 1; i++) {
         const k = isNaN(Number(parts[i])) ? parts[i] : Number(parts[i]);
-        // Cria objeto intermediário se não existir (ex: vitrine.ambientes.copa)
         if (obj[k] === undefined || obj[k] === null) {
           obj[k] = isNaN(Number(parts[i + 1])) ? {} : [];
         }
@@ -285,7 +278,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     if (!emp) return;
     setSaveState("saving");
     try {
-      // A API PUT espera o array completo — busca a lista, substitui este item e salva tudo
       const listaAtual = await fetch("/api/empreendimentos").then(r => r.json()) as any[];
       const listaAtualizada = listaAtual.map((e: any) => e.slug === emp.slug ? emp : e);
       const r = await fetch("/api/empreendimentos", {
@@ -308,7 +300,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     if (!files.length) return;
     setUploading(true);
     try {
-      // Upload sequencial de múltiplos arquivos
       let listaAtual = [...(emp.vitrine[upType] || [])];
       for (const file of files) {
         const fd = new FormData();
@@ -324,6 +315,27 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
         body: JSON.stringify({ slug, field: `vitrine.${upType}`, value: listaAtual }),
       });
     } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
+  };
+
+  const handleUploadMapa = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+        const fd = new FormData();
+        fd.append("file", file); fd.append("slug", slug);
+        fd.append("tipo", "mapa_svg"); fd.append("titulo", "mapa_empreendimento");
+        const res = await fetch("/api/upload", { method: "POST", body: fd });
+        const data = await res.json();
+        
+        if (data.url) {
+            update("mapaUrl", data.url);
+            await fetch("/api/empreendimentos", {
+                method: "PATCH", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ slug, field: "mapaUrl", value: data.url }),
+            });
+        }
+    } finally { setUploading(false); if (mapRef.current) mapRef.current.value = ""; }
   };
 
   const deleteImage = async (url:string, tipo:string) => {
@@ -346,10 +358,11 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
 
   const SECTIONS = [
     {id:"valores"     as Section, label:"Valores & CUB",  icon:DollarSign, hint:"Modelos, lotes e CUB"},
-    {id:"galeria"     as Section, label:"Galeria",         icon:ImageIcon,  hint:"Fotos e ambientes"},
-    {id:"textos"      as Section, label:"Textos",          icon:FileText,   hint:"Textos e alertas"},
+    {id:"galeria"     as Section, label:"Galeria",        icon:ImageIcon,  hint:"Fotos e ambientes"},
+    {id:"textos"      as Section, label:"Textos",         icon:FileText,   hint:"Textos e alertas"},
     {id:"mcmv"        as Section, label:"MCMV",            icon:Settings2,  hint:"Faixas e subsídios"},
     {id:"localizacao" as Section, label:"Localização",     icon:MapPin,     hint:"Endereço e mapa"},
+    {id:"mapa"        as Section, label:"Mapa & Lotes",    icon:Map,        hint:"SVG, quadras e lotes"}, // <--- NOVA SEÇÃO AQUI
   ];
 
   const saveCfg = {
@@ -359,8 +372,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     error:  { bg: "#dc2626",               color: "white", label: "Erro",        Icon: AlertCircle },
   }[saveState];
 
-
-  // Ambientes: padrão + customizados do JSON
   const idsConfigAmb = AMBIENTES_LISTA.map((a: {id:string}) => a.id);
   const customAmbIds = Object.keys(emp.vitrine?.ambientes ?? {}).filter(
     (id: string) => !idsConfigAmb.includes(id)
@@ -375,7 +386,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
   return (
     <div className="min-h-screen flex" style={{ background: "var(--bg-base)" }}>
 
-      {/* ═══ SIDEBAR DESKTOP (sticky, sempre visível) ══════ */}
+      {/* ═══ SIDEBAR DESKTOP ══════ */}
       <aside
         className="hidden lg:flex"
         style={{
@@ -386,7 +397,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
           flexDirection: "column", overflow: "hidden",
         }}
       >
-        {/* Topo: logo + voltar */}
         <div style={{ padding: "20px 16px 16px", borderBottom: "1px solid var(--border-subtle)" }}>
           <Link href="/admin" className="btn-ghost" style={{ padding: "8px 10px", marginBottom: 16, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--gray-mid)" }}
             onClick={e => { if (isDirty && !confirm("Alterações não salvas. Sair mesmo assim?")) e.preventDefault(); }}>
@@ -402,7 +412,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
           </div>
         </div>
 
-        {/* Nav */}
         <nav style={{ flex: 1, padding: "12px 10px", overflowY: "auto" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {SECTIONS.map(s => {
@@ -437,7 +446,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
           </div>
         </nav>
 
-        {/* Rodapé da sidebar: salvar + visualizar */}
         <div style={{ padding: "12px 10px 16px", borderTop: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 8 }}>
           <AnimatePresence>
             {isDirty && saveState === "idle" && (
@@ -475,8 +483,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
         </div>
       </aside>
 
-      {/* ═══ SIDEBAR MOBILE (drawer) ════════════════════════ */}
-      {/* Overlay */}
+      {/* ═══ SIDEBAR MOBILE (drawer) ══════ */}
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -484,7 +491,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 49, backdropFilter: "blur(3px)" }}
         />
       )}
-      {/* Drawer */}
       <div
         className="lg:hidden"
         style={{
@@ -497,7 +503,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
           zIndex: 50,
         }}
       >
-        {/* Mesmo conteúdo da sidebar desktop */}
         <div style={{ padding: "16px 14px 12px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Image src="/logo.png" alt="Habiticon" width={140} height={40} style={{ height: 36, width: "auto" }} priority />
           <button onClick={() => setSidebarOpen(false)} style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-subtle)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gray-light)" }}>
@@ -537,10 +542,10 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
         </div>
       </div>
 
-      {/* ── CONTEÚDO ─────────────────────────────────────── */}
+      {/* ── CONTEÚDO PRINCIPAL ─────────────────────────────────────── */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
 
-        {/* Header mobile — hamburger + nome */}
+        {/* Header mobile */}
         <div className="lg:hidden" style={{
           display: "flex", alignItems: "center", gap: 12,
           padding: "12px 16px", background: "rgba(15,30,22,0.98)",
@@ -563,7 +568,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
           }}>Admin</span>
         </div>
 
-        {/* Breadcrumb top — só desktop */}
+        {/* Breadcrumb desktop */}
         <div className="hidden lg:flex" style={{
           padding: "14px 32px", background: "rgba(15,30,22,0.6)",
           borderBottom: "1px solid var(--border-subtle)",
@@ -583,412 +588,462 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
 
             <AnimatePresence mode="wait">
 
-          {/* VALORES */}
-          {section==="valores"&&(
-            <motion.div key="v" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
-              <div><h2 className="text-title" style={{marginBottom:8}}>Valores & Simulador</h2><p className="text-body">Valores de venda, lotes e parâmetros de financiamento.</p></div>
+              {/* VALORES */}
+              {section==="valores"&&(
+                <motion.div key="v" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
+                  <div><h2 className="text-title" style={{marginBottom:8}}>Valores & Simulador</h2><p className="text-body">Valores de venda, lotes e parâmetros de financiamento.</p></div>
 
-              {emp.modelos.map((m:any,idx:number)=>(
-                <Card key={m.id} title={`🏠 ${m.nome} · ${m.area}m²`} subtitle="Valor de venda e configurações">
-                  <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                    <Two>
-                      <div><FieldLabel hint="Preço final ao comprador">Valor do Imóvel (R$)</FieldLabel><NumInput value={m.valor} prefix="R$" onChange={v=>update(`modelos.${idx}.valor`,v)}/></div>
-                      <div><FieldLabel hint="Único para todos os modelos">Valor do Lote (R$)</FieldLabel><NumInput value={m.valorLote||48000} prefix="R$" onChange={v=>emp.modelos.forEach((_:any,i:number)=>update(`modelos.${i}.valorLote`,v))}/></div>
-                    </Two>
-                    <Two>
-                      <div><FieldLabel>Área (m²)</FieldLabel><NumInput value={m.area} suffix="m²" onChange={v=>update(`modelos.${idx}.area`,v)}/></div>
-                      <div><FieldLabel>Quartos</FieldLabel><NumInput value={m.quartos} min={1} onChange={v=>update(`modelos.${idx}.quartos`,v)}/></div>
-                    </Two>
-                    {idx===0&&emp.modelos.length>1&&(
-                      <div style={{display:"flex",gap:8,padding:"10px 12px",borderRadius:8,background:"rgba(175,111,83,0.07)",border:"1px solid rgba(175,111,83,0.2)"}}>
-                        <Info size={13} color="var(--terracota)" style={{flexShrink:0,marginTop:1}}/><p style={{fontSize:11,color:"var(--gray-mid)",lineHeight:1.5}}>Lote único — alterar aqui atualiza todos os modelos.</p>
+                  {emp.modelos.map((m:any,idx:number)=>(
+                    <Card key={m.id} title={`🏠 ${m.nome} · ${m.area}m²`} subtitle="Valor de venda e configurações">
+                      <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                        <Two>
+                          <div><FieldLabel hint="Preço final ao comprador">Valor do Imóvel (R$)</FieldLabel><NumInput value={m.valor} prefix="R$" onChange={v=>update(`modelos.${idx}.valor`,v)}/></div>
+                          <div><FieldLabel hint="Único para todos os modelos">Valor do Lote (R$)</FieldLabel><NumInput value={m.valorLote||48000} prefix="R$" onChange={v=>emp.modelos.forEach((_:any,i:number)=>update(`modelos.${i}.valorLote`,v))}/></div>
+                        </Two>
+                        <Two>
+                          <div><FieldLabel>Área (m²)</FieldLabel><NumInput value={m.area} suffix="m²" onChange={v=>update(`modelos.${idx}.area`,v)}/></div>
+                          <div><FieldLabel>Quartos</FieldLabel><NumInput value={m.quartos} min={1} onChange={v=>update(`modelos.${idx}.quartos`,v)}/></div>
+                        </Two>
+                        {idx===0&&emp.modelos.length>1&&(
+                          <div style={{display:"flex",gap:8,padding:"10px 12px",borderRadius:8,background:"rgba(175,111,83,0.07)",border:"1px solid rgba(175,111,83,0.2)"}}>
+                            <Info size={13} color="var(--terracota)" style={{flexShrink:0,marginTop:1}}/><p style={{fontSize:11,color:"var(--gray-mid)",lineHeight:1.5}}>Lote único — alterar aqui atualiza todos os modelos.</p>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </Card>
-              ))}
+                    </Card>
+                  ))}
 
-              <Card title="⚙️ Parâmetros do Simulador" subtitle="Prazo, entradas e taxas">
-                <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                  <Two>
-                    <div><FieldLabel hint="Mínimo da construtora">Entrada Mínima (R$)</FieldLabel><NumInput value={emp.simulador.entradaMin} prefix="R$" onChange={v=>update("simulador.entradaMin",v)}/></div>
-                    <div><FieldLabel hint="Teto do slider">Entrada Máxima (R$)</FieldLabel><NumInput value={emp.simulador.entradaMax} prefix="R$" onChange={v=>update("simulador.entradaMax",v)}/></div>
-                  </Two>
-                  <div><FieldLabel hint="Caixa aceita até 420 meses">Prazo (meses)</FieldLabel><NumInput value={emp.simulador.prazoMeses} suffix="meses" onChange={v=>update("simulador.prazoMeses",v)}/></div>
-                  <Hr/>
-                  <p style={{fontSize:11,fontWeight:700,color:"var(--gray-mid)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Taxas de Juros Nominais</p>
-                  <Two>
-                    <div><FieldLabel hint="Não-cotista — Faixa 2">Taxa Faixa 2 (% a.a.)</FieldLabel><NumInput value={emp.simulador.taxaFaixa12} suffix="% a.a." step={0.01} onChange={v=>update("simulador.taxaFaixa12",v)}/></div>
-                    <div><FieldLabel hint="Confirmado: 8,16%">Taxa Faixa 3 não-cotista</FieldLabel><NumInput value={emp.simulador.taxaFaixa3} suffix="% a.a." step={0.01} onChange={v=>update("simulador.taxaFaixa3",v)}/></div>
-                    <div><FieldLabel hint="Confirmado: 7,66%">Taxa Faixa 3 cotista</FieldLabel><NumInput value={emp.simulador.taxaFaixa3Cotista||7.66} suffix="% a.a." step={0.01} onChange={v=>update("simulador.taxaFaixa3Cotista",v)}/></div>
-                    <div><FieldLabel hint="Mercado livre">Taxa Mercado</FieldLabel><NumInput value={emp.simulador.taxaMercado} suffix="% a.a." step={0.01} onChange={v=>update("simulador.taxaMercado",v)}/></div>
-                  </Two>
-                </div>
-              </Card>
-
-              <Card title="📐 CUB SINDUSCON — Entrada Embutida" subtitle="Preencha o CUB vigente e clique em Salvar. Se o laudo superar o preço de venda, a Caixa financiará mais de 80% do contrato.">
-                <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                  <div style={{padding:"10px 14px",borderRadius:8,background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",display:"flex",gap:8,alignItems:"center"}}>
-                    <Info size={13} color="#fb923c" style={{flexShrink:0}}/><p style={{fontSize:12,color:"#fb923c"}}>Atualizar mensalmente. <strong>Clique em "Salvar alterações" após preencher.</strong></p>
-                  </div>
-                  <Two>
-                    <div><FieldLabel hint="SINDUSCON-GO deste mês">CUB Vigente (R$/m²)</FieldLabel><NumInput value={emp.simulador.cub?.cubVigente||0} prefix="R$" suffix="/m²" step={1} placeholder="Ex: 2900" onChange={v=>update("simulador.cub.cubVigente",v)}/></div>
-                    <div><FieldLabel hint="Máximo 18% aceito pela Caixa">BDI (%)</FieldLabel><NumInput value={emp.simulador.cub?.bdi?Math.round(emp.simulador.cub.bdi*100):18} suffix="%" step={0.5} min={0} onChange={v=>update("simulador.cub.bdi",v/100)}/></div>
-                  </Two>
-                  {diagCUB?(
-                    <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                      <p style={{fontSize:11,fontWeight:700,color:"var(--gray-mid)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Diagnóstico automático</p>
-                      {diagCUB.map((d:any)=>{const cor=d.funciona?"#4ade80":"#facc15";return(
-                        <div key={d.nome} style={{padding:"16px 18px",borderRadius:12,background:`${cor}0d`,border:`1px solid ${cor}28`}}>
-                          <p style={{fontSize:13,fontWeight:700,color:cor,marginBottom:12}}>{d.funciona?"✅":"⚡"} {d.nome} — entrada embutida {d.funciona?"funciona":"parcial"}</p>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                            {[["Laudo CUB",`R$ ${Math.round(d.laudo).toLocaleString("pt-BR")}`],["Máx fin (80%)",`R$ ${Math.round(d.maxFin).toLocaleString("pt-BR")}`],["Entrada mín",`R$ ${Math.round(d.entradaMin).toLocaleString("pt-BR")}`]].map(([l,v])=>(
-                              <div key={l}><p style={{fontSize:10,color:"var(--gray-dark)",marginBottom:3}}>{l}</p><p style={{fontSize:13,fontWeight:700,color:"var(--gray-light)"}}>{v}</p></div>
-                            ))}
-                          </div>
-                          {!d.funciona&&<p style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>CUB mínimo para 100%: R$ {Math.ceil(d.cubMin).toLocaleString("pt-BR")}/m²</p>}
-                        </div>
-                      );})}
+                  <Card title="⚙️ Parâmetros do Simulador" subtitle="Prazo, entradas e taxas">
+                    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                      <Two>
+                        <div><FieldLabel hint="Mínimo da construtora">Entrada Mínima (R$)</FieldLabel><NumInput value={emp.simulador.entradaMin} prefix="R$" onChange={v=>update("simulador.entradaMin",v)}/></div>
+                        <div><FieldLabel hint="Teto do slider">Entrada Máxima (R$)</FieldLabel><NumInput value={emp.simulador.entradaMax} prefix="R$" onChange={v=>update("simulador.entradaMax",v)}/></div>
+                      </Two>
+                      <div><FieldLabel hint="Caixa aceita até 420 meses">Prazo (meses)</FieldLabel><NumInput value={emp.simulador.prazoMeses} suffix="meses" onChange={v=>update("simulador.prazoMeses",v)}/></div>
+                      <Hr/>
+                      <p style={{fontSize:11,fontWeight:700,color:"var(--gray-mid)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Taxas de Juros Nominais</p>
+                      <Two>
+                        <div><FieldLabel hint="Não-cotista — Faixa 2">Taxa Faixa 2 (% a.a.)</FieldLabel><NumInput value={emp.simulador.taxaFaixa12} suffix="% a.a." step={0.01} onChange={v=>update("simulador.taxaFaixa12",v)}/></div>
+                        <div><FieldLabel hint="Confirmado: 8,16%">Taxa Faixa 3 não-cotista</FieldLabel><NumInput value={emp.simulador.taxaFaixa3} suffix="% a.a." step={0.01} onChange={v=>update("simulador.taxaFaixa3",v)}/></div>
+                        <div><FieldLabel hint="Confirmado: 7,66%">Taxa Faixa 3 cotista</FieldLabel><NumInput value={emp.simulador.taxaFaixa3Cotista||7.66} suffix="% a.a." step={0.01} onChange={v=>update("simulador.taxaFaixa3Cotista",v)}/></div>
+                        <div><FieldLabel hint="Mercado livre">Taxa Mercado</FieldLabel><NumInput value={emp.simulador.taxaMercado} suffix="% a.a." step={0.01} onChange={v=>update("simulador.taxaMercado",v)}/></div>
+                      </Two>
                     </div>
-                  ):(
-                    <div style={{padding:"14px 16px",borderRadius:10,background:"rgba(168,85,247,0.07)",border:"1px solid rgba(168,85,247,0.2)",display:"flex",gap:10}}>
-                      <Info size={14} color="#a855f7" style={{flexShrink:0,marginTop:1}}/><p style={{fontSize:12,color:"var(--gray-mid)",lineHeight:1.6}}>Preencha o <strong style={{color:"var(--gray-light)"}}>CUB vigente</strong> e salve para ativar o diagnóstico automático.</p>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            </motion.div>
-          )}
+                  </Card>
 
-          {/* GALERIA */}
-          {section==="galeria"&&(
-            <motion.div key="g" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
-              <div><h2 className="text-title" style={{marginBottom:8}}>Galeria de Imagens</h2><p className="text-body">Fotos e plantas da Vitrine Digital.</p></div>
-              <Card title="📷 Uploads">
-                <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                  <div className="tab-group">
-                    <button className={`tab-item ${upType==="imagens"?"active":""}`} onClick={()=>setUpType("imagens")}>Renders / Fotos</button>
-                    <button className={`tab-item ${upType==="plantas"?"active":""}`} onClick={()=>setUpType("plantas")}>Plantas Baixas</button>
-                  </div>
-                  <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUpload}/>
-                  <button onClick={()=>fileRef.current?.click()} disabled={uploading} className="btn-secondary w-full">
-                    <ImageIcon size={16}/>{uploading?"Enviando...":`Enviar ${upType==="imagens"?"Render / Foto":"Planta Baixa"}`}
-                  </button>
-                  {(emp.vitrine[upType]||[]).length>0?(
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
-                      {emp.vitrine[upType].map((img:any,i:number)=>(
-                        <div key={i} className="relative group rounded-xl overflow-hidden" style={{height:120}}>
-                          <Image src={img.url} alt={img.titulo||""} fill className="object-cover"/>
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex-center">
-                            <button onClick={()=>deleteImage(img.url,upType)} className="w-9 h-9 rounded-full flex-center" style={{background:"rgba(239,68,68,0.8)"}}><Trash2 size={14} color="white"/></button>
-                          </div>
-                          <div className="absolute bottom-1 left-1 right-1"><p className="text-xs text-white truncate px-1">{img.titulo}</p></div>
+                  <Card title="📐 CUB SINDUSCON — Entrada Embutida" subtitle="Preencha o CUB vigente e clique em Salvar. Se o laudo superar o preço de venda, a Caixa financiará mais de 80% do contrato.">
+                    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                      <div style={{padding:"10px 14px",borderRadius:8,background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",display:"flex",gap:8,alignItems:"center"}}>
+                        <Info size={13} color="#fb923c" style={{flexShrink:0}}/><p style={{fontSize:12,color:"#fb923c"}}>Atualizar mensalmente. <strong>Clique em "Salvar alterações" após preencher.</strong></p>
+                      </div>
+                      <Two>
+                        <div><FieldLabel hint="SINDUSCON-GO deste mês">CUB Vigente (R$/m²)</FieldLabel><NumInput value={emp.simulador.cub?.cubVigente||0} prefix="R$" suffix="/m²" step={1} placeholder="Ex: 2900" onChange={v=>update("simulador.cub.cubVigente",v)}/></div>
+                        <div><FieldLabel hint="Máximo 18% aceito pela Caixa">BDI (%)</FieldLabel><NumInput value={emp.simulador.cub?.bdi?Math.round(emp.simulador.cub.bdi*100):18} suffix="%" step={0.5} min={0} onChange={v=>update("simulador.cub.bdi",v/100)}/></div>
+                      </Two>
+                      {diagCUB?(
+                        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                          <p style={{fontSize:11,fontWeight:700,color:"var(--gray-mid)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Diagnóstico automático</p>
+                          {diagCUB.map((d:any)=>{const cor=d.funciona?"#4ade80":"#facc15";return(
+                            <div key={d.nome} style={{padding:"16px 18px",borderRadius:12,background:`${cor}0d`,border:`1px solid ${cor}28`}}>
+                              <p style={{fontSize:13,fontWeight:700,color:cor,marginBottom:12}}>{d.funciona?"✅":"⚡"} {d.nome} — entrada embutida {d.funciona?"funciona":"parcial"}</p>
+                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+                                {[["Laudo CUB",`R$ ${Math.round(d.laudo).toLocaleString("pt-BR")}`],["Máx fin (80%)",`R$ ${Math.round(d.maxFin).toLocaleString("pt-BR")}`],["Entrada mín",`R$ ${Math.round(d.entradaMin).toLocaleString("pt-BR")}`]].map(([l,v])=>(
+                                  <div key={l}><p style={{fontSize:10,color:"var(--gray-dark)",marginBottom:3}}>{l}</p><p style={{fontSize:13,fontWeight:700,color:"var(--gray-light)"}}>{v}</p></div>
+                                ))}
+                              </div>
+                              {!d.funciona&&<p style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>CUB mínimo para 100%: R$ {Math.ceil(d.cubMin).toLocaleString("pt-BR")}/m²</p>}
+                            </div>
+                          );})}
                         </div>
+                      ):(
+                        <div style={{padding:"14px 16px",borderRadius:10,background:"rgba(168,85,247,0.07)",border:"1px solid rgba(168,85,247,0.2)",display:"flex",gap:10}}>
+                          <Info size={14} color="#a855f7" style={{flexShrink:0,marginTop:1}}/><p style={{fontSize:12,color:"var(--gray-mid)",lineHeight:1.6}}>Preencha o <strong style={{color:"var(--gray-light)"}}>CUB vigente</strong> e salve para ativar o diagnóstico automático.</p>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                </motion.div>
+              )}
+
+              {/* GALERIA */}
+              {section==="galeria"&&(
+                <motion.div key="g" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
+                  <div><h2 className="text-title" style={{marginBottom:8}}>Galeria de Imagens</h2><p className="text-body">Fotos e plantas da Vitrine Digital.</p></div>
+                  <Card title="📷 Uploads">
+                    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                      <div className="tab-group">
+                        <button className={`tab-item ${upType==="imagens"?"active":""}`} onClick={()=>setUpType("imagens")}>Renders / Fotos</button>
+                        <button className={`tab-item ${upType==="plantas"?"active":""}`} onClick={()=>setUpType("plantas")}>Plantas Baixas</button>
+                      </div>
+                      <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUpload}/>
+                      <button onClick={()=>fileRef.current?.click()} disabled={uploading} className="btn-secondary w-full">
+                        <ImageIcon size={16}/>{uploading?"Enviando...":`Enviar ${upType==="imagens"?"Render / Foto":"Planta Baixa"}`}
+                      </button>
+                      {(emp.vitrine[upType]||[]).length>0?(
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+                          {emp.vitrine[upType].map((img:any,i:number)=>(
+                            <div key={i} className="relative group rounded-xl overflow-hidden" style={{height:120}}>
+                              <Image src={img.url} alt={img.titulo||""} fill className="object-cover"/>
+                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex-center">
+                                <button onClick={()=>deleteImage(img.url,upType)} className="w-9 h-9 rounded-full flex-center" style={{background:"rgba(239,68,68,0.8)"}}><Trash2 size={14} color="white"/></button>
+                              </div>
+                              <div className="absolute bottom-1 left-1 right-1"><p className="text-xs text-white truncate px-1">{img.titulo}</p></div>
+                            </div>
+                          ))}
+                        </div>
+                      ):(
+                        <div className="flex-center py-8 rounded-xl" style={{background:"rgba(0,0,0,0.2)",border:"1px dashed var(--border-subtle)"}}>
+                          <p className="text-muted text-sm">Nenhuma imagem ainda</p>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+
+                  {/* AMBIENTES */}
+                  <Card title="🏠 Ambientes" subtitle="Ative, renomeie ou crie ambientes. Cada um aparece como ícone clicável na vitrine.">
+                    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        {todosAmbientes.map(amb => {
+                            const ambData = emp.vitrine?.ambientes?.[amb.id];
+                            const ativo = ambData?.ativo ?? false;
+                            const label = ambData?.label ?? amb.label;
+                            const icone = ambData?.icone ?? amb.icone;
+                            const editando = editandoAmb === amb.id;
+                            return (
+                              <div key={amb.id} style={{
+                                display:"flex", alignItems:"center", gap:10,
+                                padding:"10px 12px", borderRadius:12,
+                                border:`1.5px solid ${ativo?"var(--border-active)":"var(--border-subtle)"}`,
+                                background: ativo ? "var(--terracota-glow)" : "rgba(0,0,0,0.15)",
+                              }}>
+                                {editando ? (
+                                  <input
+                                    type="text"
+                                    defaultValue={icone}
+                                    maxLength={4}
+                                    onBlur={e=>{
+                                      const atual = emp.vitrine?.ambientes?.[amb.id] ?? {ativo,fotos:[]};
+                                      update(`vitrine.ambientes.${amb.id}`, {...atual, icone: e.target.value || icone});
+                                    }}
+                                    style={{width:40,fontSize:20,background:"transparent",border:"1px solid var(--border-active)",borderRadius:6,textAlign:"center",color:"var(--gray-light)"}}
+                                  />
+                                ) : (
+                                  <span style={{fontSize:20,lineHeight:1,flexShrink:0}}>{icone}</span>
+                                )}
+
+                                {editando ? (
+                                  <input
+                                    type="text"
+                                    className="input-field"
+                                    defaultValue={label}
+                                    style={{flex:1,fontSize:13,padding:"4px 8px"}}
+                                    onBlur={e=>{
+                                      const atual = emp.vitrine?.ambientes?.[amb.id] ?? {ativo,fotos:[]};
+                                      update(`vitrine.ambientes.${amb.id}`, {...atual, label: e.target.value || label});
+                                    }}
+                                    onKeyDown={e=>e.key==="Enter"&&setEditandoAmb(null)}
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <span style={{fontSize:13,fontWeight:ativo?700:500,color:ativo?"var(--gray-light)":"var(--gray-dark)",flex:1}}>{label}</span>
+                                )}
+
+                                <button
+                                  onClick={()=>setEditandoAmb(editando ? null : amb.id)}
+                                  title={editando?"Concluir edição":"Editar nome"}
+                                  style={{
+                                    width:28,height:28,borderRadius:7,flexShrink:0,fontSize:12,
+                                    display:"flex",alignItems:"center",justifyContent:"center",
+                                    background: editando ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.06)",
+                                    border: editando ? "1px solid rgba(74,222,128,0.3)" : "1px solid var(--border-subtle)",
+                                    color: editando ? "#4ade80" : "var(--gray-dark)", cursor:"pointer",
+                                  }}
+                                >{editando ? "✓" : "✏️"}</button>
+
+                                <button
+                                  onClick={()=>{
+                                    const atual = emp.vitrine?.ambientes?.[amb.id] ?? {ativo:false,fotos:[]};
+                                    update(`vitrine.ambientes.${amb.id}`,{...atual, ativo:!ativo, label: atual.label ?? amb.label, icone: atual.icone ?? amb.icone});
+                                  }}
+                                  style={{
+                                    padding:"4px 10px",borderRadius:7,flexShrink:0,
+                                    fontSize:10,fontWeight:800,cursor:"pointer",
+                                    background: ativo?"rgba(74,222,128,0.15)":"rgba(0,0,0,0.2)",
+                                    border: ativo?"1px solid rgba(74,222,128,0.3)":"1px solid var(--border-subtle)",
+                                    color: ativo?"#4ade80":"var(--gray-dark)",
+                                  }}
+                                >{ativo?"ON":"OFF"}</button>
+                              </div>
+                            );
+                        })}
+                      </div>
+
+                      <button
+                        onClick={()=>{
+                          const novoId = `custom_${Date.now()}`;
+                          update(`vitrine.ambientes.${novoId}`, {ativo:true, fotos:[], label:"Novo Ambiente", icone:"🏠"});
+                          setTimeout(()=>setEditandoAmb(novoId), 50);
+                        }}
+                        style={{
+                          display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+                          padding:"12px 16px",borderRadius:12,cursor:"pointer",
+                          border:"2px dashed var(--border-subtle)",background:"transparent",
+                          color:"var(--terracota)",fontSize:13,fontWeight:600,
+                        }}
+                      >
+                        + Novo Ambiente
+                      </button>
+
+                      {AMBIENTES_LISTA.filter(a=>emp.vitrine?.ambientes?.[a.id]?.ativo).length>0&&<Hr/>}
+                      {AMBIENTES_LISTA.filter(a=>emp.vitrine?.ambientes?.[a.id]?.ativo).map(amb=>(
+                        <AmbienteUpload
+                          key={amb.id}
+                          amb={amb}
+                          fotos={emp.vitrine?.ambientes?.[amb.id]?.fotos??[]}
+                          slug={slug}
+                          onAdd={foto=>{
+                            const atual=emp.vitrine?.ambientes?.[amb.id]??{ativo:true,fotos:[]};
+                            update(`vitrine.ambientes.${amb.id}`,{...atual,fotos:[...atual.fotos,foto]});
+                          }}
+                          onAddMulti={novas=>{
+                            setEmp((prev:any) => {
+                              const next = JSON.parse(JSON.stringify(prev));
+                              if (!next.vitrine.ambientes) next.vitrine.ambientes = {};
+                              if (!next.vitrine.ambientes[amb.id]) next.vitrine.ambientes[amb.id] = {ativo:true,fotos:[]};
+                              next.vitrine.ambientes[amb.id].fotos = [
+                                ...next.vitrine.ambientes[amb.id].fotos,
+                                ...novas
+                              ];
+                              return next;
+                            });
+                          }}
+                          onRemove={url=>{
+                            const atual=emp.vitrine?.ambientes?.[amb.id]??{ativo:true,fotos:[]};
+                            update(`vitrine.ambientes.${amb.id}`,{...atual,fotos:atual.fotos.filter((f:any)=>f.url!==url)});
+                          }}
+                        />
                       ))}
                     </div>
-                  ):(
-                    <div className="flex-center py-8 rounded-xl" style={{background:"rgba(0,0,0,0.2)",border:"1px dashed var(--border-subtle)"}}>
-                      <p className="text-muted text-sm">Nenhuma imagem ainda</p>
+                  </Card>
+
+                </motion.div>
+              )}
+
+              {/* TEXTOS */}
+              {section==="textos"&&(
+                <motion.div key="t" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
+                  <div><h2 className="text-title" style={{marginBottom:8}}>Textos & Copywriting</h2><p className="text-body">Textos dos módulos e notas do PDF.</p></div>
+                  <Card title="📄 Textos e Alertas">
+                    <div style={{display:"flex",flexDirection:"column",gap:24}}>
+                      <div><FieldLabel hint="Rodapé do PDF">Notas Legais (PDF)</FieldLabel><textarea rows={4} className="input-field" style={{resize:"vertical",fontSize:13,lineHeight:1.6}} value={emp.textos.notasLegais} onChange={e=>update("textos.notasLegais",e.target.value)}/></div>
+                      <Hr/>
+                      <div><FieldLabel>Título — Módulo de Obra</FieldLabel><input type="text" className="input-field" style={{fontSize:15}} value={emp.textos.tituloObra} onChange={e=>update("textos.tituloObra",e.target.value)}/></div>
+                      <div><FieldLabel hint="Introdução do módulo de obra">Descrição — Módulo de Obra</FieldLabel><textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}} value={emp.textos.descricaoObra} onChange={e=>update("textos.descricaoObra",e.target.value)}/></div>
+                      <Hr/>
+                      <div><FieldLabel hint="Faixa 2 (com subsídio)">Alerta Faixa 2</FieldLabel><textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}} value={emp.textos.alertaF12} onChange={e=>update("textos.alertaF12",e.target.value)}/></div>
+                      <div><FieldLabel hint="Faixa 3 e 4 (sem subsídio)">Alerta Faixa 3/4</FieldLabel><textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}} value={emp.textos.alertaF3} onChange={e=>update("textos.alertaF3",e.target.value)}/></div>
                     </div>
-                  )}
-                </div>
-              </Card>
+                  </Card>
+                </motion.div>
+              )}
 
-              {/* AMBIENTES */}
-              <Card title="🏠 Ambientes" subtitle="Ative, renomeie ou crie ambientes. Cada um aparece como ícone clicável na vitrine.">
-                <div style={{display:"flex",flexDirection:"column",gap:20}}>
-
-                  {/* Grid de ambientes — toggle + edição inline */}
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    {todosAmbientes.map(amb => {
-                        const ambData = emp.vitrine?.ambientes?.[amb.id];
-                        const ativo = ambData?.ativo ?? false;
-                        const label = ambData?.label ?? amb.label;
-                        const icone = ambData?.icone ?? amb.icone;
-                        const editando = editandoAmb === amb.id;
-                        return (
-                          <div key={amb.id} style={{
-                            display:"flex", alignItems:"center", gap:10,
-                            padding:"10px 12px", borderRadius:12,
-                            border:`1.5px solid ${ativo?"var(--border-active)":"var(--border-subtle)"}`,
-                            background: ativo ? "var(--terracota-glow)" : "rgba(0,0,0,0.15)",
-                          }}>
-                            {/* Ícone — clicável para editar */}
-                            {editando ? (
-                              <input
-                                type="text"
-                                defaultValue={icone}
-                                maxLength={4}
-                                onBlur={e=>{
-                                  const atual = emp.vitrine?.ambientes?.[amb.id] ?? {ativo,fotos:[]};
-                                  update(`vitrine.ambientes.${amb.id}`, {...atual, icone: e.target.value || icone});
-                                }}
-                                style={{width:40,fontSize:20,background:"transparent",border:"1px solid var(--border-active)",borderRadius:6,textAlign:"center",color:"var(--gray-light)"}}
-                              />
-                            ) : (
-                              <span style={{fontSize:20,lineHeight:1,flexShrink:0}}>{icone}</span>
-                            )}
-
-                            {/* Nome — editável */}
-                            {editando ? (
-                              <input
-                                type="text"
-                                className="input-field"
-                                defaultValue={label}
-                                style={{flex:1,fontSize:13,padding:"4px 8px"}}
-                                onBlur={e=>{
-                                  const atual = emp.vitrine?.ambientes?.[amb.id] ?? {ativo,fotos:[]};
-                                  update(`vitrine.ambientes.${amb.id}`, {...atual, label: e.target.value || label});
-                                }}
-                                onKeyDown={e=>e.key==="Enter"&&setEditandoAmb(null)}
-                                autoFocus
-                              />
-                            ) : (
-                              <span style={{fontSize:13,fontWeight:ativo?700:500,color:ativo?"var(--gray-light)":"var(--gray-dark)",flex:1}}>{label}</span>
-                            )}
-
-                            {/* Botão editar nome */}
-                            <button
-                              onClick={()=>setEditandoAmb(editando ? null : amb.id)}
-                              title={editando?"Concluir edição":"Editar nome"}
-                              style={{
-                                width:28,height:28,borderRadius:7,flexShrink:0,fontSize:12,
-                                display:"flex",alignItems:"center",justifyContent:"center",
-                                background: editando ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.06)",
-                                border: editando ? "1px solid rgba(74,222,128,0.3)" : "1px solid var(--border-subtle)",
-                                color: editando ? "#4ade80" : "var(--gray-dark)", cursor:"pointer",
-                              }}
-                            >{editando ? "✓" : "✏️"}</button>
-
-                            {/* Toggle ON/OFF */}
-                            <button
-                              onClick={()=>{
-                                const atual = emp.vitrine?.ambientes?.[amb.id] ?? {ativo:false,fotos:[]};
-                                update(`vitrine.ambientes.${amb.id}`,{...atual, ativo:!ativo, label: atual.label ?? amb.label, icone: atual.icone ?? amb.icone});
-                              }}
-                              style={{
-                                padding:"4px 10px",borderRadius:7,flexShrink:0,
-                                fontSize:10,fontWeight:800,cursor:"pointer",
-                                background: ativo?"rgba(74,222,128,0.15)":"rgba(0,0,0,0.2)",
-                                border: ativo?"1px solid rgba(74,222,128,0.3)":"1px solid var(--border-subtle)",
-                                color: ativo?"#4ade80":"var(--gray-dark)",
-                              }}
-                            >{ativo?"ON":"OFF"}</button>
-                          </div>
-                        );
-                      })}
-                  </div>
-
-                  {/* Botão: novo ambiente customizado */}
-                  <button
-                    onClick={()=>{
-                      const novoId = `custom_${Date.now()}`;
-                      update(`vitrine.ambientes.${novoId}`, {ativo:true, fotos:[], label:"Novo Ambiente", icone:"🏠"});
-                      setTimeout(()=>setEditandoAmb(novoId), 50);
-                    }}
-                    style={{
-                      display:"flex",alignItems:"center",justifyContent:"center",gap:8,
-                      padding:"12px 16px",borderRadius:12,cursor:"pointer",
-                      border:"2px dashed var(--border-subtle)",background:"transparent",
-                      color:"var(--terracota)",fontSize:13,fontWeight:600,
-                    }}
-                  >
-                    + Novo Ambiente
-                  </button>
-
-                  {/* Upload por ambiente ativo */}
-                  {AMBIENTES_LISTA.filter(a=>emp.vitrine?.ambientes?.[a.id]?.ativo).length>0&&<Hr/>}
-                  {AMBIENTES_LISTA.filter(a=>emp.vitrine?.ambientes?.[a.id]?.ativo).map(amb=>(
-                    <AmbienteUpload
-                      key={amb.id}
-                      amb={amb}
-                      fotos={emp.vitrine?.ambientes?.[amb.id]?.fotos??[]}
-                      slug={slug}
-                      onAdd={foto=>{
-                        const atual=emp.vitrine?.ambientes?.[amb.id]??{ativo:true,fotos:[]};
-                        update(`vitrine.ambientes.${amb.id}`,{...atual,fotos:[...atual.fotos,foto]});
-                      }}
-                      onAddMulti={novas=>{
-                        // Lê estado atual via função para garantir que pega todas as fotos já salvas
-                        setEmp((prev:any) => {
-                          const next = JSON.parse(JSON.stringify(prev));
-                          if (!next.vitrine.ambientes) next.vitrine.ambientes = {};
-                          if (!next.vitrine.ambientes[amb.id]) next.vitrine.ambientes[amb.id] = {ativo:true,fotos:[]};
-                          next.vitrine.ambientes[amb.id].fotos = [
-                            ...next.vitrine.ambientes[amb.id].fotos,
-                            ...novas
-                          ];
-                          return next;
-                        });
-                      }}
-                      onRemove={url=>{
-                        const atual=emp.vitrine?.ambientes?.[amb.id]??{ativo:true,fotos:[]};
-                        update(`vitrine.ambientes.${amb.id}`,{...atual,fotos:atual.fotos.filter((f:any)=>f.url!==url)});
-                      }}
-                    />
+              {/* MCMV */}
+              {section==="mcmv"&&(
+                <motion.div key="m" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
+                  <div><h2 className="text-title" style={{marginBottom:8}}>Programa MCMV</h2><p className="text-body">Faixas, subsídios e taxas — DOU 16/04/2026.</p></div>
+                  {emp.mcmv.faixas.map((faixa:any,idx:number)=>(
+                    <Card key={faixa.id} title={faixa.nome} subtitle={`Renda R$ ${faixa.rendaMin.toLocaleString("pt-BR")} → R$ ${faixa.rendaMax.toLocaleString("pt-BR")}`}>
+                      <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                        <Two>
+                          <div><FieldLabel>Renda mínima (R$)</FieldLabel><NumInput value={faixa.rendaMin} prefix="R$" onChange={v=>update(`mcmv.faixas.${idx}.rendaMin`,v)}/></div>
+                          <div><FieldLabel>Renda máxima (R$)</FieldLabel><NumInput value={faixa.rendaMax} prefix="R$" onChange={v=>update(`mcmv.faixas.${idx}.rendaMax`,v)}/></div>
+                        </Two>
+                        {faixa.subsidioMax>0&&(
+                          <Two>
+                            <div><FieldLabel hint="Renda mínima da faixa">Subsídio máximo (R$)</FieldLabel><NumInput value={faixa.subsidioMax} prefix="R$" onChange={v=>update(`mcmv.faixas.${idx}.subsidioMax`,v)}/></div>
+                            <div><FieldLabel hint="Renda máxima da faixa">Subsídio mínimo (R$)</FieldLabel><NumInput value={faixa.subsidioMin} prefix="R$" onChange={v=>update(`mcmv.faixas.${idx}.subsidioMin`,v)}/></div>
+                          </Two>
+                        )}
+                        {faixa.subsidioMax===0&&<div style={{padding:"10px 14px",borderRadius:8,background:"rgba(251,146,60,0.07)",border:"1px solid rgba(251,146,60,0.2)"}}><p style={{fontSize:12,color:"#fb923c"}}>⚠️ Sem subsídio — apenas taxas reduzidas.</p></div>}
+                        <Hr/>
+                        <Two>
+                          <div><FieldLabel hint="FGTS < 3 anos">Taxa não-cotista (% a.a.)</FieldLabel><NumInput value={faixa.taxa} suffix="% a.a." step={0.01} onChange={v=>update(`mcmv.faixas.${idx}.taxa`,v)}/></div>
+                          <div><FieldLabel hint="FGTS ≥ 3 anos">Taxa cotista (% a.a.)</FieldLabel><NumInput value={faixa.taxaCotista??faixa.taxa-0.5} suffix="% a.a." step={0.01} onChange={v=>update(`mcmv.faixas.${idx}.taxaCotista`,v)}/></div>
+                        </Two>
+                      </div>
+                    </Card>
                   ))}
-                </div>
-              </Card>
+                  <Card title="🏠 Teto Regional">
+                    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                      <div><FieldLabel hint="Valor máximo do imóvel para MCMV">Teto do Imóvel (R$)</FieldLabel><NumInput value={emp.mcmv.tetoImovel} prefix="R$" onChange={v=>update("mcmv.tetoImovel",v)}/></div>
+                      <div><FieldLabel>Observação MCMV</FieldLabel><textarea rows={3} className="input-field" style={{resize:"vertical",fontSize:13,lineHeight:1.6}} value={emp.mcmv.observacao} onChange={e=>update("mcmv.observacao",e.target.value)}/></div>
+                    </div>
+                  </Card>
+                </motion.div>
+              )}
 
-            </motion.div>
-          )}
+              {/* ═══ LOCALIZAÇÃO ══════════════════════════════ */}
+              {section==="localizacao"&&(
+                <motion.div key="loc" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
+                  <div>
+                    <h2 className="text-title" style={{marginBottom:8}}>Localização</h2>
+                    <p className="text-body">Endereço e coordenadas do empreendimento.</p>
+                  </div>
 
-          {/* TEXTOS */}
-          {section==="textos"&&(
-            <motion.div key="t" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
-              <div><h2 className="text-title" style={{marginBottom:8}}>Textos & Copywriting</h2><p className="text-body">Textos dos módulos e notas do PDF.</p></div>
-              <Card title="📄 Textos e Alertas">
-                <div style={{display:"flex",flexDirection:"column",gap:24}}>
-                  <div><FieldLabel hint="Rodapé do PDF">Notas Legais (PDF)</FieldLabel><textarea rows={4} className="input-field" style={{resize:"vertical",fontSize:13,lineHeight:1.6}} value={emp.textos.notasLegais} onChange={e=>update("textos.notasLegais",e.target.value)}/></div>
-                  <Hr/>
-                  <div><FieldLabel>Título — Módulo de Obra</FieldLabel><input type="text" className="input-field" style={{fontSize:15}} value={emp.textos.tituloObra} onChange={e=>update("textos.tituloObra",e.target.value)}/></div>
-                  <div><FieldLabel hint="Introdução do módulo de obra">Descrição — Módulo de Obra</FieldLabel><textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}} value={emp.textos.descricaoObra} onChange={e=>update("textos.descricaoObra",e.target.value)}/></div>
-                  <Hr/>
-                  <div><FieldLabel hint="Faixa 2 (com subsídio)">Alerta Faixa 2</FieldLabel><textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}} value={emp.textos.alertaF12} onChange={e=>update("textos.alertaF12",e.target.value)}/></div>
-                  <div><FieldLabel hint="Faixa 3 e 4 (sem subsídio)">Alerta Faixa 3/4</FieldLabel><textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}} value={emp.textos.alertaF3} onChange={e=>update("textos.alertaF3",e.target.value)}/></div>
-                </div>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* MCMV */}
-          {section==="mcmv"&&(
-            <motion.div key="m" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
-              <div><h2 className="text-title" style={{marginBottom:8}}>Programa MCMV</h2><p className="text-body">Faixas, subsídios e taxas — DOU 16/04/2026.</p></div>
-              {emp.mcmv.faixas.map((faixa:any,idx:number)=>(
-                <Card key={faixa.id} title={faixa.nome} subtitle={`Renda R$ ${faixa.rendaMin.toLocaleString("pt-BR")} → R$ ${faixa.rendaMax.toLocaleString("pt-BR")}`}>
-                  <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                    <Two>
-                      <div><FieldLabel>Renda mínima (R$)</FieldLabel><NumInput value={faixa.rendaMin} prefix="R$" onChange={v=>update(`mcmv.faixas.${idx}.rendaMin`,v)}/></div>
-                      <div><FieldLabel>Renda máxima (R$)</FieldLabel><NumInput value={faixa.rendaMax} prefix="R$" onChange={v=>update(`mcmv.faixas.${idx}.rendaMax`,v)}/></div>
-                    </Two>
-                    {faixa.subsidioMax>0&&(
+                  <Card title="📍 Endereço">
+                    <div style={{display:"flex",flexDirection:"column",gap:20}}>
                       <Two>
-                        <div><FieldLabel hint="Renda mínima da faixa">Subsídio máximo (R$)</FieldLabel><NumInput value={faixa.subsidioMax} prefix="R$" onChange={v=>update(`mcmv.faixas.${idx}.subsidioMax`,v)}/></div>
-                        <div><FieldLabel hint="Renda máxima da faixa">Subsídio mínimo (R$)</FieldLabel><NumInput value={faixa.subsidioMin} prefix="R$" onChange={v=>update(`mcmv.faixas.${idx}.subsidioMin`,v)}/></div>
+                        <div>
+                          <FieldLabel>Cidade</FieldLabel>
+                          <input type="text" className="input-field" style={{fontSize:15}}
+                            value={emp.cidade}
+                            onChange={e=>update("cidade",e.target.value)}/>
+                        </div>
+                        <div>
+                          <FieldLabel>Estado (sigla)</FieldLabel>
+                          <input type="text" className="input-field" style={{fontSize:15,textTransform:"uppercase"}}
+                            value={emp.estado}
+                            onChange={e=>update("estado",e.target.value.toUpperCase().slice(0,2))}
+                            maxLength={2}
+                            placeholder="GO"/>
+                        </div>
                       </Two>
-                    )}
-                    {faixa.subsidioMax===0&&<div style={{padding:"10px 14px",borderRadius:8,background:"rgba(251,146,60,0.07)",border:"1px solid rgba(251,146,60,0.2)"}}><p style={{fontSize:12,color:"#fb923c"}}>⚠️ Sem subsídio — apenas taxas reduzidas.</p></div>}
-                    <Hr/>
-                    <Two>
-                      <div><FieldLabel hint="FGTS &lt; 3 anos">Taxa não-cotista (% a.a.)</FieldLabel><NumInput value={faixa.taxa} suffix="% a.a." step={0.01} onChange={v=>update(`mcmv.faixas.${idx}.taxa`,v)}/></div>
-                      <div><FieldLabel hint="FGTS ≥ 3 anos">Taxa cotista (% a.a.)</FieldLabel><NumInput value={faixa.taxaCotista??faixa.taxa-0.5} suffix="% a.a." step={0.01} onChange={v=>update(`mcmv.faixas.${idx}.taxaCotista`,v)}/></div>
-                    </Two>
-                  </div>
-                </Card>
-              ))}
-              <Card title="🏠 Teto Regional">
-                <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                  <div><FieldLabel hint="Valor máximo do imóvel para MCMV">Teto do Imóvel (R$)</FieldLabel><NumInput value={emp.mcmv.tetoImovel} prefix="R$" onChange={v=>update("mcmv.tetoImovel",v)}/></div>
-                  <div><FieldLabel>Observação MCMV</FieldLabel><textarea rows={3} className="input-field" style={{resize:"vertical",fontSize:13,lineHeight:1.6}} value={emp.mcmv.observacao} onChange={e=>update("mcmv.observacao",e.target.value)}/></div>
-                </div>
-              </Card>
-            </motion.div>
-          )}
 
-          {/* ═══ LOCALIZAÇÃO ══════════════════════════════ */}
-          {section==="localizacao"&&(
-            <motion.div key="loc" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
-              <div>
-                <h2 className="text-title" style={{marginBottom:8}}>Localização</h2>
-                <p className="text-body">Endereço e coordenadas do empreendimento.</p>
-              </div>
+                      <div>
+                        <FieldLabel hint="Nome completo para identificação">Nome do Empreendimento</FieldLabel>
+                        <input type="text" className="input-field" style={{fontSize:15}}
+                          value={emp.nome}
+                          onChange={e=>update("nome",e.target.value)}/>
+                      </div>
 
-              <Card title="📍 Endereço">
-                <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                  <Two>
-                    <div>
-                      <FieldLabel>Cidade</FieldLabel>
-                      <input type="text" className="input-field" style={{fontSize:15}}
-                        value={emp.cidade}
-                        onChange={e=>update("cidade",e.target.value)}/>
+                      <div>
+                        <FieldLabel hint="Descrição exibida na página inicial">Descrição Curta</FieldLabel>
+                        <textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}}
+                          value={emp.descricao || ""}
+                          onChange={e=>update("descricao",e.target.value)}/>
+                      </div>
                     </div>
-                    <div>
-                      <FieldLabel>Estado (sigla)</FieldLabel>
-                      <input type="text" className="input-field" style={{fontSize:15,textTransform:"uppercase"}}
-                        value={emp.estado}
-                        onChange={e=>update("estado",e.target.value.toUpperCase().slice(0,2))}
-                        maxLength={2}
-                        placeholder="GO"/>
-                    </div>
-                  </Two>
+                  </Card>
 
+                  <Card title="🗺️ Coordenadas GPS" subtitle={`Cole as coordenadas do Google Maps em qualquer formato — DMS (16°24'17.1"S 51°06'50.3"W) ou decimal (-16.4047, -51.1140).`}>
+                    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+
+                      <CoordParser
+                        lat={emp.coordenadas?.lat ?? 0}
+                        lng={emp.coordenadas?.lng ?? 0}
+                        onChange={(lat,lng)=>{
+                          update("coordenadas", { ...(emp.coordenadas ?? {}), lat, lng });
+                        }}
+                      />
+
+                      <Two>
+                        <div>
+                          <FieldLabel hint="Latitude decimal (sul = negativo)">Latitude</FieldLabel>
+                          <NumInput
+                            value={emp.coordenadas?.lat ?? 0}
+                            step={0.000001}
+                            placeholder="-16.404750"
+                            onChange={v=>update("coordenadas.lat",v)}/>
+                        </div>
+                        <div>
+                          <FieldLabel hint="Longitude decimal (oeste = negativo)">Longitude</FieldLabel>
+                          <NumInput
+                            value={emp.coordenadas?.lng ?? 0}
+                            step={0.000001}
+                            placeholder="-51.113972"
+                            onChange={v=>update("coordenadas.lng",v)}/>
+                        </div>
+                      </Two>
+
+                      {(emp.coordenadas?.lat !== 0 && emp.coordenadas?.lat !== undefined && emp.coordenadas?.lng !== 0 && emp.coordenadas?.lng !== undefined) && (
+                        <a
+                          href={`https://www.google.com/maps?q=${emp.coordenadas.lat},${emp.coordenadas.lng}`}
+                          target="_blank" rel="noopener noreferrer"
+                          style={{
+                            display:"inline-flex",alignItems:"center",gap:8,
+                            padding:"10px 16px",borderRadius:10,width:"fit-content",
+                            background:"rgba(175,111,83,0.1)",border:"1px solid rgba(175,111,83,0.3)",
+                            color:"var(--terracota)",fontSize:13,fontWeight:600,textDecoration:"none",
+                          }}
+                        >
+                          <ExternalLink size={14}/>
+                          Conferir no Google Maps
+                        </a>
+                      )}
+                    </div>
+                  </Card>
+
+                </motion.div>
+              )}
+
+              {/* ═══ NOVO MÓDULO: MAPA & LOTES ══════════════════════════════ */}
+              {section==="mapa"&&(
+                <motion.div key="mapa" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
                   <div>
-                    <FieldLabel hint="Nome completo para identificação">Nome do Empreendimento</FieldLabel>
-                    <input type="text" className="input-field" style={{fontSize:15}}
-                      value={emp.nome}
-                      onChange={e=>update("nome",e.target.value)}/>
+                    <h2 className="text-title" style={{marginBottom:8}}>Mapa Interativo & Gestão de Lotes</h2>
+                    <p className="text-body">Faça o upload do seu ficheiro SVG do loteamento. Cada vetor com ID no SVG será lido como um lote interativo.</p>
                   </div>
 
-                  <div>
-                    <FieldLabel hint="Descrição exibida na página inicial">Descrição Curta</FieldLabel>
-                    <textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}}
-                      value={emp.descricao || ""}
-                      onChange={e=>update("descricao",e.target.value)}/>
-                  </div>
-                </div>
-              </Card>
-
-              <Card title="🗺️ Coordenadas GPS" subtitle={`Cole as coordenadas do Google Maps em qualquer formato — DMS (16°24'17.1"S 51°06'50.3"W) ou decimal (-16.4047, -51.1140).`}>
-                <div style={{display:"flex",flexDirection:"column",gap:20}}>
-
-                  {/* Input DMS — cola direto do Google Maps */}
-                  <CoordParser
-                    lat={emp.coordenadas?.lat ?? 0}
-                    lng={emp.coordenadas?.lng ?? 0}
-                    onChange={(lat,lng)=>{
-                      // Um único update evita condição de corrida entre os dois setState
-                      update("coordenadas", { ...(emp.coordenadas ?? {}), lat, lng });
-                    }}
-                  />
-
-                  {/* Campos individuais para ajuste fino */}
-                  <Two>
-                    <div>
-                      <FieldLabel hint="Latitude decimal (sul = negativo)">Latitude</FieldLabel>
-                      <NumInput
-                        value={emp.coordenadas?.lat ?? 0}
-                        step={0.000001}
-                        placeholder="-16.404750"
-                        onChange={v=>update("coordenadas.lat",v)}/>
+                  <Card title="🗺️ Upload do Ficheiro SVG" subtitle="O arquivo deve ter extensão .svg e conter os polígonos/paths dos lotes com IDs únicos (ex: id='lote_q1_l01')">
+                    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                      {emp.mapaUrl ? (
+                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderRadius: 12, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.25)" }}>
+                           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                              <CheckCircle2 size={24} color="#4ade80" />
+                              <div>
+                                <p style={{ fontSize: 14, fontWeight: 700, color: "#4ade80" }}>Mapa SVG carregado com sucesso!</p>
+                                <a href={emp.mapaUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--gray-mid)", textDecoration: "underline" }}>Ver arquivo original</a>
+                              </div>
+                           </div>
+                           <button onClick={() => { if(confirm("Deseja remover este mapa?")) update("mapaUrl", ""); }} style={{ padding: "8px 14px", borderRadius: 8, background: "rgba(239,68,68,0.1)", color: "#f87171", border: "none", cursor: "pointer", fontWeight: 600 }}>Remover</button>
+                         </div>
+                      ) : (
+                        <>
+                          <input ref={mapRef} type="file" accept=".svg" className="hidden" onChange={handleUploadMapa}/>
+                          <button onClick={()=>mapRef.current?.click()} disabled={uploading} className="btn-secondary w-full" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+                            <Upload size={24} color="var(--terracota)" />
+                            <span style={{ fontSize: 14, fontWeight: 700 }}>{uploading?"A enviar SVG...":"Selecionar ficheiro SVG"}</span>
+                          </button>
+                        </>
+                      )}
                     </div>
-                    <div>
-                      <FieldLabel hint="Longitude decimal (oeste = negativo)">Longitude</FieldLabel>
-                      <NumInput
-                        value={emp.coordenadas?.lng ?? 0}
-                        step={0.000001}
-                        placeholder="-51.113972"
-                        onChange={v=>update("coordenadas.lng",v)}/>
+                  </Card>
+
+                  <Card title="⚙️ Configuração de Vendas" subtitle="Controle como os lotes serão disponibilizados para os corretores.">
+                    <div style={{display:"flex",alignItems:"center",gap:16,padding:"16px",borderRadius:12,background:"rgba(0,0,0,0.2)",border:"1px solid var(--border-subtle)"}}>
+                      <div style={{flex: 1}}>
+                        <p style={{fontSize: 14, fontWeight: 700, color: "var(--gray-light)", marginBottom: 4}}>Venda Sequencial Rigorosa</p>
+                        <p style={{fontSize: 12, color: "var(--gray-mid)", lineHeight: 1.5}}>
+                           Força os corretores a venderem os lotes em ordem numérica ou de fundos (adjacentes). Se ativado, o sistema bloqueia reservas de lotes isolados no meio da quadra.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => update("vendaEmOrdem", !emp.vendaEmOrdem)}
+                        style={{
+                          padding: "8px 16px", borderRadius: 10, cursor: "pointer", border: "none",
+                          fontWeight: 800, fontSize: 13, flexShrink: 0, transition: "0.2s",
+                          background: emp.vendaEmOrdem ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.08)",
+                          color: emp.vendaEmOrdem ? "#4ade80" : "var(--gray-mid)",
+                          boxShadow: emp.vendaEmOrdem ? "0 0 0 1px rgba(74,222,128,0.3)" : "none"
+                        }}
+                      >
+                        {emp.vendaEmOrdem ? "ATIVADO" : "DESATIVADO"}
+                      </button>
                     </div>
-                  </Two>
+                  </Card>
 
-                  {/* Link para conferir */}
-                  {(emp.coordenadas?.lat !== 0 && emp.coordenadas?.lat !== undefined && emp.coordenadas?.lng !== 0 && emp.coordenadas?.lng !== undefined) && (
-                    <a
-                      href={`https://www.google.com/maps?q=${emp.coordenadas.lat},${emp.coordenadas.lng}`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{
-                        display:"inline-flex",alignItems:"center",gap:8,
-                        padding:"10px 16px",borderRadius:10,width:"fit-content",
-                        background:"rgba(175,111,83,0.1)",border:"1px solid rgba(175,111,83,0.3)",
-                        color:"var(--terracota)",fontSize:13,fontWeight:600,textDecoration:"none",
-                      }}
-                    >
-                      <ExternalLink size={14}/>
-                      Conferir no Google Maps
-                    </a>
-                  )}
-                </div>
-              </Card>
+                  <Card title="🏢 Quadras & Lotes" subtitle="A gestão avançada e definição da ordem de fundo-com-fundo será feita no painel completo do mapa.">
+                     <Link href={`/admin/${slug}/lotes`} className="btn-primary w-full" style={{ display: "flex", justifyContent: "center", padding: "16px", fontSize: 15 }}>
+                        <Layers size={18} /> Abrir Gestor de Lotes e Fila de Clientes
+                     </Link>
+                  </Card>
 
-            </motion.div>
-          )}
+                </motion.div>
+              )}
 
-        </AnimatePresence>
+            </AnimatePresence>
 
-
-
-      
           </div>
         </main>
       </div>

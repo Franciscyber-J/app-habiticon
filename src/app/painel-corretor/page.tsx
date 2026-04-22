@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { collection, query, where, onSnapshot, doc, updateDoc, getDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs } from "firebase/firestore";
 import Image from "next/image";
-import { Users, LogOut, MessageCircle, Building2, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw } from "lucide-react";
+import { Users, LogOut, MessageCircle, Building2, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw, FileText, ExternalLink, Info, ThumbsUp } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 
 // ─────────────────────────────────────────────────────────
@@ -24,11 +24,29 @@ interface LeadData {
   corretorId: string;
   dossie?: any;
   motivoReprovacao?: string; 
+  creditoAprovadoInfo?: {
+    valorAprovado: number;
+    valorParcela: number;
+    observacoes: string;
+    dataAprovacao: string;
+  };
 }
 
 interface GrupoLeads {
   nome: string;
   leads: LeadData[];
+}
+
+interface DocumentoPadrao {
+  url: string;
+  nomeOriginal: string;
+  dataUpload: string;
+}
+
+interface Empreendimento {
+  slug: string;
+  nome: string;
+  documentosPadrao?: DocumentoPadrao[];
 }
 
 // ─────────────────────────────────────────────────────────
@@ -38,9 +56,10 @@ interface GrupoLeads {
 export default function PainelCorretor() {
   const [meusLeads, setMeusLeads] = useState<LeadData[]>([]);
   const [leadsRoleta, setLeadsRoleta] = useState<LeadData[]>([]);
+  const [empreendimentos, setEmpreendimentos] = useState<Empreendimento[]>([]);
   const [userName, setUserName] = useState("");
   const [userId, setUserId] = useState("");
-  const [abaAtiva, setAbaAtiva] = useState<"meus" | "roleta">("meus");
+  const [abaAtiva, setAbaAtiva] = useState<"meus" | "roleta" | "arquivos">("meus");
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
 
   const leadDossieSelecionado = meusLeads.find(l => l.id === leadDossieId) || null;
@@ -93,6 +112,30 @@ export default function PainelCorretor() {
     });
     return () => unsubAuth();
   }, []);
+
+  // ── CARREGAMENTO DE EMPREENDIMENTOS (PARA OS ARQUIVOS PADRÃO) ──
+  useEffect(() => {
+    const carregarEmpreendimentos = async () => {
+      try {
+        const empSnapshot = await getDocs(query(collection(db, "empreendimentos"), where("status", "==", "ativo")));
+        const emps: Empreendimento[] = [];
+        empSnapshot.forEach((docItem) => {
+           emps.push({
+             slug: docItem.id,
+             nome: docItem.data().nome,
+             documentosPadrao: docItem.data().documentosPadrao || []
+           });
+        });
+        setEmpreendimentos(emps);
+      } catch (error) {
+        console.error("Erro ao carregar empreendimentos:", error);
+      }
+    };
+    
+    if (abaAtiva === "arquivos") {
+       carregarEmpreendimentos();
+    }
+  }, [abaAtiva]);
 
   // ─────────────────────────────────────────────────────────
   // FUNÇÕES DE AÇÃO
@@ -150,13 +193,13 @@ export default function PainelCorretor() {
           <h1 style={{ fontSize: 24, fontWeight: 800, color: "white", marginBottom: 20 }}>Área de Vendas</h1>
 
           {/* ABAS */}
-          <div style={{ display: "flex", gap: 10, background: "rgba(0,0,0,0.3)", padding: 6, borderRadius: 14, border: "1px solid var(--border-subtle)" }}>
+          <div style={{ display: "flex", gap: 10, background: "rgba(0,0,0,0.3)", padding: 6, borderRadius: 14, border: "1px solid var(--border-subtle)", flexWrap: "wrap" }}>
             <button
               onClick={() => setAbaAtiva("meus")}
               style={{
-                flex: 1, padding: "12px", borderRadius: 10, border: "none",
+                flex: "1 1 min-content", padding: "12px", borderRadius: 10, border: "none",
                 fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "0.2s",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8, whiteSpace: "nowrap",
                 background: abaAtiva === "meus" ? "var(--terracota)" : "transparent",
                 color: abaAtiva === "meus" ? "white" : "var(--gray-mid)"
               }}
@@ -170,8 +213,8 @@ export default function PainelCorretor() {
             <button
               onClick={() => setAbaAtiva("roleta")}
               style={{
-                flex: 1, padding: "12px", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "0.2s",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                flex: "1 1 min-content", padding: "12px", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "0.2s",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8, whiteSpace: "nowrap",
                 background: abaAtiva === "roleta" ? "rgba(239,68,68,0.15)" : "transparent",
                 color: abaAtiva === "roleta" ? "#ef4444" : "var(--gray-mid)",
                 border: abaAtiva === "roleta" ? "1px solid rgba(239,68,68,0.3)" : "1px solid transparent"
@@ -184,6 +227,20 @@ export default function PainelCorretor() {
                   {leadsRoleta.length}
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setAbaAtiva("arquivos")}
+              style={{
+                flex: "1 1 min-content", padding: "12px", borderRadius: 10,
+                fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "0.2s",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8, whiteSpace: "nowrap",
+                background: abaAtiva === "arquivos" ? "rgba(56,189,248,0.15)" : "transparent",
+                color: abaAtiva === "arquivos" ? "#38bdf8" : "var(--gray-mid)",
+                border: abaAtiva === "arquivos" ? "1px solid rgba(56,189,248,0.3)" : "1px solid transparent"
+              }}
+            >
+              <FolderOpen size={18} color={abaAtiva === "arquivos" ? "#38bdf8" : "var(--gray-mid)"} />
+              Material de Vendas
             </button>
           </div>
         </div>
@@ -211,13 +268,13 @@ export default function PainelCorretor() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {grupo.leads.map((lead: LeadData) => {
-                      // Verifica se foi reprovado usando os status antigos e novos
                       const isReprovado = lead.status === "nao_qualificado" || lead.status === "credito_reprovado";
+                      const isAprovado = lead.status === "qualificado" || lead.status === "credito_aprovado";
 
                       return (
                         <div key={lead.id} style={{
                           background: "var(--bg-card)", padding: "16px 20px", borderRadius: 14, 
-                          border: isReprovado ? "1px solid rgba(239,68,68,0.4)" : "1px solid var(--border-subtle)",
+                          border: isReprovado ? "1px solid rgba(239,68,68,0.4)" : isAprovado ? "1px solid rgba(74,222,128,0.4)" : "1px solid var(--border-subtle)",
                           display: "flex", flexDirection: "column", gap: 16
                         }}>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between", alignItems: "center" }}>
@@ -237,9 +294,9 @@ export default function PainelCorretor() {
                             <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0, width: "auto" }} className="w-full sm:w-auto justify-between sm:justify-end">
                               <span style={{
                                 fontSize: 12, padding: "6px 10px", borderRadius: 8, fontWeight: 700, textTransform: "capitalize",
-                                background: lead.status === "com_pendencia" || isReprovado ? "rgba(239,68,68,0.15)" : lead.status === "qualificado" || lead.status === "credito_aprovado" ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.05)",
-                                border: `1px solid ${lead.status === "com_pendencia" || isReprovado ? "rgba(239,68,68,0.5)" : lead.status === "qualificado" || lead.status === "credito_aprovado" ? "rgba(74,222,128,0.4)" : "var(--border-subtle)"}`,
-                                color: lead.status === "com_pendencia" || isReprovado ? "#f87171" : lead.status === "qualificado" || lead.status === "credito_aprovado" ? "#4ade80" : "var(--gray-light)",
+                                background: lead.status === "com_pendencia" || isReprovado ? "rgba(239,68,68,0.15)" : isAprovado ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.05)",
+                                border: `1px solid ${lead.status === "com_pendencia" || isReprovado ? "rgba(239,68,68,0.5)" : isAprovado ? "rgba(74,222,128,0.4)" : "var(--border-subtle)"}`,
+                                color: lead.status === "com_pendencia" || isReprovado ? "#f87171" : isAprovado ? "#4ade80" : "var(--gray-light)",
                               }}>
                                 {lead.status ? lead.status.replace(/_/g, " ") : "Novo"}
                               </span>
@@ -283,6 +340,37 @@ export default function PainelCorretor() {
                               </div>
                             </div>
                           )}
+
+                          {/* RELATÓRIO DE APROVAÇÃO PARA O CORRETOR */}
+                          {isAprovado && lead.creditoAprovadoInfo && (
+                            <div style={{ background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 12, padding: "16px", display: "flex", flexDirection: "column", gap: 12, marginTop: "4px" }}>
+                              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <ThumbsUp size={18} color="#4ade80" />
+                                <p style={{ fontSize: 14, fontWeight: 800, color: "#4ade80" }}>Crédito Aprovado!</p>
+                              </div>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                                <div style={{ background: "rgba(0,0,0,0.2)", padding: "12px", borderRadius: 8 }}>
+                                  <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Valor Liberado</p>
+                                  <p style={{ fontSize: 16, fontWeight: 800, color: "white" }}>
+                                    R$ {lead.creditoAprovadoInfo.valorAprovado?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                                <div style={{ background: "rgba(0,0,0,0.2)", padding: "12px", borderRadius: 8 }}>
+                                  <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Parcela Estimada</p>
+                                  <p style={{ fontSize: 16, fontWeight: 800, color: "white" }}>
+                                    R$ {lead.creditoAprovadoInfo.valorParcela?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                              </div>
+                              {lead.creditoAprovadoInfo.observacoes && (
+                                <div style={{ marginTop: 4, padding: "12px", borderTop: "1px dashed rgba(74,222,128,0.2)" }}>
+                                  <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Condicionantes / Observações:</p>
+                                  <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>{lead.creditoAprovadoInfo.observacoes}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                         </div>
                       );
                     })}
@@ -333,6 +421,68 @@ export default function PainelCorretor() {
                   </button>
                 </div>
               ))
+            )}
+          </div>
+        )}
+
+        {/* =========================================================
+            ABA 3: MATERIAL DE VENDAS
+            ========================================================= */}
+        {abaAtiva === "arquivos" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            <div style={{ background: "rgba(56,189,248,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(56,189,248,0.2)", display: "flex", alignItems: "center", gap: 12 }}>
+              <Info size={18} color="#38bdf8" style={{ flexShrink: 0 }} />
+              <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>
+                Encontre aqui Plantas, Memoriais Descritivos e Apresentações oficiais fornecidas pela construtora.
+              </p>
+            </div>
+
+            {empreendimentos.length === 0 ? (
+              <div style={{ padding: "60px 20px", textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 16, border: "1px dashed var(--border-subtle)" }}>
+                <FolderOpen size={32} color="var(--gray-dark)" style={{ margin: "0 auto 16px" }} />
+                <p style={{ color: "var(--gray-mid)", fontWeight: 600 }}>Nenhum material disponível ainda.</p>
+              </div>
+            ) : (
+              empreendimentos.map((emp) => {
+                if (!emp.documentosPadrao || emp.documentosPadrao.length === 0) return null;
+                
+                return (
+                  <div key={emp.slug} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 16, overflow: "hidden" }}>
+                    <div style={{ padding: "16px 20px", background: "rgba(0,0,0,0.2)", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", gap: 12 }}>
+                      <Building2 size={18} color="var(--terracota)" />
+                      <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>{emp.nome}</h3>
+                    </div>
+                    <div style={{ padding: "16px 20px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+                        {emp.documentosPadrao.map((docItem, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px", borderRadius: 10, background: "rgba(0,0,0,0.15)", border: "1px solid var(--border-subtle)" }}>
+                            <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(56,189,248,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#38bdf8", flexShrink: 0 }}>
+                              <FileText size={18} />
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--gray-light)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={docItem.nomeOriginal}>
+                                {docItem.nomeOriginal}
+                              </p>
+                              <p style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 2 }}>
+                                Atualizado em {new Date(docItem.dataUpload).toLocaleDateString("pt-BR")}
+                              </p>
+                            </div>
+                            <a 
+                              href={docItem.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              title="Baixar arquivo"
+                              style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(56,189,248,0.15)", color: "#38bdf8", fontSize: 12, fontWeight: 700, textDecoration: "none", border: "1px solid rgba(56,189,248,0.3)" }}
+                            >
+                              Baixar
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         )}

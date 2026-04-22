@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { db, auth } from "@/lib/firebase";
@@ -11,7 +11,7 @@ import {
   Building2, Settings, Users, MapPin,
   ToggleLeft, ToggleRight, Plus, ExternalLink,
   ArrowLeft, ChevronRight, Phone,
-  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock
+  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info
 } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { DocumentosConstrutorModal } from "@/components/admin/DocumentosConstrutorModal";
@@ -37,8 +37,14 @@ interface Lead {
   modelo?: string;
   nomeCorretor?: string;
   corretorId?: string;
-  status?: LeadStatus | string; // Permitir string para status antigos
+  status?: LeadStatus | string;
   dossie?: any;
+}
+
+interface DocumentoPadrao {
+  url: string;
+  nomeOriginal: string;
+  dataUpload: string;
 }
 
 interface Empreendimento {
@@ -49,6 +55,7 @@ interface Empreendimento {
   status: string;
   modelos: { id: string; nome: string; valor: number; area?: number }[];
   leads?: Lead[];
+  documentosPadrao?: DocumentoPadrao[]; // NOVA CHAVE PARA ARQUIVOS PADRÃO
 }
 
 // ─────────────────────────────────────────────────────────
@@ -203,14 +210,18 @@ export default function AdminPage() {
   const [empreendimentos, setEmpreendimentos] = useState<Empreendimento[]>([]);
   const [todosLeads, setTodosLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"empreendimentos" | "leads">("empreendimentos");
+  const [tab, setTab] = useState<"empreendimentos" | "leads" | "arquivos">("empreendimentos"); // Nova Tab
   const [listaCorretores, setListaCorretores] = useState<{id: string, nome: string}[]>([]);
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
+  
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
   const leadDossieSelecionado = todosLeads.find(l => l.id === leadDossieId) || null;
 
   const [leadDocumentosId, setLeadDocumentosId] = useState<string | null>(null);
   const leadDocumentosSelecionado = todosLeads.find(l => l.id === leadDocumentosId) || null;
+
+  const [uploadingGeral, setUploadingGeral] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const router = useRouter();
 
@@ -304,7 +315,8 @@ export default function AdminPage() {
         tetoImovel: 275000, observacao: ""
       },
       vitrine: { imagens: [], plantas: [], ambientes: {} },
-      textos: { notasLegais: "", tituloObra: "Fluxo de Obra (PCI)", descricaoObra: "", alertaF3: "", alertaF12: "" }
+      textos: { notasLegais: "", tituloObra: "Fluxo de Obra (PCI)", descricaoObra: "", alertaF3: "", alertaF12: "" },
+      documentosPadrao: [] // Nova estrutura
     };
     await setDoc(doc(db, "empreendimentos", slug), novo);
     setEmpreendimentos(prev => [...prev, novo]);
@@ -347,7 +359,6 @@ export default function AdminPage() {
     }
   };
 
-  // ── ATUALIZADO: Deletar via API para garantir faxina no Storage ──
   const deletarLead = async (leadId: string) => {
     if (!confirm("Excluir este lead?\nIsso apagará permanentemente todos os dados e os arquivos do Storage. Esta ação não pode ser desfeita.")) return;
     try {
@@ -373,6 +384,70 @@ export default function AdminPage() {
       setEmpreendimentos((prev) => prev.map((e) => (e.slug === slug ? { ...e, status: newStatus } : e)));
     } catch (error) {
       console.error(error);
+    }
+  };
+
+  // UPLOAD DE DOCUMENTOS PADRÃO
+  const handleUploadDocumentoPadrao = async (e: React.ChangeEvent<HTMLInputElement>, empSlug: string) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    
+    setUploadingGeral(true);
+    try {
+      let listaAtual = [...(empreendimentos.find(e => e.slug === empSlug)?.documentosPadrao || [])];
+      
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("slug", empSlug);
+        fd.append("tipo", "docs_padrao");
+        fd.append("titulo", file.name); // Passa o nome original
+
+        const res = await fetch("/api/upload", { method: "POST", body: fd });
+        const data = await res.json();
+        
+        if (data.url) {
+          listaAtual.push({
+            url: data.url,
+            nomeOriginal: file.name,
+            dataUpload: new Date().toISOString()
+          });
+        }
+      }
+
+      await updateDoc(doc(db, "empreendimentos", empSlug), { documentosPadrao: listaAtual });
+      setEmpreendimentos((prev) => prev.map((e) => (e.slug === empSlug ? { ...e, documentosPadrao: listaAtual } : e)));
+
+    } catch (error) {
+      console.error("Erro ao fazer upload de arquivo padrão:", error);
+      alert("Falha no upload do arquivo.");
+    } finally {
+      setUploadingGeral(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const deletarDocumentoPadrao = async (url: string, empSlug: string) => {
+    if (!confirm("Deletar este arquivo padrão? Corretores não terão mais acesso a ele.")) return;
+    
+    try {
+      // Deleta fisicamente via API
+      await fetch("/api/upload", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: empSlug, url, tipo: "docs_padrao" })
+      });
+
+      // Atualiza o Firestore
+      const listaAtual = empreendimentos.find(e => e.slug === empSlug)?.documentosPadrao || [];
+      const novaLista = listaAtual.filter(d => d.url !== url);
+      
+      await updateDoc(doc(db, "empreendimentos", empSlug), { documentosPadrao: novaLista });
+      setEmpreendimentos((prev) => prev.map((e) => (e.slug === empSlug ? { ...e, documentosPadrao: novaLista } : e)));
+
+    } catch (error) {
+      console.error("Erro ao deletar arquivo padrão:", error);
+      alert("Falha ao deletar arquivo.");
     }
   };
 
@@ -476,10 +551,11 @@ export default function AdminPage() {
         </div>
 
         {/* ABAS */}
-        <div style={{ display: "flex", gap: 4, background: "rgba(0,0,0,0.3)", padding: 4, borderRadius: 12, width: "fit-content", maxWidth: "100%", marginBottom: 24 }}>
+        <div style={{ display: "flex", gap: 4, background: "rgba(0,0,0,0.3)", padding: 4, borderRadius: 12, width: "fit-content", maxWidth: "100%", marginBottom: 24, overflowX: "auto" }}>
           {([
             { id: "empreendimentos", label: "Empreendimentos" },
-            { id: "leads", label: `Visão de Vendas (${todosLeads.length})` }
+            { id: "leads", label: `Visão de Vendas (${todosLeads.length})` },
+            { id: "arquivos", label: "Arquivos Padrão" }
           ] as const).map((t) => (
             <button
               key={t.id}
@@ -489,7 +565,8 @@ export default function AdminPage() {
                 fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all 150ms ease",
                 background: tab === t.id ? "var(--terracota)" : "transparent",
                 color: tab === t.id ? "white" : "var(--gray-mid)",
-                boxShadow: tab === t.id ? "0 2px 12px rgba(175,111,83,0.3)" : "none"
+                boxShadow: tab === t.id ? "0 2px 12px rgba(175,111,83,0.3)" : "none",
+                whiteSpace: "nowrap"
               }}
             >
               {t.label}
@@ -833,6 +910,112 @@ export default function AdminPage() {
             )}
           </div>
         )}
+
+        {/* =========================================================
+            ABA 3: ARQUIVOS PADRÃO
+            ========================================================= */}
+        {tab === "arquivos" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+            
+            <div style={{ background: "rgba(175,111,83,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(175,111,83,0.2)", display: "flex", alignItems: "center", gap: 12 }}>
+              <Info size={18} color="var(--terracota)" style={{ flexShrink: 0 }} />
+              <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>
+                Os arquivos adicionados aqui (ex: Plantas, Memorial Descritivo em PDF, Apresentações) ficam disponíveis nos painéis dos <strong>Corretores</strong> e <strong>Correspondentes</strong>, divididos por empreendimento.
+              </p>
+            </div>
+
+            {empreendimentos.length === 0 ? (
+              <div style={{ padding: "64px 24px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.2)", border: "1px dashed var(--border-subtle)" }}>
+                <p style={{ fontSize: 14, color: "var(--gray-mid)" }}>Nenhum empreendimento cadastrado.</p>
+              </div>
+            ) : (
+              empreendimentos.map((emp) => (
+                <div key={emp.slug} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
+                  
+                  {/* Cabeçalho da Quadra/Empreendimento */}
+                  <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", background: "rgba(0,0,0,0.2)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <Building2 size={18} color="var(--terracota)" />
+                      <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>{emp.nome}</h3>
+                    </div>
+                    
+                    {/* Input Escondido e Botão de Upload */}
+                    <div>
+                      <input 
+                        ref={fileInputRef} 
+                        type="file" 
+                        multiple 
+                        accept="application/pdf,image/*" 
+                        className="hidden" 
+                        onChange={(e) => handleUploadDocumentoPadrao(e, emp.slug)}
+                      />
+                      <button 
+                        onClick={() => fileInputRef.current?.click()} 
+                        disabled={uploadingGeral}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 6,
+                          padding: "8px 14px", borderRadius: 8, cursor: "pointer",
+                          background: "var(--terracota-glow)", border: "1px solid var(--border-active)",
+                          color: "var(--terracota)", fontSize: 12, fontWeight: 700,
+                          opacity: uploadingGeral ? 0.5 : 1
+                        }}
+                      >
+                        <UploadCloud size={14} /> {uploadingGeral ? "A enviar..." : "Adicionar Arquivo"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Lista de Arquivos do Empreendimento */}
+                  <div style={{ padding: "16px 20px" }}>
+                    {!emp.documentosPadrao || emp.documentosPadrao.length === 0 ? (
+                      <p style={{ fontSize: 13, color: "var(--gray-dark)", textAlign: "center", padding: "20px 0" }}>
+                        Nenhum arquivo padrão adicionado.
+                      </p>
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+                        {emp.documentosPadrao.map((docItem, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px", borderRadius: 10, background: "rgba(0,0,0,0.15)", border: "1px solid var(--border-subtle)" }}>
+                            <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(56,189,248,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#38bdf8", flexShrink: 0 }}>
+                              <FileText size={18} />
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--gray-light)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={docItem.nomeOriginal}>
+                                {docItem.nomeOriginal}
+                              </p>
+                              <p style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 2 }}>
+                                {new Date(docItem.dataUpload).toLocaleDateString("pt-BR")}
+                              </p>
+                            </div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <a 
+                                href={docItem.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                title="Abrir arquivo"
+                                style={{ width: 28, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.05)", color: "var(--gray-light)" }}
+                              >
+                                <ExternalLink size={14} />
+                              </a>
+                              <button 
+                                onClick={() => deletarDocumentoPadrao(docItem.url, emp.slug)}
+                                title="Deletar arquivo"
+                                style={{ width: 28, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(239,68,68,0.1)", color: "#f87171", border: "none", cursor: "pointer" }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
       </main>
 
       {/* DOSSIÊ FLUTUANTE — isAdmin=true dá poder total de exclusão */}
