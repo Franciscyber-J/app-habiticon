@@ -317,11 +317,53 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
   };
 
+  const deleteImage = async (url:string, tipo:string) => {
+    await fetch("/api/upload",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug,url,tipo})});
+    const nova = emp.vitrine[tipo].filter((i:any)=>i.url!==url);
+    update(`vitrine.${tipo}`,nova);
+    await fetch("/api/empreendimentos",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug,field:`vitrine.${tipo}`,value:nova})});
+  };
+
+  // Nova função para deletar o mapa SVG
+  const removerMapaSVG = async () => {
+    if (!emp.mapaUrl) return;
+    try {
+        setUploading(true); // Reusando estado de loading visual
+        // Deleta fisicamente no Storage
+        await fetch("/api/upload", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ slug, url: emp.mapaUrl, tipo: "mapa_svg" })
+        });
+        
+        // Remove a URL do banco
+        update("mapaUrl", "");
+        await fetch("/api/empreendimentos", {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ slug, field: "mapaUrl", value: "" }),
+        });
+    } catch (e) {
+        console.error("Erro ao remover mapa:", e);
+        alert("Erro ao remover o mapa. Tente novamente.");
+    } finally {
+        setUploading(false);
+    }
+  };
+
   const handleUploadMapa = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
     try {
+        // Se já existe um mapa, apaga o físico antigo antes de subir o novo
+        if (emp.mapaUrl) {
+            await fetch("/api/upload", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ slug, url: emp.mapaUrl, tipo: "mapa_svg" })
+            }).catch(e => console.error("Ignorando erro ao apagar mapa antigo:", e));
+        }
+
         const fd = new FormData();
         fd.append("file", file); fd.append("slug", slug);
         fd.append("tipo", "mapa_svg"); fd.append("titulo", "mapa_empreendimento");
@@ -336,13 +378,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
             });
         }
     } finally { setUploading(false); if (mapRef.current) mapRef.current.value = ""; }
-  };
-
-  const deleteImage = async (url:string, tipo:string) => {
-    await fetch("/api/upload",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug,url,tipo})});
-    const nova = emp.vitrine[tipo].filter((i:any)=>i.url!==url);
-    update(`vitrine.${tipo}`,nova);
-    await fetch("/api/empreendimentos",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug,field:`vitrine.${tipo}`,value:nova})});
   };
 
   const diagCUB = emp?.simulador?.cub?.cubVigente > 0 ? emp.modelos.map((m:any) => {
@@ -360,9 +395,9 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     {id:"valores"     as Section, label:"Valores & CUB",  icon:DollarSign, hint:"Modelos, lotes e CUB"},
     {id:"galeria"     as Section, label:"Galeria",        icon:ImageIcon,  hint:"Fotos e ambientes"},
     {id:"textos"      as Section, label:"Textos",         icon:FileText,   hint:"Textos e alertas"},
-    {id:"mcmv"        as Section, label:"MCMV",            icon:Settings2,  hint:"Faixas e subsídios"},
-    {id:"localizacao" as Section, label:"Localização",     icon:MapPin,     hint:"Endereço e mapa"},
-    {id:"mapa"        as Section, label:"Mapa & Lotes",    icon:Map,        hint:"SVG, quadras e lotes"}, // <--- NOVA SEÇÃO AQUI
+    {id:"mcmv"        as Section, label:"MCMV",           icon:Settings2,  hint:"Faixas e subsídios"},
+    {id:"localizacao" as Section, label:"Localização",    icon:MapPin,     hint:"Endereço e mapa"},
+    {id:"mapa"        as Section, label:"Mapa & Lotes",   icon:Map,        hint:"SVG, quadras e lotes"}, // <--- NOVA SEÇÃO AQUI
   ];
 
   const saveCfg = {
@@ -996,14 +1031,16 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                                 <a href={emp.mapaUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--gray-mid)", textDecoration: "underline" }}>Ver arquivo original</a>
                               </div>
                            </div>
-                           <button onClick={() => { if(confirm("Deseja remover este mapa?")) update("mapaUrl", ""); }} style={{ padding: "8px 14px", borderRadius: 8, background: "rgba(239,68,68,0.1)", color: "#f87171", border: "none", cursor: "pointer", fontWeight: 600 }}>Remover</button>
+                           <button onClick={() => { if(confirm("Deseja remover este mapa definitivamente?")) removerMapaSVG(); }} style={{ padding: "8px 14px", borderRadius: 8, background: "rgba(239,68,68,0.1)", color: "#f87171", border: "none", cursor: "pointer", fontWeight: 600 }} disabled={uploading}>
+                             {uploading ? "A remover..." : "Remover"}
+                           </button>
                          </div>
                       ) : (
                         <>
                           <input ref={mapRef} type="file" accept=".svg" className="hidden" onChange={handleUploadMapa}/>
                           <button onClick={()=>mapRef.current?.click()} disabled={uploading} className="btn-secondary w-full" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
                             <Upload size={24} color="var(--terracota)" />
-                            <span style={{ fontSize: 14, fontWeight: 700 }}>{uploading?"A enviar SVG...":"Selecionar ficheiro SVG"}</span>
+                            <span style={{ fontSize: 14, fontWeight: 700 }}>{uploading?"A processar SVG...":"Selecionar ficheiro SVG"}</span>
                           </button>
                         </>
                       )}

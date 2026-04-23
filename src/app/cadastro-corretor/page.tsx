@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { User, Lock, Mail, ArrowRight, Eye, EyeOff, CreditCard, Landmark, Wallet } from "lucide-react";
+import { User, Lock, Mail, ArrowRight, Eye, EyeOff, CreditCard, Landmark, Wallet, FileBadge } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
@@ -116,11 +116,22 @@ export default function CadastroCorretorPage() {
               Dados de Acesso (Obrigatório)
             </h2>
 
-            <div>
-              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Nome Completo</label>
-              <div style={{ position: "relative" }}>
-                <User size={16} color="var(--gray-dark)" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
-                <input type="text" required value={nome} onChange={(e) => {setNome(e.target.value); setErro("");}} className="input-field" style={{ paddingLeft: 40, fontSize: 14 }} placeholder="Seu nome" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Nome Completo</label>
+                <div style={{ position: "relative" }}>
+                  <User size={16} color="var(--gray-dark)" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
+                  <input type="text" required value={nome} onChange={(e) => {setNome(e.target.value); setErro("");}} className="input-field" style={{ paddingLeft: 40, fontSize: 14 }} placeholder="Seu nome" />
+                </div>
+              </div>
+              
+              {/* NOVO CAMPO: CRECI */}
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Número do CRECI</label>
+                <div style={{ position: "relative" }}>
+                  <FileBadge size={16} color="var(--gray-dark)" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
+                  <input type="text" required value={creci} onChange={(e) => {setCreci(e.target.value); setErro("");}} className="input-field" style={{ paddingLeft: 40, fontSize: 14 }} placeholder="Ex: 12345-F" />
+                </div>
               </div>
             </div>
 

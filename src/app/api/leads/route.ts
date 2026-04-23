@@ -34,7 +34,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     
-    const { nome, whatsapp, nomeCorretor, corretorId, empreendimento, modelo, valorImovel, area, quartos, simulacao, timestamp } = body;
+    // ATUALIZADO: Adicionado whatsapp2 na desestruturação
+    const { nome, whatsapp, whatsapp2, nomeCorretor, corretorId, empreendimento, modelo, valorImovel, area, quartos, simulacao, timestamp } = body;
 
     if (!nome || !whatsapp) {
       return NextResponse.json({ error: "Nome e WhatsApp são obrigatórios" }, { status: 400 });
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
     const novoLead = {
       nome, 
       whatsapp,
+      whatsapp2: whatsapp2 || "", // ATUALIZADO: Salva no banco de dados se existir
       nomeCorretor: nomeCorretor || "",
       corretorId: corretorId || "",                          
       empreendimentoNome: empreendimento || "Nova Iporá II",

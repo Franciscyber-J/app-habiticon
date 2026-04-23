@@ -7,7 +7,7 @@ import Link from "next/link";
 import {
   Home, TrendingUp, HardHat, FileText, ImageIcon,
   MapPin, ChevronLeft, CheckCircle2,
-  ChevronRight, Menu, X, Info, AlertTriangle, Ban, Share2
+  ChevronRight, Menu, X, Info, AlertTriangle, Ban, Share2, Copy, Check
 } from "lucide-react";
 
 import { ModelSelector } from "@/components/simulador/ModelSelector";
@@ -111,8 +111,8 @@ const MODULOS = [
   { id: "renda",     label: "1. Renda & Subsídio", shortLabel: "Renda",    icon: TrendingUp, hint: "Identifique o enquadramento MCMV" },
   { id: "simulador", label: "2. Simulador",        shortLabel: "Simulador",icon: Home,       hint: "Motor 50/50 com SAC e PRICE" },
   { id: "obra",      label: "3. Obra PCI",         shortLabel: "Obra",     icon: HardHat,    hint: "Juros durante a construção" },
-  { id: "proposta",  label: "4. Proposta PDF",       shortLabel: "Proposta", icon: FileText,   hint: "Gere o documento personalizado" },
-  { id: "vitrine",   label: "5. Vitrine",            shortLabel: "Vitrine",  icon: ImageIcon,  hint: "Fotos, plantas e localização" },
+  { id: "proposta",  label: "4. Proposta PDF",     shortLabel: "Proposta", icon: FileText,   hint: "Gere o documento personalizado" },
+  { id: "vitrine",   label: "5. Vitrine",          shortLabel: "Vitrine",  icon: ImageIcon,  hint: "Fotos, plantas e localização" },
 ];
 
 // ─────────────────────────────────────────────────────────
@@ -156,6 +156,7 @@ export default function EmpreendimentoApp({
 }) {
   const [moduloAtivo,       setModuloAtivo]       = useState("renda");
   const [empFresh, setEmpFresh] = useState(emp); // dados frescos da API
+  const [linkCopiado, setLinkCopiado] = useState(false); // Estado do botão compartilhar
 
   // Ao montar, buscar dados atualizados da API (resolve cache SSG)
   useEffect(() => {
@@ -184,10 +185,6 @@ export default function EmpreendimentoApp({
   const modelo = emp.modelos.find((m) => m.id === modeloSelecionado) || emp.modelos[0];
 
   // ── Teto efetivo por modelo ──────────────────────────────────────────
-  // O teto global (emp.mcmv.tetoImovel = R$275k) é o da Faixa 2 para Iporá-GO.
-  // Quando o laudo CUB de um modelo ultrapassa esse teto, o imóvel pertence à
-  // Faixa 3 (teto R$400k) ou F4 (R$600k). Usar o teto errado limitava o
-  // financiamento do 3Q a R$220k em vez de R$233k — bug corrigido aqui.
   const tetoEfetivo = useMemo(() => {
     if (!modelo) return emp.mcmv.tetoImovel;
     const cubCfg = emp.simulador.cub;
@@ -208,19 +205,7 @@ export default function EmpreendimentoApp({
   }, []);
 
   // ─────────────────────────────────────────────────────
-  // MOTOR ENTRADA EMBUTIDA (Motor A, CHEFE) + RENDA (Motor B)
-  //
-  // Motor A — CUB SINDUSCON:
-  //   laudoCUB = lote + área × cub × (1+bdi)
-  //   maxFinCUB = min(laudoCUB, tetoMCMV) × 80%
-  //   Se laudoCUB > preço de venda → 80% do laudo cobre mais
-  //   que 80% do contrato → comprador entra com menos ("entrada embutida")
-  //   Fallback quando CUB=0: usa 80% do contrato normalmente.
-  //
-  // Motor B — Renda 30%:
-  //   maxFinRenda = motor de parcela (Infinity se sem renda)
-  //
-  // O mais restritivo dos dois determina a entrada final.
+  // MOTOR ENTRADA EMBUTIDA E RENDA
   // ─────────────────────────────────────────────────────
   const motorEntrada = useMemo((): EntradaMinimaResult | null => {
     if (!modelo) return null;
@@ -228,7 +213,6 @@ export default function EmpreendimentoApp({
     const subsidioEfetivo = usarSubsidio ? subsidio : 0;
     const valorVenda = modelo.valor - subsidioEfetivo;
 
-    // Motor B: 30% da renda → simulação silenciosa com entrada 0
     let maxFinRenda = Infinity;
     if (rendaFamiliar > 0) {
       const sim = simular({
@@ -239,12 +223,11 @@ export default function EmpreendimentoApp({
         subsidio,
         usarSubsidio,
         rendaFamiliar,
-        tetoImovel: tetoEfetivo,  // teto da faixa correta do laudo CUB
+        tetoImovel: tetoEfetivo,  
       });
       maxFinRenda = sim.finLiberadoPRICE;
     }
 
-    // Motor A: CUB SINDUSCON (0 = não configurado → fallback 80% contrato)
     const cubCfg = emp.simulador.cub;
     const maxFinCUB =
       cubCfg && cubCfg.cubVigente > 0
@@ -262,7 +245,7 @@ export default function EmpreendimentoApp({
       maxFinCUB,
       emp.simulador.entradaMin,
       COTA_MAXIMA_CAIXA,
-      tetoEfetivo,  // teto da faixa correta do laudo CUB (F2=275k, F3=400k, F4=600k)
+      tetoEfetivo,
     );
   }, [
     modelo,
@@ -277,24 +260,20 @@ export default function EmpreendimentoApp({
     valorLoteEmpreendimento,
   ]);
 
-  // Laudo CUB do modelo atual — passado para ResultCards corrigir a tabela de composição
-const laudoCUBAtual = useMemo(() => {
-  if (!modelo) return 0;
-  const cubCfg = emp.simulador.cub;
-  if (!cubCfg || !cubCfg.cubVigente) return 0;
-  return calcularLaudoCUB(
-    valorLoteEmpreendimento,
-    modelo.area,
-    cubCfg.cubVigente,
-    cubCfg.bdi
-  ).laudoTotal;
-}, [modelo, emp.simulador.cub, valorLoteEmpreendimento]);
+  const laudoCUBAtual = useMemo(() => {
+    if (!modelo) return 0;
+    const cubCfg = emp.simulador.cub;
+    if (!cubCfg || !cubCfg.cubVigente) return 0;
+    return calcularLaudoCUB(
+      valorLoteEmpreendimento,
+      modelo.area,
+      cubCfg.cubVigente,
+      cubCfg.bdi
+    ).laudoTotal;
+  }, [modelo, emp.simulador.cub, valorLoteEmpreendimento]);
 
-const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entradaMin;
+  const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entradaMin;
 
-  // ─── Motor de Faixa Efetiva ─────────────────────────────────
-  // Cruza: faixa exigida pelo LAUDO CUB (R2) vs faixa da RENDA (R3)
-  // Se laudo força faixa superior → cliente pode estar bloqueado
   const faixaEfetiva = useMemo((): FaixaEfetiva | null => {
     if (!modelo || rendaFamiliar <= 0) return null;
     const cubCfg = emp.simulador.cub;
@@ -305,30 +284,23 @@ const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entrada
     return determinarFaixaEfetiva(laudoTotal, rendaFamiliar, emp.mcmv.faixas, subsidioBase);
   }, [modelo, rendaFamiliar, emp.simulador.cub, emp.mcmv.faixas, valorLoteEmpreendimento, subsidio, usarSubsidio]);
 
-  // Quando a faixa efetiva mudar, sincroniza a taxa e zera subsídio se necessário
   useEffect(() => {
     if (!faixaEfetiva?.faixaEfetiva) return;
     const taxaCorreta = faixaEfetiva.taxaEfetiva;
     if (Math.abs(taxaCorreta - taxaAtual) > 0.001) {
       setTaxaAtual(taxaCorreta);
     }
-    // Se o laudo forçou para Faixa 3/4, desabilita subsídio automaticamente
     if (faixaEfetiva.laudoForcouFaixaSuperior && faixaEfetiva.faixaEfetiva.id > 2) {
       setUsarSubsidio(false);
     }
   }, [faixaEfetiva]);
 
-  // Reset do slider de entrada:
-  // - Quando minEntradaPermitida MUDA (nova renda digitada) → volta para o mínimo
-  // - Se o usuário arrastou abaixo do mínimo → empurra de volta para cima
   const prevMinEntrada = useRef(minEntradaPermitida);
   useEffect(() => {
     if (prevMinEntrada.current !== minEntradaPermitida) {
-      // Mínimo mudou (nova renda ou novo modelo) → resetar para o mínimo calculado
       setEntrada(minEntradaPermitida);
       prevMinEntrada.current = minEntradaPermitida;
     } else if (entrada < minEntradaPermitida) {
-      // Usuário arrastou abaixo do mínimo → empurrar de volta
       setEntrada(minEntradaPermitida);
     }
   }, [minEntradaPermitida, entrada]);
@@ -346,7 +318,7 @@ const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entrada
       subsidio,
       usarSubsidio,
       rendaFamiliar,
-      tetoImovel: tetoEfetivo,  // teto da faixa correta do laudo CUB
+      tetoImovel: tetoEfetivo,
     });
   }, [modelo, entrada, emp.simulador.prazoMeses, taxaAtual, subsidio, usarSubsidio, rendaFamiliar, tetoEfetivo]);
 
@@ -363,16 +335,14 @@ const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entrada
     const sacPrimeiraSobrePrice =
       amort
       + pv * i
-      + saldoAposAmort * 0.000108          // MIP sobre saldo após 1ª amort
-      + modelo.valor * 0.000071018         // DFI sobre valor do imóvel
-      + 25;                                // Taxa administrativa
+      + saldoAposAmort * 0.000108
+      + modelo.valor * 0.000071018
+      + 25;
 
     const sacAprovadoPDF = rendaFamiliar > 0
       ? sacPrimeiraSobrePrice <= rendaFamiliar * 0.30
       : true; 
 
-    // ATUALIZADO: Inclui área, quartos e o valorAvaliacao calculado para salvar no firebase!
-    // A função calcularLaudoCUB retorna { laudoTotal }
     let valorLaudo = modelo.valor;
     const cubCfg = emp.simulador.cub;
     if (cubCfg && cubCfg.cubVigente > 0) {
@@ -387,22 +357,21 @@ const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entrada
       estado: emp.estado,
       modelo: modelo.nome,
       area: modelo.area,
-      quartos: modelo.quartos, // INJETADO
+      quartos: modelo.quartos, 
       valorImovel: modelo.valor,
-      valorAvaliacao: valorLaudo, // INJETADO
+      valorAvaliacao: valorLaudo, 
       entrada,
       ato: entrada * atoPercent,
       valorFinanciado: resultadoSimulacao.finLiberadoPRICE,
       subsidio: usarSubsidio ? subsidio : 0,
       taxa: taxaAtual,
       prazoMeses: emp.simulador.prazoMeses,
-      parcelaSACPrimeira: sacPrimeiraSobrePrice,    // SAC sobre finLiberadoPRICE ✅
+      parcelaSACPrimeira: sacPrimeiraSobrePrice,
       parcelaSACUltima: resultadoSimulacao.parcelaSACUltima,
       parcelaPRICE: resultadoSimulacao.parcelaPricePrimeira,
-      sacAprovadoPDF,                               // false → ocultar SAC no PDF
+      sacAprovadoPDF,
       rendaFamiliar,
       notasLegais: emp.textos.notasLegais,
-      // ── RASTREAMENTO INJETADO ──
       corretorId: corretorIdUrl, 
       origem: origemUrl,
     };
@@ -414,6 +383,33 @@ const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entrada
     if (modId === "obra")      return resultadoSimulacao && resultadoSimulacao.finLiberadoPRICE > 0 ? "done" : "pending";
     if (modId === "proposta")  return propostaData ? "done" : "pending";
     return "pending";
+  };
+
+  // Função para compartilhar a localização nativamente
+  const handleCompartilharLocalizacao = async () => {
+    // ATUALIZADO: Link correto e confiável para partilha do Google Maps
+    const mapsLink = `https://www.google.com/maps?q=${empFresh.coordenadas.lat},${empFresh.coordenadas.lng}`;
+    
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({
+          title: `Localização - ${empFresh.nome}`,
+          text: `Confira a localização do empreendimento ${empFresh.nome}:`,
+          url: mapsLink,
+        });
+      } catch (err) {
+        console.log("Compartilhamento nativo cancelado ou sem suporte.");
+      }
+    } else {
+      // Se não tiver suporte (ex: desktop sem api), copia para a área de transferência
+      try {
+        await navigator.clipboard.writeText(mapsLink);
+        setLinkCopiado(true);
+        setTimeout(() => setLinkCopiado(false), 2500);
+      } catch (err) {
+        console.error("Erro ao copiar link:", err);
+      }
+    }
   };
 
   // ─────────────────────────────────────────────────────
@@ -444,7 +440,6 @@ const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entrada
             <strong style={{ color: "#fff" }}>{formatBRL(minEntradaPermitida)}</strong>.
           </p>
 
-          {/* Nota extra quando limitador é 80%: mostra que a renda está folgada */}
           {motorEntrada.limitador === "cota_80" && rendaFamiliar > 0 && (
             <p style={{
               fontSize: 11, color: "rgba(255,255,255,0.45)",
@@ -458,7 +453,6 @@ const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entrada
             </p>
           )}
 
-          {/* Nota extra quando limitador é CUB */}
           {motorEntrada.limitador === "cub" && (
             <p style={{
               fontSize: 11, color: "rgba(255,255,255,0.45)",
@@ -1024,15 +1018,34 @@ const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entrada
                     </div>
                   )}
 
-                  {/* Mapa */}
+                  {/* Mapa + Novo botão de Compartilhar Localização */}
                   {empFresh.coordenadas?.lat && empFresh.coordenadas?.lng && (
                     <div className="glass-card-nohover">
-                      <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 20 }}>
-                        Localização — {emp.cidade}, {emp.estado}
-                      </h3>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
+                        <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)" }}>
+                          Localização — {emp.cidade}, {emp.estado}
+                        </h3>
+                        
+                        {/* ATUALIZADO: LINK DO GOOGLE MAPS CORRIGIDO */}
+                        <button
+                          onClick={handleCompartilharLocalizacao}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 6,
+                            padding: "8px 16px", borderRadius: 8, cursor: "pointer",
+                            background: linkCopiado ? "rgba(74,222,128,0.15)" : "var(--terracota-glow)",
+                            border: `1px solid ${linkCopiado ? "rgba(74,222,128,0.3)" : "var(--border-active)"}`,
+                            color: linkCopiado ? "#4ade80" : "var(--terracota-light)",
+                            fontSize: 12, fontWeight: 700, transition: "0.2s"
+                          }}
+                        >
+                          {linkCopiado ? <Check size={14} /> : <Share2 size={14} />}
+                          {linkCopiado ? "Link Copiado!" : "Compartilhar Localização"}
+                        </button>
+                      </div>
+
                       <div style={{ borderRadius: 12, overflow: "hidden", height: "clamp(220px, 40vw, 340px)" }}>
                         <iframe
-                          src={`https://maps.google.com/maps?q=${empFresh.coordenadas.lat},${empFresh.coordenadas.lng}&z=14&output=embed`}
+                          src={`https://maps.google.com/maps?q=${empFresh.coordenadas.lat},${empFresh.coordenadas.lng}&z=15&output=embed`}
                           width="100%" height="100%" style={{ border: 0 }}
                           loading="lazy" referrerPolicy="no-referrer-when-downgrade"
                           title={`Mapa ${emp.cidade}`}

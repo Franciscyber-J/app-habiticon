@@ -6,7 +6,7 @@ import {
   X, CheckCircle2, FileText, ExternalLink, ShieldCheck, AlertCircle,
   MessageSquareWarning, ThumbsUp, ThumbsDown, Calculator, FilePlus, FilePlus2, RefreshCcw, UploadCloud
 } from "lucide-react";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, updateDoc, getDoc } from "firebase/firestore"; // ATUALIZADO: importado getDoc
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { db } from "@/lib/firebase";
 
@@ -215,9 +215,32 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
         await updateDoc(doc(db, "leads", lead.id), { 
           status: novoStatus,
           motivoReprovacao: resposta.trim(),
-          creditoAprovadoInfo: null 
+          creditoAprovadoInfo: null,
+          loteReserva: null // ATUALIZADO: Tira a reserva do lead
         });
-        mostrarToast("Crédito Reprovado registado!", "sucesso");
+
+        // ─── AUTOMAÇÃO: LOTE VOLTA PARA DISPONÍVEL SE CRÉDITO REPROVADO ───
+        if (lead.loteReserva && lead.empreendimentoId) {
+          const { quadraId, loteId } = lead.loteReserva;
+          if (quadraId && loteId) {
+            const loteRef = doc(db, "empreendimentos", lead.empreendimentoId, "quadras", quadraId, "lotes", loteId);
+            const loteSnap = await getDoc(loteRef);
+            
+            if (loteSnap.exists()) {
+              const filaAtual = loteSnap.data().fila || [];
+              const novaFila = filaAtual.filter((f: any) => f.leadId !== lead.id);
+              const statusLot = novaFila.length === 0 ? "disponivel" : "vinculado";
+
+              await updateDoc(loteRef, {
+                fila: novaFila,
+                status: statusLot
+              }).catch(err => console.error("Erro ao liberar lote (background):", err));
+            }
+          }
+        }
+        // ─────────────────────────────────────────────────────────────────
+
+        mostrarToast("Crédito Reprovado registado! Lote libertado.", "sucesso");
         setTimeout(() => onClose(), 1500);
       } catch (error) {
         mostrarToast("Erro ao atualizar status.", "erro");
@@ -245,6 +268,20 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
           dataAprovacao: new Date().toISOString()
         }
       });
+
+      // ─── AUTOMAÇÃO DE VENDA DO LOTE ───
+      // Se o cliente tem um lote reservado, atualizamos automaticamente o status do lote para "vendido"
+      if (lead.loteReserva && lead.empreendimentoId) {
+        const { quadraId, loteId } = lead.loteReserva;
+        if (quadraId && loteId) {
+          const loteRef = doc(db, "empreendimentos", lead.empreendimentoId, "quadras", quadraId, "lotes", loteId);
+          await updateDoc(loteRef, {
+            status: "vendido"
+          }).catch(err => console.error("Erro ao marcar lote como vendido (background):", err));
+        }
+      }
+      // ──────────────────────────────────
+
       setModalAprovacaoAberto(false);
       mostrarToast("Crédito Aprovado com sucesso!", "sucesso");
       setTimeout(() => onClose(), 1500);
@@ -261,6 +298,20 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
         motivoReprovacao: "",
         creditoAprovadoInfo: null
       });
+
+      // ─── AUTOMAÇÃO DE REVERSÃO DO LOTE ───
+      // O lote estava "vendido" (vermelho). Volta para a fila de negociação (laranja)
+      if (lead.loteReserva && lead.empreendimentoId) {
+        const { quadraId, loteId } = lead.loteReserva;
+        if (quadraId && loteId) {
+          const loteRef = doc(db, "empreendimentos", lead.empreendimentoId, "quadras", quadraId, "lotes", loteId);
+          await updateDoc(loteRef, {
+            status: "vinculado"
+          }).catch(err => console.error("Erro ao voltar lote para vinculado:", err));
+        }
+      }
+      // ──────────────────────────────────────
+
       mostrarToast("Decisão revertida. Lead de volta à análise.", "sucesso");
     } catch (error) {
       mostrarToast("Erro ao reverter decisão.", "erro");

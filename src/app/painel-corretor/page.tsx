@@ -5,8 +5,10 @@ import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs } from "firebase/firestore";
 import Image from "next/image";
-import { Users, LogOut, MessageCircle, Building2, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw, FileText, ExternalLink, Info, ThumbsUp, Share2, Copy, UserCircle, Save, X } from "lucide-react";
+import { Users, LogOut, MessageCircle, Building2, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw, FileText, ExternalLink, Info, ThumbsUp, Share2, Copy, UserCircle, Save, X, Map as MapIcon, Home, Phone } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
+import { MapaInterativo } from "@/components/mapa/MapaInterativo";
+import { formatBRL } from "@/lib/calculos";
 
 // ─────────────────────────────────────────────────────────
 // TIPAGENS
@@ -16,6 +18,7 @@ interface LeadData {
   id: string;
   nome: string;
   whatsapp: string;
+  whatsapp2?: string;
   empreendimentoNome: string;
   empreendimentoId: string;
   modelo: string;
@@ -29,6 +32,13 @@ interface LeadData {
     valorParcela: number;
     observacoes: string;
     dataAprovacao: string;
+  };
+  loteReserva?: {
+    quadraId: string;
+    loteId: string;
+    numero: string;
+    modeloCasa: string;
+    valorVenda: number;
   };
 }
 
@@ -46,7 +56,10 @@ interface DocumentoPadrao {
 interface Empreendimento {
   slug: string;
   nome: string;
+  mapaUrl?: string; 
+  vendaEmOrdem?: boolean; 
   documentosPadrao?: DocumentoPadrao[];
+  modelos?: any[]; 
 }
 
 // ─────────────────────────────────────────────────────────
@@ -72,6 +85,17 @@ export default function PainelCorretor() {
 
   const leadDossieSelecionado = meusLeads.find(l => l.id === leadDossieId) || null;
 
+  // Estados do Mapa de Lotes (Reserva)
+  const [mapaModalAberto, setMapaModalAberto] = useState<{aberto: boolean, empreendimento: Empreendimento | null, lead: LeadData | null}>({aberto: false, empreendimento: null, lead: null});
+  const [lotesMapa, setLotesMapa] = useState<any[]>([]); 
+  const [loadingLotes, setLoadingLotes] = useState(false);
+  const [loteParaReservar, setLoteParaReservar] = useState<any | null>(null);
+
+  // Estados do Mapa de Lotes (Visão Geral - Read Only)
+  const [mapaVisaoGeral, setMapaVisaoGeral] = useState<{aberto: boolean, empreendimento: Empreendimento | null}>({aberto: false, empreendimento: null});
+  const [lotesVisaoGeral, setLotesVisaoGeral] = useState<any[]>([]);
+  const [loadingVisaoGeral, setLoadingVisaoGeral] = useState(false);
+
   // ── AUTENTICAÇÃO E VALIDAÇÃO DE ROLE ──
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
@@ -91,7 +115,6 @@ export default function PainelCorretor() {
         }
         setUserName(userData.nome || user.displayName || "Corretor");
         
-        // Popula os dados do perfil
         setPerfilData({
           nome: userData.nome || "",
           email: userData.email || user.email || "",
@@ -135,7 +158,7 @@ export default function PainelCorretor() {
     return () => unsubAuth();
   }, []);
 
-  // ── CARREGAMENTO DE EMPREENDIMENTOS (PARA OS ARQUIVOS PADRÃO E LINKS) ──
+  // ── CARREGAMENTO DE EMPREENDIMENTOS ──
   useEffect(() => {
     const carregarEmpreendimentos = async () => {
       try {
@@ -145,7 +168,10 @@ export default function PainelCorretor() {
            emps.push({
              slug: docItem.id,
              nome: docItem.data().nome,
-             documentosPadrao: docItem.data().documentosPadrao || []
+             mapaUrl: docItem.data().mapaUrl,
+             vendaEmOrdem: docItem.data().vendaEmOrdem,
+             documentosPadrao: docItem.data().documentosPadrao || [],
+             modelos: docItem.data().modelos || []
            });
         });
         setEmpreendimentos(emps);
@@ -154,13 +180,11 @@ export default function PainelCorretor() {
       }
     };
     
-    if (abaAtiva === "arquivos") {
-       carregarEmpreendimentos();
-    }
+    carregarEmpreendimentos();
   }, [abaAtiva]);
 
   // ─────────────────────────────────────────────────────────
-  // FUNÇÕES DE AÇÃO
+  // FUNÇÕES DE AÇÃO E MODAIS DE MAPA
   // ─────────────────────────────────────────────────────────
 
   const leadsAgrupados = meusLeads.reduce((acc, lead) => {
@@ -174,7 +198,6 @@ export default function PainelCorretor() {
   const assumirLead = async (leadId: string) => {
     try {
       const nomeReal = perfilData.nome || userName;
-
       await updateDoc(doc(db, "leads", leadId), {
         corretorId: userId,
         nomeCorretor: nomeReal,
@@ -215,6 +238,164 @@ export default function PainelCorretor() {
       alert("Erro ao atualizar o perfil. Tente novamente.");
     } finally {
       setSalvandoPerfil(false);
+    }
+  };
+
+  const desvincularLote = async (lead: LeadData) => {
+    if (!lead.loteReserva || !confirm("Deseja remover a reserva deste lote? Ele voltará a ficar disponível para outros corretores.")) return;
+    try {
+      const { quadraId, loteId } = lead.loteReserva;
+      const loteRef = doc(db, "empreendimentos", lead.empreendimentoId, "quadras", quadraId, "lotes", loteId);
+      
+      const loteSnap = await getDoc(loteRef);
+      if (loteSnap.exists()) {
+        const filaAtual = loteSnap.data().fila || [];
+        const novaFila = filaAtual.filter((f: any) => f.leadId !== lead.id);
+        const novoStatus = novaFila.length === 0 ? "disponivel" : "vinculado";
+
+        await updateDoc(loteRef, { fila: novaFila, status: novoStatus });
+      }
+
+      await updateDoc(doc(db, "leads", lead.id), { loteReserva: null });
+      alert("Lote desvinculado com sucesso.");
+    } catch (error) {
+      console.error("Erro ao desvincular:", error);
+      alert("Erro ao desvincular o lote.");
+    }
+  };
+
+  // MAPA: MODO VISÃO GERAL (READ-ONLY)
+  const abrirVisaoGeralMapa = async (empId: string) => {
+    const emp = empreendimentos.find(e => e.slug === empId) || null;
+    if (!emp || !emp.mapaUrl) {
+      alert("Este empreendimento ainda não tem um mapa SVG configurado.");
+      return;
+    }
+
+    setMapaVisaoGeral({ aberto: true, empreendimento: emp });
+    setLoadingVisaoGeral(true);
+
+    const qQuadras = query(collection(db, "empreendimentos", emp.slug, "quadras"));
+    onSnapshot(qQuadras, (snapQuadras) => {
+      const lotesTemp: any[] = [];
+      let promises = snapQuadras.docs.map(docQuadra => {
+        const quadraBloqueada = docQuadra.data().bloqueada === true;
+        return new Promise<void>((resolve) => {
+          onSnapshot(collection(db, "empreendimentos", emp.slug, "quadras", docQuadra.id, "lotes"), (snapLotes) => {
+            snapLotes.forEach(docLote => {
+              const data = docLote.data();
+              const index = lotesTemp.findIndex(l => l.id === docLote.id);
+              const loteTratado = { 
+                id: docLote.id, quadraId: docQuadra.id, ...data,
+                status: quadraBloqueada ? "bloqueado" : data.status 
+              };
+              if (index >= 0) lotesTemp[index] = loteTratado;
+              else lotesTemp.push(loteTratado);
+            });
+            setLotesVisaoGeral([...lotesTemp]); 
+            resolve();
+          });
+        });
+      });
+      Promise.all(promises).then(() => setLoadingVisaoGeral(false));
+    });
+  };
+
+  // MAPA: MODO RESERVA PARA CLIENTE
+  const abrirMapaParaLead = async (lead: LeadData) => {
+    const emp = empreendimentos.find(e => e.slug === lead.empreendimentoId) || null;
+    if (!emp || !emp.mapaUrl) {
+      alert("Este empreendimento ainda não tem um mapa SVG configurado pelo administrador.");
+      return;
+    }
+
+    setMapaModalAberto({ aberto: true, empreendimento: emp, lead });
+    setLoadingLotes(true);
+
+    const qQuadras = query(collection(db, "empreendimentos", emp.slug, "quadras"));
+    onSnapshot(qQuadras, (snapQuadras) => {
+      const lotesTemp: any[] = [];
+      let promises = snapQuadras.docs.map(docQuadra => {
+        const quadraBloqueada = docQuadra.data().bloqueada === true;
+        return new Promise<void>((resolve) => {
+          onSnapshot(collection(db, "empreendimentos", emp.slug, "quadras", docQuadra.id, "lotes"), (snapLotes) => {
+            snapLotes.forEach(docLote => {
+              const data = docLote.data();
+              const index = lotesTemp.findIndex(l => l.id === docLote.id);
+              const loteTratado = { 
+                id: docLote.id, quadraId: docQuadra.id, ...data,
+                status: quadraBloqueada ? "bloqueado" : data.status 
+              };
+              if (index >= 0) lotesTemp[index] = loteTratado;
+              else lotesTemp.push(loteTratado);
+            });
+            setLotesMapa([...lotesTemp]); 
+            resolve();
+          });
+        });
+      });
+      Promise.all(promises).then(() => setLoadingLotes(false));
+    });
+  };
+
+  const handleLoteClick = (lote: any) => {
+    const { empreendimento, lead } = mapaModalAberto;
+    if (!empreendimento || !lead) return;
+
+    if (lote.status === "bloqueado") {
+      alert("Este lote ou a sua quadra estão bloqueados pelo administrador.");
+      return;
+    }
+    if (lote.status === "vendido") {
+      alert("Este lote já foi vendido em definitivo.");
+      return;
+    }
+
+    if (empreendimento.vendaEmOrdem && lote.adjacentes && lote.adjacentes.length > 0) {
+      const adjacenteVendido = lotesMapa.some(l => lote.adjacentes.includes(l.svgPathId) && l.status === "vendido");
+      if (!adjacenteVendido) {
+        alert("Pela regra de venda sequencial definida pelo Admin, você só pode reservar este lote se um dos lotes vizinhos (adjacentes) já estiver vendido.");
+        return;
+      }
+    }
+
+    const jaNaFila = lote.fila?.some((f: any) => f.leadId === lead.id);
+    if (jaNaFila) {
+      alert("Este cliente já está na fila de espera deste lote.");
+      return;
+    }
+
+    // Abre o modal de seleção de modelo
+    setLoteParaReservar(lote);
+  };
+
+  const confirmarReservaComModelo = async (modeloNome: string, valor: number) => {
+    const { empreendimento, lead } = mapaModalAberto;
+    const lote = loteParaReservar;
+    if (!empreendimento || !lead || !lote) return;
+
+    try {
+      const novoFilaItem = {
+        leadId: lead.id, nomeCliente: lead.nome, corretorId: userId,
+        nomeCorretor: userName, modeloCasa: modeloNome, valorVenda: valor,
+        timestamp: new Date().toISOString()
+      };
+      const novaFila = [...(lote.fila || []), novoFilaItem];
+      
+      await updateDoc(doc(db, "empreendimentos", empreendimento.slug, "quadras", lote.quadraId, "lotes", lote.id), {
+        fila: novaFila, status: "vinculado"
+      });
+
+      await updateDoc(doc(db, "leads", lead.id), {
+        loteReserva: { quadraId: lote.quadraId, loteId: lote.id, numero: lote.numero, modeloCasa: modeloNome, valorVenda: valor }
+      });
+
+      alert(`Lote ${lote.numero} reservado com o modelo ${modeloNome}!`);
+      setLoteParaReservar(null);
+      setMapaModalAberto({ aberto: false, empreendimento: null, lead: null });
+    } catch (error) {
+      console.error("Erro ao reservar lote:", error);
+      alert("Erro ao processar reserva.");
     }
   };
 
@@ -315,22 +496,39 @@ export default function PainelCorretor() {
                 <p style={{ color: "var(--gray-dark)", fontSize: 13, marginTop: 8 }}>Vá para a aba "Leads Livres" ou compartilhe seu link de divulgação (na aba Material de Vendas).</p>
               </div>
             ) : (
-              Object.values(leadsAgrupados).map((grupo: GrupoLeads, index) => (
+              Object.entries(leadsAgrupados).map(([empId, grupo], index) => (
                 <div key={index}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                     <Building2 size={16} color="var(--terracota)" />
                     <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--gray-light)" }}>{grupo.nome}</h3>
                     <span style={{ fontSize: 12, color: "var(--gray-dark)" }}>({grupo.leads.length})</span>
+                    
+                    {/* BOTÃO VER MAPA GERAL (AO LADO DO EMPREENDIMENTO) */}
+                    <button 
+                      onClick={() => abrirVisaoGeralMapa(empId)} 
+                      style={{ padding: "4px 10px", background: "rgba(255,255,255,0.1)", borderRadius: 6, fontSize: 11, fontWeight: 700, color: "white", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}
+                    >
+                      <MapIcon size={12}/> Ver Mapa
+                    </button>
                   </div>
+
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {grupo.leads.map((lead: LeadData) => {
                       const isReprovado = lead.status === "nao_qualificado" || lead.status === "credito_reprovado";
                       const isAprovado = lead.status === "qualificado" || lead.status === "credito_aprovado";
+                      const isDesqualificado = lead.status === "desqualificado" || lead.status === "venda_cancelada" || lead.status === "venda_desfeita";
+                      const estaSolto = !lead.corretorId;
+
+                      const bgStatus = lead.status === "com_pendencia" || isReprovado || isDesqualificado ? "rgba(239,68,68,0.15)" : isAprovado ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.05)";
+                      const borderStatus = lead.status === "com_pendencia" || isReprovado || isDesqualificado ? "rgba(239,68,68,0.5)" : isAprovado ? "rgba(74,222,128,0.4)" : "var(--border-subtle)";
+                      const colorStatus = lead.status === "com_pendencia" || isReprovado || isDesqualificado ? "#f87171" : isAprovado ? "#4ade80" : "var(--gray-light)";
+                      
+                      const borderColorCard = isReprovado || isDesqualificado ? "1px solid rgba(239,68,68,0.4)" : isAprovado ? "1px solid rgba(74,222,128,0.4)" : "1px solid var(--border-subtle)";
 
                       return (
                         <div key={lead.id} style={{
                           background: "var(--bg-card)", padding: "16px 20px", borderRadius: 14, 
-                          border: isReprovado ? "1px solid rgba(239,68,68,0.4)" : isAprovado ? "1px solid rgba(74,222,128,0.4)" : "1px solid var(--border-subtle)",
+                          border: borderColorCard,
                           display: "flex", flexDirection: "column", gap: 16
                         }}>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between", alignItems: "center" }}>
@@ -340,9 +538,21 @@ export default function PainelCorretor() {
                               </div>
                               <div style={{ minWidth: 0 }}>
                                 <p style={{ fontWeight: 700, color: "white", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 15 }}>{lead.nome}</p>
-                                <div style={{ display: "flex", gap: 8, fontSize: 12, color: "var(--gray-mid)", flexWrap: "wrap" }}>
+                                <div style={{ display: "flex", gap: 8, fontSize: 12, color: "var(--gray-mid)", flexWrap: "wrap", alignItems: "center" }}>
+                                  
+                                  <span style={{ fontSize: 12, color: "var(--gray-mid)", display: "flex", alignItems: "center", gap: 4 }}>
+                                    <Phone size={12} /> {lead.whatsapp}
+                                    {lead.whatsapp2 && (
+                                      <>
+                                        <span style={{ margin: "0 4px", color: "var(--border-subtle)" }}>|</span>
+                                        <Phone size={12} /> {lead.whatsapp2}
+                                      </>
+                                    )}
+                                  </span>
+
+                                  <span className="hidden sm:inline" style={{ color: "var(--border-subtle)" }}>•</span>
                                   <span style={{ whiteSpace: "nowrap" }}>{lead.modelo}</span>
-                                  <span className="hidden sm:inline">•</span>
+                                  <span className="hidden sm:inline" style={{ color: "var(--border-subtle)" }}>•</span>
                                   <span style={{ whiteSpace: "nowrap" }}>{lead.timestamp ? new Date(lead.timestamp).toLocaleDateString("pt-BR") : "Data desconhecida"}</span>
                                 </div>
                               </div>
@@ -350,12 +560,25 @@ export default function PainelCorretor() {
                             <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0, width: "auto" }} className="w-full sm:w-auto justify-between sm:justify-end">
                               <span style={{
                                 fontSize: 12, padding: "6px 10px", borderRadius: 8, fontWeight: 700, textTransform: "capitalize",
-                                background: lead.status === "com_pendencia" || isReprovado ? "rgba(239,68,68,0.15)" : isAprovado ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.05)",
-                                border: `1px solid ${lead.status === "com_pendencia" || isReprovado ? "rgba(239,68,68,0.5)" : isAprovado ? "rgba(74,222,128,0.4)" : "var(--border-subtle)"}`,
-                                color: lead.status === "com_pendencia" || isReprovado ? "#f87171" : isAprovado ? "#4ade80" : "var(--gray-light)",
+                                background: bgStatus, border: borderStatus, color: colorStatus,
                               }}>
                                 {lead.status ? lead.status.replace(/_/g, " ") : "Novo"}
                               </span>
+                              
+                              {!estaSolto && !isReprovado && !isDesqualificado && !isAprovado && (
+                                <button
+                                  onClick={() => abrirMapaParaLead(lead)}
+                                  title="Abrir mapa para reserva de lote"
+                                  style={{
+                                    padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700,
+                                    display: "flex", gap: 6, alignItems: "center", border: "1px solid var(--border-active)", cursor: "pointer", transition: "0.2s",
+                                    background: "var(--terracota-glow)", color: "var(--terracota)"
+                                  }}
+                                >
+                                  <MapIcon size={15} /> <span className="hidden sm:inline">Mapa de Lotes</span>
+                                </button>
+                              )}
+
                               <button
                                 onClick={() => setLeadDossieId(lead.id)}
                                 style={{
@@ -366,18 +589,61 @@ export default function PainelCorretor() {
                                 <FolderOpen size={15} /> Dossiê
                               </button>
 
-                              <a
-                                href={`https://wa.me/55${(lead.whatsapp || "").replace(/\D/g, "")}`}
-                                target="_blank" rel="noopener noreferrer" className="btn-primary"
-                                style={{ padding: "8px 16px", background: "#16a34a", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, textDecoration: "none", color: "white" }}
-                              >
-                                <MessageCircle size={15} /> Chamar
-                              </a>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <a
+                                  href={`https://wa.me/55${(lead.whatsapp || "").replace(/\D/g, "")}`}
+                                  target="_blank" rel="noopener noreferrer" className="btn-primary"
+                                  style={{ padding: "8px 16px", background: "#16a34a", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, textDecoration: "none", color: "white" }}
+                                >
+                                  <MessageCircle size={15} /> Chamar
+                                </a>
+                                
+                                {lead.whatsapp2 && lead.whatsapp2.replace(/\D/g, "").length >= 10 && (
+                                  <a
+                                    href={`https://wa.me/55${(lead.whatsapp2 || "").replace(/\D/g, "")}`}
+                                    target="_blank" rel="noopener noreferrer" className="btn-primary"
+                                    style={{ padding: "8px 16px", background: "#16a34a", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, textDecoration: "none", color: "white" }}
+                                    title="Chamar no WhatsApp Secundário"
+                                  >
+                                    <MessageCircle size={15} /> Whats 2
+                                  </a>
+                                )}
+                              </div>
                             </div>
                           </div>
 
-                          {/* INSTRUÇÃO ESTRATÉGICA PARA O CORRETOR CASO REPROVE */}
-                          {isReprovado && lead.motivoReprovacao && (
+                          {lead.loteReserva && !isAprovado && !isReprovado && !isDesqualificado && (
+                            <div style={{ marginTop: 8, padding: "12px", background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <div>
+                                <p style={{ fontSize: 11, color: "#fb923c", fontWeight: 700, textTransform: "uppercase" }}>Lote Reservado</p>
+                                <p style={{ fontSize: 14, fontWeight: 700, color: "white" }}>Lote {lead.loteReserva.numero} — {lead.loteReserva.modeloCasa}</p>
+                                <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>Valor total: {formatBRL(lead.loteReserva.valorVenda)}</p>
+                              </div>
+                              <button 
+                                onClick={() => desvincularLote(lead)}
+                                style={{ padding: "8px", background: "rgba(239,68,68,0.15)", border: "none", borderRadius: 8, color: "#f87171", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                                title="Desvincular Lote"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                          )}
+
+                          {isDesqualificado && (
+                            <div style={{ background: "rgba(239,68,68,0.08)", border: "1px dashed rgba(239,68,68,0.3)", borderRadius: 10, padding: "16px", display: "flex", flexDirection: "column", gap: 12, marginTop: "4px" }}>
+                              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                                <AlertOctagon size={18} color="#f87171" style={{ flexShrink: 0, marginTop: 2 }} />
+                                <div>
+                                  <p style={{ fontSize: 13, fontWeight: 700, color: "#f87171", marginBottom: 4 }}>Venda Cancelada / Desqualificado</p>
+                                  <p style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.5 }}>
+                                    A reserva ou venda atrelada a este cliente foi desfeita pela administração. O lote correspondente foi libertado e o cliente encontra-se desqualificado.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {isReprovado && lead.motivoReprovacao && !isDesqualificado && (
                             <div style={{ background: "rgba(239,68,68,0.08)", border: "1px dashed rgba(239,68,68,0.3)", borderRadius: 10, padding: "16px", display: "flex", flexDirection: "column", gap: 12, marginTop: "4px" }}>
                               <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                                 <AlertOctagon size={18} color="#f87171" style={{ flexShrink: 0, marginTop: 2 }} />
@@ -386,7 +652,6 @@ export default function PainelCorretor() {
                                   <p style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.5 }}>{lead.motivoReprovacao}</p>
                                 </div>
                               </div>
-                              
                               <div style={{ display: "flex", gap: 10, alignItems: "flex-start", background: "rgba(0,0,0,0.2)", padding: "12px", borderRadius: 8 }}>
                                 <RefreshCcw size={16} color="var(--gray-light)" style={{ flexShrink: 0, marginTop: 2 }} />
                                 <p style={{ fontSize: 12, color: "var(--gray-mid)", lineHeight: 1.5 }}>
@@ -397,8 +662,7 @@ export default function PainelCorretor() {
                             </div>
                           )}
 
-                          {/* RELATÓRIO DE APROVAÇÃO PARA O CORRETOR */}
-                          {isAprovado && lead.creditoAprovadoInfo && (
+                          {isAprovado && lead.creditoAprovadoInfo && !isDesqualificado && (
                             <div style={{ background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 12, padding: "16px", display: "flex", flexDirection: "column", gap: 12, marginTop: "4px" }}>
                               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                 <ThumbsUp size={18} color="#4ade80" />
@@ -426,7 +690,6 @@ export default function PainelCorretor() {
                               )}
                             </div>
                           )}
-
                         </div>
                       );
                     })}
@@ -536,10 +799,22 @@ export default function PainelCorretor() {
                 
                 return (
                   <div key={emp.slug} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 16, overflow: "hidden" }}>
-                    <div style={{ padding: "16px 20px", background: "rgba(0,0,0,0.2)", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", gap: 12 }}>
-                      <Building2 size={18} color="var(--terracota)" />
-                      <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>{emp.nome}</h3>
+                    
+                    {/* BOTÃO DE VISÃO GERAL DE MAPA (READ-ONLY) */}
+                    <div style={{ padding: "16px 20px", background: "rgba(0,0,0,0.2)", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <Building2 size={18} color="var(--terracota)" />
+                        <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>{emp.nome}</h3>
+                      </div>
+                      
+                      <button 
+                        onClick={() => abrirVisaoGeralMapa(emp.slug)} 
+                        style={{ padding: "6px 12px", background: "var(--terracota-glow)", color: "var(--terracota)", border: "1px solid var(--border-active)", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+                      >
+                         <MapIcon size={14}/> Ver Mapa de Lotes
+                      </button>
                     </div>
+
                     <div style={{ padding: "16px 20px" }}>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
                         {emp.documentosPadrao.map((docItem, i) => (
@@ -683,6 +958,106 @@ export default function PainelCorretor() {
         lead={leadDossieSelecionado}
         isAdmin={false}
       />
+
+      {/* =========================================================
+          MODAL DE MAPA INTERATIVO (VISÃO GERAL / READ-ONLY)
+          ========================================================= */}
+      {mapaVisaoGeral.aberto && mapaVisaoGeral.empreendimento && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,0.9)", backdropFilter: "blur(8px)", display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(15,30,22,0.95)" }}>
+            <div>
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
+                <MapIcon size={20} color="var(--terracota)" /> 
+                Mapa Geral — {mapaVisaoGeral.empreendimento.nome}
+              </h2>
+              <p style={{ fontSize: 13, color: "var(--gray-mid)", marginTop: 4 }}>
+                Modo de visualização. Apenas para acompanhamento de vendas.
+              </p>
+            </div>
+            <button onClick={() => setMapaVisaoGeral({ aberto: false, empreendimento: null })} style={{ padding: 8, background: "rgba(255,255,255,0.1)", borderRadius: 8, border: "none", color: "white", cursor: "pointer" }}>
+              <X size={20} />
+            </button>
+          </div>
+
+          <div style={{ flex: 1, padding: "20px", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
+            {loadingVisaoGeral ? (
+              <div style={{ color: "var(--terracota)", fontWeight: 700, animation: "pulse 2s infinite" }}>Carregando mapa...</div>
+            ) : (
+              <MapaInterativo 
+                mapaUrl={mapaVisaoGeral.empreendimento.mapaUrl || ""} 
+                lotes={lotesVisaoGeral} 
+                onLoteClick={() => {}} // Read-only, sem ação ao clicar
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          MODAL DE MAPA INTERATIVO (RESERVA DE LOTES)
+          ========================================================= */}
+      {mapaModalAberto.aberto && mapaModalAberto.empreendimento && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.9)", backdropFilter: "blur(8px)", display: "flex", flexDirection: "column" }}>
+          
+          {/* Header do Mapa */}
+          <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(15,30,22,0.95)" }}>
+            <div>
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
+                <MapIcon size={20} color="var(--terracota)" /> 
+                Mapa Interativo — {mapaModalAberto.empreendimento.nome}
+              </h2>
+              <p style={{ fontSize: 13, color: "var(--gray-mid)", marginTop: 4 }}>
+                Selecione um lote disponível (Verde) para reservar para <strong style={{ color: "var(--gray-light)" }}>{mapaModalAberto.lead?.nome}</strong>.
+              </p>
+            </div>
+            <button onClick={() => setMapaModalAberto({ aberto: false, empreendimento: null, lead: null })} style={{ padding: 8, background: "rgba(255,255,255,0.1)", borderRadius: 8, border: "none", color: "white", cursor: "pointer" }}>
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Corpo do Mapa */}
+          <div style={{ flex: 1, padding: "20px", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
+            {loadingLotes ? (
+              <div style={{ color: "var(--terracota)", fontWeight: 700, animation: "pulse 2s infinite" }}>Sincronizando lotes do servidor...</div>
+            ) : (
+              <MapaInterativo 
+                mapaUrl={mapaModalAberto.empreendimento.mapaUrl || ""} 
+                lotes={lotesMapa} 
+                onLoteClick={handleLoteClick} 
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE SELEÇÃO DE MODELO (Aparece sobre o mapa) */}
+      {loteParaReservar && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 110, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", padding: 30, borderRadius: 20, width: "100%", maxWidth: 400, textAlign: "center", border: "1px solid var(--border-subtle)" }}>
+            <Home size={40} color="var(--terracota)" style={{ marginBottom: 16 }} />
+            <h3 style={{ color: "white", fontSize: 18, fontWeight: 800 }}>Lote {loteParaReservar.numero}</h3>
+            <p style={{ color: "var(--gray-mid)", marginBottom: 24 }}>Escolha o modelo de casa para este cliente:</p>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {mapaModalAberto.empreendimento?.modelos?.map((modelo: any, idx: number) => (
+                <button 
+                  key={idx} 
+                  onClick={() => confirmarReservaComModelo(modelo.nome, modelo.valor)} 
+                  style={{ padding: 16, background: "var(--terracota)", color: "white", border: "none", borderRadius: 12, fontWeight: 700, cursor: "pointer", fontSize: 15, transition: "0.2s" }}
+                >
+                  {modelo.nome} — {formatBRL(modelo.valor)}
+                </button>
+              ))}
+              {(!mapaModalAberto.empreendimento?.modelos || mapaModalAberto.empreendimento.modelos.length === 0) && (
+                <p style={{ color: "var(--gray-mid)", fontSize: 13 }}>Nenhum modelo cadastrado neste empreendimento.</p>
+              )}
+              <button onClick={() => setLoteParaReservar(null)} style={{ background: "transparent", border: "none", color: "var(--gray-dark)", cursor: "pointer", marginTop: 10, fontWeight: 600 }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes pulse {

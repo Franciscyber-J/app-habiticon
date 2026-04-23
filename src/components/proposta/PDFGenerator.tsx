@@ -10,6 +10,7 @@ import { collection, query, where, getDocs, addDoc, doc, getDoc } from "firebase
 interface Lead {
   nome: string;
   whatsapp: string;
+  whatsapp2: string; // Adicionado telefone secundário
   nomeCorretor: string;
   corretorId: string;
 }
@@ -19,10 +20,10 @@ interface PropostaData {
   cidade: string;
   estado: string;
   modelo: string;
-  quartos?: number;       // Adicionado
+  quartos?: number;       
   area: number;
   valorImovel: number;
-  valorAvaliacao?: number; // Adicionado para suportar o Laudo
+  valorAvaliacao?: number; 
   entrada: number;
   ato: number;
   valorFinanciado: number;
@@ -35,8 +36,8 @@ interface PropostaData {
   sacAprovadoPDF: boolean;      
   rendaFamiliar?: number;
   notasLegais: string;
-  corretorId?: string; // NOVO: ID do corretor que vem do link
-  origem?: string;     // NOVO: Origem do lead
+  corretorId?: string; 
+  origem?: string;     
 }
 
 interface PDFGeneratorProps {
@@ -45,7 +46,7 @@ interface PDFGeneratorProps {
 
 export function PDFGenerator({ proposta }: PDFGeneratorProps) {
   const [etapa, setEtapa] = useState<"closed" | "lead" | "success">("closed");
-  const [lead, setLead] = useState<Lead>({ nome: "", whatsapp: "", nomeCorretor: "", corretorId: "" });
+  const [lead, setLead] = useState<Lead>({ nome: "", whatsapp: "", whatsapp2: "", nomeCorretor: "", corretorId: "" });
   const [loading, setLoading] = useState(false);
   
   const [listaCorretores, setListaCorretores] = useState<{id: string, nome: string}[]>([]);
@@ -452,9 +453,9 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     </div>
                   )}
 
-                  <div className="space-y-6 mb-8">
+                  <div className="space-y-4 mb-8">
                     <div>
-                      <label className="text-[10px] font-black uppercase tracking-[0.15em] mb-4 block" style={{ color: "var(--gray-mid)" }}>
+                      <label className="text-[10px] font-black uppercase tracking-[0.15em] mb-2 block" style={{ color: "var(--gray-mid)" }}>
                         Nome completo
                       </label>
                       <div className="relative">
@@ -462,7 +463,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                         <input
                           type="text"
                           className="input-field"
-                          style={{ height: 56, fontSize: 16, paddingLeft: 64 }}
+                          style={{ height: 50, fontSize: 15, paddingLeft: 64 }}
                           placeholder="Nome do cliente"
                           value={lead.nome}
                           onChange={(e) => setLead((p) => ({ ...p, nome: e.target.value }))}
@@ -470,22 +471,44 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                         />
                       </div>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-[0.15em] mb-4 block" style={{ color: "var(--gray-mid)" }}>
-                        WhatsApp
-                      </label>
-                      <div className="relative">
-                        <Phone size={20} className="absolute left-6 top-1/2 -translate-y-1/2 z-10" style={{ color: "var(--terracota)" }} />
-                        <input
-                          type="tel"
-                          className="input-field"
-                          style={{ height: 56, fontSize: 16, paddingLeft: 64 }}
-                          placeholder="(62) 99999-9999"
-                          value={lead.whatsapp}
-                          onChange={(e) => setLead((p) => ({ ...p, whatsapp: formatWhatsApp(e.target.value) }))}
-                          inputMode="numeric"
-                          autoComplete="tel"
-                        />
+                    
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-[0.15em] mb-2 block" style={{ color: "var(--gray-mid)" }}>
+                          WhatsApp
+                        </label>
+                        <div className="relative">
+                          <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 z-10" style={{ color: "var(--terracota)" }} />
+                          <input
+                            type="tel"
+                            className="input-field"
+                            style={{ height: 50, fontSize: 15, paddingLeft: 44 }}
+                            placeholder="(62) 99999-9999"
+                            value={lead.whatsapp}
+                            onChange={(e) => setLead((p) => ({ ...p, whatsapp: formatWhatsApp(e.target.value) }))}
+                            inputMode="numeric"
+                            autoComplete="tel"
+                          />
+                        </div>
+                      </div>
+
+                      {/* NOVO CAMPO: TELEFONE 2 */}
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-[0.15em] mb-2 block" style={{ color: "var(--gray-mid)" }}>
+                          WhatsApp 2 (Opcional)
+                        </label>
+                        <div className="relative">
+                          <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 z-10" style={{ color: "var(--gray-dark)" }} />
+                          <input
+                            type="tel"
+                            className="input-field"
+                            style={{ height: 50, fontSize: 15, paddingLeft: 44 }}
+                            placeholder="(62) 99999-9999"
+                            value={lead.whatsapp2}
+                            onChange={(e) => setLead((p) => ({ ...p, whatsapp2: formatWhatsApp(e.target.value) }))}
+                            inputMode="numeric"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -670,7 +693,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     )}
                     
                     <button
-                      onClick={() => { setEtapa("closed"); setLead({ nome: "", whatsapp: "", nomeCorretor: "", corretorId: "" }); }}
+                      onClick={() => { setEtapa("closed"); setLead({ nome: "", whatsapp: "", whatsapp2: "", nomeCorretor: "", corretorId: "" }); }}
                       style={{ padding: "14px", background: "transparent", border: "1px solid var(--border-subtle)", color: "var(--gray-light)", borderRadius: 12, fontWeight: 700, cursor: "pointer", width: "100%" }}
                     >
                       Fechar

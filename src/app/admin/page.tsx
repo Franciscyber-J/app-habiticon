@@ -10,11 +10,12 @@ import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, updateDoc, onSnaps
 import {
   Building2, Settings, Users, MapPin,
   ToggleLeft, ToggleRight, Plus, ExternalLink,
-  ArrowLeft, ChevronRight, Phone,
-  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info, Printer, Wallet, UserCircle
+  ArrowLeft, ChevronRight, Phone, MessageCircle,
+  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info, Printer, Wallet, UserCircle, Map as MapIcon, X
 } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { DocumentosConstrutorModal } from "@/components/admin/DocumentosConstrutorModal";
+import { MapaInterativo } from "@/components/mapa/MapaInterativo";
 
 // ─────────────────────────────────────────────────────────
 // TIPAGENS E CONSTANTES
@@ -34,12 +35,14 @@ interface Lead {
   empreendimentoNome?: string;
   nome: string;
   whatsapp: string;
+  whatsapp2?: string; 
   timestamp: string;
   modelo?: string;
   nomeCorretor?: string;
   corretorId?: string;
   status?: LeadStatus | string;
   dossie?: any;
+  documentosConstrutora?: any;
 }
 
 interface DocumentoPadrao {
@@ -54,6 +57,7 @@ interface Empreendimento {
   cidade: string;
   estado: string;
   status: string;
+  mapaUrl?: string; 
   modelos: { id: string; nome: string; valor: number; area?: number }[];
   leads?: Lead[];
   documentosPadrao?: DocumentoPadrao[];
@@ -211,8 +215,8 @@ export default function AdminPage() {
   const [empreendimentos, setEmpreendimentos] = useState<Empreendimento[]>([]);
   const [todosLeads, setTodosLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"empreendimentos" | "leads" | "arquivos" | "equipe">("empreendimentos"); // Atualizado
-  const [listaCorretores, setListaCorretores] = useState<any[]>([]); // Armazena dados completos
+  const [tab, setTab] = useState<"empreendimentos" | "leads" | "arquivos" | "equipe">("empreendimentos"); 
+  const [listaCorretores, setListaCorretores] = useState<any[]>([]); 
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
   
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
@@ -226,9 +230,14 @@ export default function AdminPage() {
 
   const [isPrinting, setIsPrinting] = useState(false);
 
+  // Estados do Mapa de Lotes (Visão Geral - Read Only)
+  const [mapaVisaoGeral, setMapaVisaoGeral] = useState<{aberto: boolean, empreendimento: Empreendimento | null}>({aberto: false, empreendimento: null});
+  const [lotesVisaoGeral, setLotesVisaoGeral] = useState<any[]>([]);
+  const [loadingVisaoGeral, setLoadingVisaoGeral] = useState(false);
+
   const router = useRouter();
 
-  // ── SEGURANÇA: redireciona se não for admin ──
+  // ── SEGURANÇA ──
   useEffect(() => {
     const monitorarAcesso = async () => {
       const user = auth.currentUser;
@@ -274,7 +283,6 @@ export default function AdminPage() {
     return () => { cleanup.then(unsub => { if (unsub) unsub(); }); };
   }, [carregarDados]);
 
-  // Listener independente para corretores (Busca os dados bancários também)
   useEffect(() => {
     const qCorretores = query(
       collection(db, "usuarios"),
@@ -452,6 +460,46 @@ export default function AdminPage() {
     }
   };
 
+  const abrirVisaoGeralMapa = async (emp: Empreendimento) => {
+    if (!emp.mapaUrl) {
+      alert("Este empreendimento ainda não tem um mapa SVG configurado.");
+      return;
+    }
+
+    setMapaVisaoGeral({ aberto: true, empreendimento: emp });
+    setLoadingVisaoGeral(true);
+
+    const qQuadras = query(collection(db, "empreendimentos", emp.slug, "quadras"));
+    onSnapshot(qQuadras, (snapQuadras) => {
+      const lotesTemp: any[] = [];
+      let promises = snapQuadras.docs.map(docQuadra => {
+        const quadraBloqueada = docQuadra.data().bloqueada === true;
+
+        return new Promise<void>((resolve) => {
+          onSnapshot(collection(db, "empreendimentos", emp.slug, "quadras", docQuadra.id, "lotes"), (snapLotes) => {
+            snapLotes.forEach(docLote => {
+              const data = docLote.data();
+              const index = lotesTemp.findIndex(l => l.id === docLote.id);
+              const loteTratado = { 
+                id: docLote.id, 
+                quadraId: docQuadra.id, 
+                ...data,
+                status: quadraBloqueada ? "bloqueado" : data.status 
+              };
+
+              if (index >= 0) lotesTemp[index] = loteTratado;
+              else lotesTemp.push(loteTratado);
+            });
+            setLotesVisaoGeral([...lotesTemp]); 
+            resolve();
+          });
+        });
+      });
+      
+      Promise.all(promises).then(() => setLoadingVisaoGeral(false));
+    });
+  };
+
   // ── FILTRAGEM DE LEADS ──
   const leadsFiltrados = useMemo(() => {
     if (filtroCorretor === "todos") return todosLeads;
@@ -465,7 +513,6 @@ export default function AdminPage() {
   // ── EXPORTAÇÃO PDF ──
   const handlePrint = () => {
     setIsPrinting(true);
-    // Aguarda um ciclo de render para montar a tabela no DOM
     setTimeout(() => {
       window.print();
       setIsPrinting(false);
@@ -515,7 +562,8 @@ export default function AdminPage() {
               <tr key={lead.id} style={{ background: idx % 2 === 0 ? "white" : "#fafafa", borderBottom: "1px solid #eee" }}>
                 <td style={{ padding: "8px" }}>{new Date(lead.timestamp).toLocaleDateString("pt-BR")}</td>
                 <td style={{ padding: "8px", fontWeight: "bold" }}>{lead.nome}</td>
-                <td style={{ padding: "8px" }}>{lead.whatsapp}</td>
+                {/* ATUALIZADO NO PDF: Exibindo os dois números */}
+                <td style={{ padding: "8px" }}>{lead.whatsapp} {lead.whatsapp2 ? ` / ${lead.whatsapp2}` : ""}</td>
                 <td style={{ padding: "8px" }}>{lead.empreendimentoNome || "-"}</td>
                 <td style={{ padding: "8px" }}>{lead.modelo || "-"}</td>
                 <td style={{ padding: "8px" }}>{lead.corretorId ? lead.nomeCorretor : "Não assumido"}</td>
@@ -624,7 +672,7 @@ export default function AdminPage() {
           {([
             { id: "empreendimentos", label: "Empreendimentos" },
             { id: "leads", label: `Visão de Vendas (${todosLeads.length})` },
-            { id: "equipe", label: `Equipe e Pagamentos` }, // NOVA ABA
+            { id: "equipe", label: `Equipe e Pagamentos` }, 
             { id: "arquivos", label: "Arquivos Padrão" }
           ] as const).map((t) => (
             <button
@@ -680,6 +728,15 @@ export default function AdminPage() {
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      
+                      {/* NOVO: BOTÃO VER MAPA NO ADMIN (VISÃO GERAL) */}
+                      <button
+                        onClick={() => abrirVisaoGeralMapa(emp)}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, cursor: "pointer", background: "var(--terracota-glow)", border: "1px solid var(--border-active)", color: "var(--terracota-light)", fontSize: 13, fontWeight: 600 }}
+                      >
+                        <MapIcon size={14}/> Mapa
+                      </button>
+
                       <button
                         onClick={() => toggleStatus(emp.slug, emp.status)}
                         style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 14px", borderRadius: 8, cursor: "pointer", border: "none", fontSize: 12, fontWeight: 700, transition: "all 150ms ease", background: emp.status === "ativo" ? "rgba(22,163,74,0.15)" : "rgba(249,115,22,0.12)", color: emp.status === "ativo" ? "#4ade80" : "#fb923c" }}
@@ -770,7 +827,6 @@ export default function AdminPage() {
                 </span>
               </div>
               
-              {/* BOTÃO EXPORTAR PDF */}
               <button
                 onClick={handlePrint}
                 style={{
@@ -810,6 +866,14 @@ export default function AdminPage() {
                           <p style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>{emp.nome}</p>
                           <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>{leadsEmp.length} lead{leadsEmp.length !== 1 ? "s" : ""}</p>
                         </div>
+                        
+                        {/* NOVO: BOTÃO VER MAPA NO ADMIN (CABEÇALHO DA LISTA DE LEADS) */}
+                        <button 
+                          onClick={() => abrirVisaoGeralMapa(emp)} 
+                          style={{ padding: "4px 10px", background: "rgba(255,255,255,0.1)", borderRadius: 6, fontSize: 11, fontWeight: 700, color: "white", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginLeft: 8 }}
+                        >
+                          <MapIcon size={12}/> Ver Mapa
+                        </button>
                       </div>
                       <CopyLinkButton link={linkLista} />
                     </div>
@@ -824,12 +888,10 @@ export default function AdminPage() {
                           const estaSolto = !lead.corretorId;
                           const temDossie = !!lead.dossie;
                           
-                          // REGRA DE NEGÓCIO: Verifica se o lead já foi decidido pela mesa de crédito
                           const isAprovado = lead.status === "qualificado" || lead.status === "credito_aprovado"; 
                           const isReprovado = lead.status === "nao_qualificado" || lead.status === "credito_reprovado";
                           const isDecidido = isAprovado || isReprovado;
 
-                          // Resolução do status para exibição correta
                           const statusAjustado = (lead.status === "credito_aprovado" ? "qualificado" : 
                                                   lead.status === "credito_reprovado" ? "nao_qualificado" : 
                                                   lead.status) ?? "em_atendimento";
@@ -868,9 +930,17 @@ export default function AdminPage() {
                                     {lead.nome}
                                   </p>
                                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                    
                                     <span style={{ fontSize: 12, color: "var(--gray-mid)", display: "flex", alignItems: "center", gap: 4 }}>
                                       <Phone size={12} /> {lead.whatsapp}
+                                      {lead.whatsapp2 && (
+                                        <>
+                                          <span style={{ margin: "0 4px", color: "var(--border-subtle)" }}>|</span>
+                                          <Phone size={12} /> {lead.whatsapp2}
+                                        </>
+                                      )}
                                     </span>
+
                                     {lead.modelo && (
                                       <span style={{ fontSize: 11, color: "var(--terracota-light)", fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(175,111,83,0.1)" }}>
                                         {lead.modelo}
@@ -939,7 +1009,6 @@ export default function AdminPage() {
                                   <span className="hidden sm:inline">Dossiê</span>
                                 </button>
 
-                                {/* Botão Documentos da Construtora — apenas leads aprovados (qualificados) */}
                                 {isAprovado && (
                                   <button
                                     onClick={() => setLeadDocumentosId(lead.id)}
@@ -956,18 +1025,38 @@ export default function AdminPage() {
                                   </button>
                                 )}
 
-                                <a
-                                  href={`https://wa.me/55${lead.whatsapp?.replace(/\D/g, "")}`}
-                                  target="_blank" rel="noopener noreferrer"
-                                  style={{
-                                    display: "inline-flex", alignItems: "center", gap: 5,
-                                    padding: "8px 14px", borderRadius: 8,
-                                    background: "rgba(22,163,74,0.15)", border: "1px solid rgba(22,163,74,0.3)",
-                                    color: "#4ade80", fontSize: 13, fontWeight: 700, textDecoration: "none",
-                                  }}
-                                >
-                                  WhatsApp
-                                </a>
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <a
+                                    href={`https://wa.me/55${lead.whatsapp?.replace(/\D/g, "")}`}
+                                    target="_blank" rel="noopener noreferrer"
+                                    style={{
+                                      display: "inline-flex", alignItems: "center", gap: 5,
+                                      padding: "8px 14px", borderRadius: 8,
+                                      background: "rgba(22,163,74,0.15)", border: "1px solid rgba(22,163,74,0.3)",
+                                      color: "#4ade80", fontSize: 13, fontWeight: 700, textDecoration: "none",
+                                    }}
+                                  >
+                                    <MessageCircle size={15} />
+                                    WhatsApp
+                                  </a>
+                                  
+                                  {lead.whatsapp2 && lead.whatsapp2.replace(/\D/g, "").length >= 10 && (
+                                    <a
+                                      href={`https://wa.me/55${lead.whatsapp2?.replace(/\D/g, "")}`}
+                                      target="_blank" rel="noopener noreferrer"
+                                      style={{
+                                        display: "inline-flex", alignItems: "center", gap: 5,
+                                        padding: "8px 14px", borderRadius: 8,
+                                        background: "rgba(22,163,74,0.15)", border: "1px solid rgba(22,163,74,0.3)",
+                                        color: "#4ade80", fontSize: 13, fontWeight: 700, textDecoration: "none",
+                                      }}
+                                      title="Chamar no WhatsApp Secundário"
+                                    >
+                                      <MessageCircle size={15} />
+                                      Whats 2
+                                    </a>
+                                  )}
+                                </div>
 
                                 <button
                                   onClick={() => deletarLead(lead.id)}
@@ -1016,7 +1105,6 @@ export default function AdminPage() {
                 {listaCorretores.map((corretor) => (
                   <div key={corretor.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
                     
-                    {/* Header Card Equipe */}
                     <div style={{ padding: "20px", borderBottom: "1px solid var(--border-subtle)", background: "rgba(0,0,0,0.15)", display: "flex", gap: 14, alignItems: "center" }}>
                       <div style={{ width: 46, height: 46, borderRadius: 12, background: "rgba(167,139,250,0.15)", color: "#a78bfa", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "1px solid rgba(167,139,250,0.3)" }}>
                         {(corretor.nome || "?")[0].toUpperCase()}
@@ -1027,7 +1115,6 @@ export default function AdminPage() {
                       </div>
                     </div>
 
-                    {/* Corpo Card Equipe */}
                     <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 16 }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1112,14 +1199,12 @@ export default function AdminPage() {
               empreendimentos.map((emp) => (
                 <div key={emp.slug} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
                   
-                  {/* Cabeçalho da Quadra/Empreendimento */}
                   <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", background: "rgba(0,0,0,0.2)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <Building2 size={18} color="var(--terracota)" />
                       <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>{emp.nome}</h3>
                     </div>
                     
-                    {/* Input Escondido e Botão de Upload */}
                     <div>
                       <input 
                         ref={fileInputRef} 
@@ -1145,7 +1230,6 @@ export default function AdminPage() {
                     </div>
                   </div>
 
-                  {/* Lista de Arquivos do Empreendimento */}
                   <div style={{ padding: "16px 20px" }}>
                     {!emp.documentosPadrao || emp.documentosPadrao.length === 0 ? (
                       <p style={{ fontSize: 13, color: "var(--gray-dark)", textAlign: "center", padding: "20px 0" }}>
@@ -1206,13 +1290,44 @@ export default function AdminPage() {
         isAdmin={true}
       />
 
-      {/* DOCUMENTOS DA CONSTRUTORA — apenas leads com crédito aprovado */}
       <DocumentosConstrutorModal
         isOpen={leadDocumentosId !== null}
         onClose={() => setLeadDocumentosId(null)}
         lead={leadDocumentosSelecionado}
         isAdmin={true}
       />
+
+      {/* MODAL DE MAPA INTERATIVO (VISÃO GERAL / READ-ONLY) */}
+      {mapaVisaoGeral.aberto && mapaVisaoGeral.empreendimento && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,0.9)", backdropFilter: "blur(8px)", display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(15,30,22,0.95)" }}>
+            <div>
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
+                <MapIcon size={20} color="var(--terracota)" /> 
+                Mapa Geral — {mapaVisaoGeral.empreendimento.nome}
+              </h2>
+              <p style={{ fontSize: 13, color: "var(--gray-mid)", marginTop: 4 }}>
+                Modo de visualização. Apenas para acompanhamento de vendas.
+              </p>
+            </div>
+            <button onClick={() => setMapaVisaoGeral({ aberto: false, empreendimento: null })} style={{ padding: 8, background: "rgba(255,255,255,0.1)", borderRadius: 8, border: "none", color: "white", cursor: "pointer" }}>
+              <X size={20} />
+            </button>
+          </div>
+
+          <div style={{ flex: 1, padding: "20px", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
+            {loadingVisaoGeral ? (
+              <div style={{ color: "var(--terracota)", fontWeight: 700, animation: "pulse 2s infinite" }}>Carregando mapa...</div>
+            ) : (
+              <MapaInterativo 
+                mapaUrl={mapaVisaoGeral.empreendimento.mapaUrl || ""} 
+                lotes={lotesVisaoGeral} 
+                onLoteClick={() => {}} 
+              />
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );

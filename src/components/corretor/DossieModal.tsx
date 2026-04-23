@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   X, CheckCircle2, FileText, Camera, Loader2, FileCheck2, 
   ExternalLink, FolderOpen, Plus, Users, Trash2, MessageSquareWarning,
-  AlertCircle, Lock, Edit3
+  AlertCircle, Lock, Edit3, Phone
 } from "lucide-react";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { doc, updateDoc } from "firebase/firestore";
@@ -409,19 +409,43 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
             />
 
             {/* ── HEADER DO MODAL ── */}
-            <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: "var(--bg-base)", zIndex: 10, borderTopLeftRadius: 28, borderTopRightRadius: 28 }}>
-              <div>
-                <h2 style={{ fontSize: 20, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 10 }}>
-                  <FolderOpen size={22} color="var(--terracota)" /> 
-                  {isAdmin ? "Dossiê Cliente (Admin)" : "Dossiê Digital"}
-                </h2>
-                <p style={{ fontSize: 13, color: "var(--gray-mid)", marginTop: 2 }}>
-                  <strong style={{ color: "var(--gray-light)" }}>{lead.nome}</strong> • {lead.empreendimentoNome}
-                </p>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", position: "sticky", top: 0, background: "var(--bg-base)", zIndex: 10, borderTopLeftRadius: 28, borderTopRightRadius: 28 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                <div style={{ flex: 1 }}>
+                  <h2 style={{ fontSize: 20, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 10 }}>
+                    <FolderOpen size={22} color="var(--terracota)" /> 
+                    {isAdmin ? "Dossiê Cliente (Admin)" : "Dossiê Digital"}
+                  </h2>
+                  <p style={{ fontSize: 13, color: "var(--gray-mid)", marginTop: 2 }}>
+                    <strong style={{ color: "var(--gray-light)" }}>{lead.nome}</strong> • {lead.empreendimentoNome}
+                  </p>
+                  
+                  {/* NOVO: EXIBIÇÃO DOS NÚMEROS DE CONTACTO NO DOSSIÊ */}
+                  <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
+                     <a 
+                       href={`https://wa.me/55${(lead.whatsapp || "").replace(/\D/g, "")}`} 
+                       target="_blank" rel="noopener noreferrer"
+                       style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#4ade80", textDecoration: "none", background: "rgba(74,222,128,0.1)", padding: "4px 10px", borderRadius: 6, border: "1px solid rgba(74,222,128,0.2)" }}
+                     >
+                       <Phone size={12} /> {lead.whatsapp}
+                     </a>
+                     
+                     {lead.whatsapp2 && lead.whatsapp2.replace(/\D/g, "").length >= 10 && (
+                       <a 
+                         href={`https://wa.me/55${(lead.whatsapp2 || "").replace(/\D/g, "")}`} 
+                         target="_blank" rel="noopener noreferrer"
+                         style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#38bdf8", textDecoration: "none", background: "rgba(56,189,248,0.1)", padding: "4px 10px", borderRadius: 6, border: "1px solid rgba(56,189,248,0.2)" }}
+                       >
+                         <Phone size={12} /> {lead.whatsapp2} (Whats 2)
+                       </a>
+                     )}
+                  </div>
+                </div>
+                
+                <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gray-light)", cursor: "pointer", transition: "0.2s", flexShrink: 0 }}>
+                  <X size={18} />
+                </button>
               </div>
-              <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gray-light)", cursor: "pointer", transition: "0.2s" }}>
-                <X size={18} />
-              </button>
             </div>
 
             {/* ── ABAS DE PESSOAS (COM FIX CSS DE OVERFLOW + SPACER E BOTÕES DE EDICAO) ── */}
@@ -494,7 +518,7 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
                   <p style={{ fontSize: 12, color: "rgba(251,146,60,0.85)", lineHeight: 1.5 }}>
                     O sistema salva os documentos automaticamente. O envio de várias fotos no mesmo arquivo é permitido.
                   </p>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
+                  <div style={{ display: "center", alignItems: "center", gap: 12, marginTop: 12 }}>
                     <div style={{ flex: 1, height: 6, background: "rgba(0,0,0,0.4)", borderRadius: 10, overflow: "hidden" }}>
                        <div style={{ height: "100%", width: `${progresso}%`, background: progresso === 100 ? "#4ade80" : "#fb923c", transition: "width 0.5s ease" }} />
                     </div>
