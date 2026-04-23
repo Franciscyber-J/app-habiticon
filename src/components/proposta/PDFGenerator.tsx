@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FileText, Send, X, User, Phone, Download, CheckCircle2, ShieldCheck } from "lucide-react";
+import { FileText, Send, X, User, Phone, Download, CheckCircle2, ShieldCheck, Zap } from "lucide-react";
 import { formatBRL, formatBRLDecimal } from "@/lib/calculos";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, addDoc, doc, getDoc } from "firebase/firestore";
@@ -10,7 +10,7 @@ import { collection, query, where, getDocs, addDoc, doc, getDoc } from "firebase
 interface Lead {
   nome: string;
   whatsapp: string;
-  whatsapp2: string; // Adicionado telefone secundário
+  whatsapp2: string; 
   nomeCorretor: string;
   corretorId: string;
 }
@@ -343,25 +343,26 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
 
       if (canShareFile) {
         try {
-          if (temCorretor) {
-            await navigator.share({
-              files: [pdfFile],
-              title: nomeArquivo,
-              text: mensagemWpp,
-            });
-          } else {
-             pdfDoc.save(nomeArquivo);
-          }
+          // ATUALIZADO: Agora partilha SEMPRE nativamente no mobile (abre a folha de share de iOS/Android)
+          // independentemente de ser o corretor ou o cliente a gerar o PDF.
+          await navigator.share({
+            files: [pdfFile],
+            title: nomeArquivo,
+            text: temCorretor ? mensagemWpp : `Proposta de Simulação Habiticon: ${proposta.modelo}`,
+          });
           setEtapa("success");
         } catch (shareErr: any) {
+          // Se o usuário clicar em "Cancelar" no menu do telemóvel, ele entra aqui
           if (shareErr?.name === "AbortError") {
-            setLoading(false);
-            return;
+            setEtapa("success");
+          } else {
+            // Fallback de segurança se o share falhar por algum motivo do browser
+            pdfDoc.save(nomeArquivo);
+            setEtapa("success");
           }
-          pdfDoc.save(nomeArquivo);
-          setEtapa("success");
         }
       } else {
+        // Fallback padrão para Desktop e browsers incompatíveis
         pdfDoc.save(nomeArquivo);
         if (temCorretor) {
           const wppUrl = `https://wa.me/55${lead.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(mensagemWpp)}`;
@@ -464,7 +465,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                           type="text"
                           className="input-field"
                           style={{ height: 50, fontSize: 15, paddingLeft: 64 }}
-                          placeholder="Nome do cliente"
+                          placeholder="Seu nome completo"
                           value={lead.nome}
                           onChange={(e) => setLead((p) => ({ ...p, nome: e.target.value }))}
                           autoComplete="name"
@@ -492,7 +493,6 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                         </div>
                       </div>
 
-                      {/* NOVO CAMPO: TELEFONE 2 */}
                       <div>
                         <label className="text-[10px] font-black uppercase tracking-[0.15em] mb-2 block" style={{ color: "var(--gray-mid)" }}>
                           WhatsApp 2 (Opcional)
@@ -602,11 +602,16 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     </div>
                   )}
 
+                  {/* ATUALIZADO: GATILHO MENTAL DA URGÊNCIA SUAVE E COMPROMISSO */}
                   {!temCorretor && !isLinkProtegido && (
-                    <div style={{ marginBottom: 24, padding: "16px", borderRadius: 12, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)" }}>
-                       <p style={{ fontSize: 13, color: "#4ade80", textAlign: "center", lineHeight: 1.5 }}>
-                         Após gerar a proposta, um de nossos especialistas em financiamento analisará seu perfil e entrará em contato!
-                       </p>
+                    <div style={{ marginBottom: 24, padding: "16px 20px", borderRadius: 12, background: "rgba(251,146,60,0.08)", border: "1px dashed rgba(251,146,60,0.3)" }}>
+                       <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                         <Zap size={20} color="#fb923c" style={{ flexShrink: 0, marginTop: 2 }} />
+                         <p style={{ fontSize: 13, color: "#fed7aa", lineHeight: 1.6 }}>
+                           <strong style={{ color: "#fb923c" }}>Tudo pronto para o próximo passo!</strong><br/>
+                           Um de nossos corretores parceiros entrará em contato pelo WhatsApp o mais breve possível para apresentar as melhores condições e garantir a sua unidade.
+                         </p>
+                       </div>
                     </div>
                   )}
 
@@ -669,7 +674,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                      </p>
                   ) : (
                      <p className="text-muted mb-6" style={{ fontSize: 14, color: "var(--gray-mid)", lineHeight: 1.5, marginBottom: 24 }}>
-                       A sua proposta foi gerada! <strong style={{ color: "var(--gray-light)" }}>A nossa equipe entrará em contato em breve pelo WhatsApp.</strong>
+                       A sua proposta foi gerada com sucesso! <strong style={{ color: "var(--gray-light)" }}>Fique de olho no seu telemóvel, o nosso corretor vai enviar uma mensagem muito em breve.</strong>
                      </p>
                   )}
 
@@ -686,9 +691,9 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                         Abrir WhatsApp Web
                       </a>
                     )}
-                    {temCorretor && podeCompartilharNativo && (
-                      <p style={{ fontSize: 13, color: "var(--gray-mid)", textAlign: "center" }}>
-                        PDF enviado via compartilhamento nativo 📲
+                    {podeCompartilharNativo && (
+                      <p style={{ fontSize: 13, color: "var(--gray-mid)", textAlign: "center", padding: "8px 0" }}>
+                        A usar a partilha nativa do seu dispositivo 📲
                       </p>
                     )}
                     

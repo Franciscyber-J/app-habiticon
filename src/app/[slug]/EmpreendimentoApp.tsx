@@ -156,7 +156,7 @@ export default function EmpreendimentoApp({
 }) {
   const [moduloAtivo,       setModuloAtivo]       = useState("renda");
   const [empFresh, setEmpFresh] = useState(emp); // dados frescos da API
-  const [linkCopiado, setLinkCopiado] = useState(false); // Estado do botão compartilhar
+  const [linkCopiado, setLinkCopiado] = useState(false); 
 
   // Ao montar, buscar dados atualizados da API (resolve cache SSG)
   useEffect(() => {
@@ -168,10 +168,12 @@ export default function EmpreendimentoApp({
       })
       .catch(() => {});
   }, [emp.slug]);
-  const [modeloSelecionado, setModeloSelecionado] = useState(emp.modelos[0]?.id || "");
-  const [entrada,           setEntrada]           = useState(emp.simulador.entradaMin);
+
+  // ATUALIZADO: Todos os estados iniciais agora refletem a variável empFresh que se atualiza
+  const [modeloSelecionado, setModeloSelecionado] = useState(empFresh.modelos[0]?.id || "");
+  const [entrada,           setEntrada]           = useState(empFresh.simulador.entradaMin);
   const [subsidio,          setSubsidio]          = useState(0);
-  const [taxaAtual,         setTaxaAtual]         = useState(emp.simulador.taxaFaixa12);
+  const [taxaAtual,         setTaxaAtual]         = useState(empFresh.simulador.taxaFaixa12);
   const [rendaPreenchida,   setRendaPreenchida]   = useState(false);
   const [rendaFamiliar,     setRendaFamiliar]     = useState(0);
   const [faixaIdPelaRenda,  setFaixaIdPelaRenda] = useState<number | null>(null);
@@ -180,19 +182,19 @@ export default function EmpreendimentoApp({
   const [usarSubsidio,      setUsarSubsidio]      = useState(true);
 
   // Lote único do empreendimento — sempre o do primeiro modelo (regra: lote igual para todos)
-  const valorLoteEmpreendimento = emp.modelos[0]?.valorLote ?? 48000;
+  const valorLoteEmpreendimento = empFresh.modelos[0]?.valorLote ?? 48000;
 
-  const modelo = emp.modelos.find((m) => m.id === modeloSelecionado) || emp.modelos[0];
+  const modelo = empFresh.modelos.find((m) => m.id === modeloSelecionado) || empFresh.modelos[0];
 
   // ── Teto efetivo por modelo ──────────────────────────────────────────
   const tetoEfetivo = useMemo(() => {
-    if (!modelo) return emp.mcmv.tetoImovel;
-    const cubCfg = emp.simulador.cub;
-    if (!cubCfg || !cubCfg.cubVigente) return emp.mcmv.tetoImovel;
+    if (!modelo) return empFresh.mcmv.tetoImovel;
+    const cubCfg = empFresh.simulador.cub;
+    if (!cubCfg || !cubCfg.cubVigente) return empFresh.mcmv.tetoImovel;
     const laudoCalc = valorLoteEmpreendimento + modelo.area * cubCfg.cubVigente * (1 + cubCfg.bdi);
-    const faixaPeloLaudo = emp.mcmv.faixas.find((f: any) => laudoCalc <= (f.tetoImovel ?? Infinity));
-    return faixaPeloLaudo?.tetoImovel ?? emp.mcmv.tetoImovel;
-  }, [modelo, emp.simulador.cub, emp.mcmv.faixas, emp.mcmv.tetoImovel, valorLoteEmpreendimento]);
+    const faixaPeloLaudo = empFresh.mcmv.faixas.find((f: any) => laudoCalc <= (f.tetoImovel ?? Infinity));
+    return faixaPeloLaudo?.tetoImovel ?? empFresh.mcmv.tetoImovel;
+  }, [modelo, empFresh.simulador.cub, empFresh.mcmv.faixas, empFresh.mcmv.tetoImovel, valorLoteEmpreendimento]);
 
   const handleSubsidioChange = useCallback((
     sub: number, taxa: number, rendaDigitada: boolean, rendaVal = 0, faixaId?: number
@@ -218,7 +220,7 @@ export default function EmpreendimentoApp({
       const sim = simular({
         valorImovel: modelo.valor,
         entrada: 0,
-        prazoMeses: emp.simulador.prazoMeses,
+        prazoMeses: empFresh.simulador.prazoMeses,
         taxaAnual: taxaAtual,
         subsidio,
         usarSubsidio,
@@ -228,7 +230,7 @@ export default function EmpreendimentoApp({
       maxFinRenda = sim.finLiberadoPRICE;
     }
 
-    const cubCfg = emp.simulador.cub;
+    const cubCfg = empFresh.simulador.cub;
     const maxFinCUB =
       cubCfg && cubCfg.cubVigente > 0
         ? calcularMaxFinCUB(
@@ -243,16 +245,16 @@ export default function EmpreendimentoApp({
       valorVenda,
       maxFinRenda,
       maxFinCUB,
-      emp.simulador.entradaMin,
+      empFresh.simulador.entradaMin,
       COTA_MAXIMA_CAIXA,
       tetoEfetivo,
     );
   }, [
     modelo,
     rendaFamiliar,
-    emp.simulador.entradaMin,
-    emp.simulador.prazoMeses,
-    emp.simulador.cub,
+    empFresh.simulador.entradaMin,
+    empFresh.simulador.prazoMeses,
+    empFresh.simulador.cub,
     taxaAtual,
     subsidio,
     usarSubsidio,
@@ -262,7 +264,7 @@ export default function EmpreendimentoApp({
 
   const laudoCUBAtual = useMemo(() => {
     if (!modelo) return 0;
-    const cubCfg = emp.simulador.cub;
+    const cubCfg = empFresh.simulador.cub;
     if (!cubCfg || !cubCfg.cubVigente) return 0;
     return calcularLaudoCUB(
       valorLoteEmpreendimento,
@@ -270,19 +272,19 @@ export default function EmpreendimentoApp({
       cubCfg.cubVigente,
       cubCfg.bdi
     ).laudoTotal;
-  }, [modelo, emp.simulador.cub, valorLoteEmpreendimento]);
+  }, [modelo, empFresh.simulador.cub, valorLoteEmpreendimento]);
 
-  const minEntradaPermitida = motorEntrada?.entradaMinima ?? emp.simulador.entradaMin;
+  const minEntradaPermitida = motorEntrada?.entradaMinima ?? empFresh.simulador.entradaMin;
 
   const faixaEfetiva = useMemo((): FaixaEfetiva | null => {
     if (!modelo || rendaFamiliar <= 0) return null;
-    const cubCfg = emp.simulador.cub;
+    const cubCfg = empFresh.simulador.cub;
     const laudoTotal = cubCfg && cubCfg.cubVigente > 0
       ? calcularLaudoCUB(valorLoteEmpreendimento, modelo.area, cubCfg.cubVigente, cubCfg.bdi).laudoTotal
       : null;
     const subsidioBase = usarSubsidio ? subsidio : 0;
-    return determinarFaixaEfetiva(laudoTotal, rendaFamiliar, emp.mcmv.faixas, subsidioBase);
-  }, [modelo, rendaFamiliar, emp.simulador.cub, emp.mcmv.faixas, valorLoteEmpreendimento, subsidio, usarSubsidio]);
+    return determinarFaixaEfetiva(laudoTotal, rendaFamiliar, empFresh.mcmv.faixas, subsidioBase);
+  }, [modelo, rendaFamiliar, empFresh.simulador.cub, empFresh.mcmv.faixas, valorLoteEmpreendimento, subsidio, usarSubsidio]);
 
   useEffect(() => {
     if (!faixaEfetiva?.faixaEfetiva) return;
@@ -313,14 +315,14 @@ export default function EmpreendimentoApp({
     return simular({
       valorImovel: modelo.valor,
       entrada,
-      prazoMeses: emp.simulador.prazoMeses,
+      prazoMeses: empFresh.simulador.prazoMeses,
       taxaAnual: taxaAtual,
       subsidio,
       usarSubsidio,
       rendaFamiliar,
       tetoImovel: tetoEfetivo,
     });
-  }, [modelo, entrada, emp.simulador.prazoMeses, taxaAtual, subsidio, usarSubsidio, rendaFamiliar, tetoEfetivo]);
+  }, [modelo, entrada, empFresh.simulador.prazoMeses, taxaAtual, subsidio, usarSubsidio, rendaFamiliar, tetoEfetivo]);
 
   // ─────────────────────────────────────────────────────
   // DADOS DA PROPOSTA PDF E API
@@ -330,7 +332,7 @@ export default function EmpreendimentoApp({
 
     const pv = resultadoSimulacao.finLiberadoPRICE;
     const i  = taxaAtual / 100 / 12;
-    const amort = pv / emp.simulador.prazoMeses;
+    const amort = pv / empFresh.simulador.prazoMeses;
     const saldoAposAmort = pv - amort;
     const sacPrimeiraSobrePrice =
       amort
@@ -344,7 +346,7 @@ export default function EmpreendimentoApp({
       : true; 
 
     let valorLaudo = modelo.valor;
-    const cubCfg = emp.simulador.cub;
+    const cubCfg = empFresh.simulador.cub;
     if (cubCfg && cubCfg.cubVigente > 0) {
        valorLaudo = calcularLaudoCUB(valorLoteEmpreendimento, modelo.area, cubCfg.cubVigente, cubCfg.bdi).laudoTotal;
     } else {
@@ -352,9 +354,9 @@ export default function EmpreendimentoApp({
     }
 
     return {
-      empreendimento: emp.nome,
-      cidade: emp.cidade,
-      estado: emp.estado,
+      empreendimento: empFresh.nome,
+      cidade: empFresh.cidade,
+      estado: empFresh.estado,
       modelo: modelo.nome,
       area: modelo.area,
       quartos: modelo.quartos, 
@@ -365,30 +367,28 @@ export default function EmpreendimentoApp({
       valorFinanciado: resultadoSimulacao.finLiberadoPRICE,
       subsidio: usarSubsidio ? subsidio : 0,
       taxa: taxaAtual,
-      prazoMeses: emp.simulador.prazoMeses,
+      prazoMeses: empFresh.simulador.prazoMeses,
       parcelaSACPrimeira: sacPrimeiraSobrePrice,
       parcelaSACUltima: resultadoSimulacao.parcelaSACUltima,
       parcelaPRICE: resultadoSimulacao.parcelaPricePrimeira,
       sacAprovadoPDF,
       rendaFamiliar,
-      notasLegais: emp.textos.notasLegais,
+      notasLegais: empFresh.textos.notasLegais,
       corretorId: corretorIdUrl, 
       origem: origemUrl,
     };
-  }, [modelo, resultadoSimulacao, emp, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent, rendaFamiliar, valorLoteEmpreendimento, corretorIdUrl, origemUrl]);
+  }, [modelo, resultadoSimulacao, empFresh, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent, rendaFamiliar, valorLoteEmpreendimento, corretorIdUrl, origemUrl]);
 
   const getModuloStatus = (modId: string) => {
     if (modId === "renda")     return rendaPreenchida ? "done" : "active";
-    if (modId === "simulador") return modelo && entrada >= emp.simulador.entradaMin ? "done" : "pending";
+    if (modId === "simulador") return modelo && entrada >= empFresh.simulador.entradaMin ? "done" : "pending";
     if (modId === "obra")      return resultadoSimulacao && resultadoSimulacao.finLiberadoPRICE > 0 ? "done" : "pending";
     if (modId === "proposta")  return propostaData ? "done" : "pending";
     return "pending";
   };
 
-  // Função para compartilhar a localização nativamente
   const handleCompartilharLocalizacao = async () => {
-    // ATUALIZADO: Link correto e confiável para partilha do Google Maps
-    const mapsLink = `https://www.google.com/maps?q=${empFresh.coordenadas.lat},${empFresh.coordenadas.lng}`;
+    const mapsLink = `http://googleusercontent.com/maps.google.com/?q=${empFresh.coordenadas.lat},${empFresh.coordenadas.lng}`;
     
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
@@ -401,7 +401,6 @@ export default function EmpreendimentoApp({
         console.log("Compartilhamento nativo cancelado ou sem suporte.");
       }
     } else {
-      // Se não tiver suporte (ex: desktop sem api), copia para a área de transferência
       try {
         await navigator.clipboard.writeText(mapsLink);
         setLinkCopiado(true);
@@ -417,7 +416,7 @@ export default function EmpreendimentoApp({
   // ─────────────────────────────────────────────────────
   const AlertaTrava = () => {
     if (!motorEntrada) return null;
-    if (minEntradaPermitida <= emp.simulador.entradaMin) return null;
+    if (minEntradaPermitida <= empFresh.simulador.entradaMin) return null;
     if (motorEntrada.limitador === "entrada_min") return null;
 
     const cfg = TRAVA_CONFIG[motorEntrada.limitador];
@@ -482,9 +481,9 @@ export default function EmpreendimentoApp({
             <Home size={15} color="var(--terracota)" />
           </div>
           <div>
-            <p className="font-bold text-sm leading-tight" style={{ color: "var(--gray-light)" }}>{emp.nome}</p>
+            <p className="font-bold text-sm leading-tight" style={{ color: "var(--gray-light)" }}>{empFresh.nome}</p>
             <p className="text-xs flex items-center gap-1 mt-1" style={{ color: "var(--gray-mid)" }}>
-              <MapPin size={10} /> {emp.cidade} · {emp.estado}
+              <MapPin size={10} /> {empFresh.cidade} · {empFresh.estado}
             </p>
           </div>
         </div>
@@ -631,11 +630,11 @@ export default function EmpreendimentoApp({
                   </div>
                   <div className="glass-card-nohover" style={{ padding: 48 }}>
                     <SubsidioGauge
-                      faixas={emp.mcmv.faixas}
+                      faixas={empFresh.mcmv.faixas}
                       onSubsidioChange={handleSubsidioChange}
                       initialRenda={rendaFamiliar}
                       valorImovel={modelo?.valor || 0}
-                      tetoMcmv={emp.mcmv.tetoImovel}
+                      tetoMcmv={empFresh.mcmv.tetoImovel}
                     />
                   </div>
                   {rendaPreenchida && (
@@ -761,7 +760,7 @@ export default function EmpreendimentoApp({
                     >
                       <AlertTriangle size={15} color="#fb923c" style={{ flexShrink: 0, marginTop: 1 }} />
                       <p style={{ fontSize: 12, color: "#fed7aa", lineHeight: 1.6 }}>
-                        <strong>Atenção:</strong> O laudo CUB deste modelo (R$ {Math.round(calcularLaudoCUB(valorLoteEmpreendimento, modelo.area, emp.simulador.cub!.cubVigente, emp.simulador.cub!.bdi).laudoTotal).toLocaleString("pt-BR")}) ultrapassa o teto da Faixa 2 (R$ {faixaEfetiva.faixaPeloLaudo?.tetoImovel?.toLocaleString("pt-BR")}). O financiamento foi enquadrado automaticamente na{" "}
+                        <strong>Atenção:</strong> O laudo CUB deste modelo (R$ {Math.round(calcularLaudoCUB(valorLoteEmpreendimento, modelo.area, empFresh.simulador.cub!.cubVigente, empFresh.simulador.cub!.bdi).laudoTotal).toLocaleString("pt-BR")}) ultrapassa o teto da Faixa 2 (R$ {faixaEfetiva.faixaPeloLaudo?.tetoImovel?.toLocaleString("pt-BR")}). O financiamento foi enquadrado automaticamente na{" "}
                         <strong>{faixaEfetiva.faixaEfetiva?.nome}</strong> — sem subsídio, taxa {faixaEfetiva.taxaEfetiva}% a.a.
                       </p>
                     </motion.div>
@@ -772,7 +771,7 @@ export default function EmpreendimentoApp({
                     <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 20 }}>
                       Escolha o Modelo
                     </h3>
-                    <ModelSelector modelos={emp.modelos} selected={modeloSelecionado} onSelect={setModeloSelecionado} />
+                    <ModelSelector modelos={empFresh.modelos} selected={modeloSelecionado} onSelect={setModeloSelecionado} />
                   </div>
 
                   {/* Entrada slider + alerta trava */}
@@ -786,7 +785,7 @@ export default function EmpreendimentoApp({
                       <AlertaTrava />
 
                       {/* ★ CARD DIAGNÓSTICO — entrada embutida CUB */}
-                      {motorEntrada && emp.simulador.cub && emp.simulador.cub.cubVigente > 0 && (() => {
+                      {motorEntrada && empFresh.simulador.cub && empFresh.simulador.cub.cubVigente > 0 && (() => {
                         const { cubCobre, ganhoEntradaEmbutida, pctFinanciadoSobreVenda, maxFinCUB, entradaMinima } = motorEntrada;
                         const pct = (pctFinanciadoSobreVenda * 100).toFixed(1);
                         const cor = cubCobre ? "#4ade80" : ganhoEntradaEmbutida > 0 ? "#facc15" : "#f87171";
@@ -814,7 +813,7 @@ export default function EmpreendimentoApp({
                             {!cubCobre && (
                               <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
                                 📐 Para embutir 100% da entrada (mín R$10k), o CUB precisaria ser ≥ R${
-                                  Math.ceil(((modelo.valor - emp.simulador.entradaMin) / COTA_MAXIMA_CAIXA - valorLoteEmpreendimento) / (modelo.area * (1 + (emp.simulador.cub?.bdi ?? 0.18)))).toLocaleString("pt-BR")
+                                  Math.ceil(((modelo.valor - empFresh.simulador.entradaMin) / COTA_MAXIMA_CAIXA - valorLoteEmpreendimento) / (modelo.area * (1 + (empFresh.simulador.cub?.bdi ?? 0.18)))).toLocaleString("pt-BR")
                                 }/m²
                               </p>
                             )}
@@ -825,7 +824,7 @@ export default function EmpreendimentoApp({
                       <EntradaSlider
                         value={entrada}
                         min={minEntradaPermitida}
-                        max={emp.simulador.entradaMax}
+                        max={empFresh.simulador.entradaMax}
                         onChange={setEntrada}
                       />
                     </div>
@@ -857,7 +856,7 @@ export default function EmpreendimentoApp({
                           <ComparadorSacPrice
                             valorFinanciado={resultadoSimulacao.finLiberadoPRICE}
                             taxaAnual={taxaAtual}
-                            prazoMeses={emp.simulador.prazoMeses}
+                            prazoMeses={empFresh.simulador.prazoMeses}
                             rendaFamiliar={rendaFamiliar}
                           />
                         ) : (
@@ -873,9 +872,9 @@ export default function EmpreendimentoApp({
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "14px 16px", borderRadius: 12, background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-subtle)" }}>
                     <Info size={15} color="var(--gray-dark)" style={{ flexShrink: 0, marginTop: 1 }} />
                     <p style={{ fontSize: 12, color: "var(--gray-dark)", lineHeight: 1.6 }}>
-                      Simulação para {emp.cidade}-{emp.estado} com taxa nominal de{" "}
+                      Simulação para {empFresh.cidade}-{empFresh.estado} com taxa nominal de{" "}
                       <strong style={{ color: "var(--gray-mid)" }}>{taxaAtual}% a.a.</strong> e prazo de{" "}
-                      {emp.simulador.prazoMeses} meses.{" "}
+                      {empFresh.simulador.prazoMeses} meses.{" "}
                       <strong>Os seguros obrigatórios (DFI/MIP) e taxas administrativas já estão embutidos no cálculo das parcelas.</strong>{" "}
                       O Laudo de Avaliação exibido é uma estimativa inteligente para viabilizar o financiamento no teto do MCMV.
                       Sujeito à análise de crédito da Caixa Econômica Federal.
@@ -907,9 +906,9 @@ export default function EmpreendimentoApp({
                       <ObrasEscadaChart
                         valorFinanciado={resultadoSimulacao.finLiberadoPRICE}
                         taxaAnual={taxaAtual}
-                        percentuaisPorMes={emp.simulador.percentualObraPorMes}
-                        titulo={emp.textos.tituloObra}
-                        descricao={emp.textos.descricaoObra}
+                        percentuaisPorMes={empFresh.simulador.percentualObraPorMes}
+                        titulo={empFresh.textos.tituloObra}
+                        descricao={empFresh.textos.descricaoObra}
                         valorLote={valorLoteEmpreendimento}
                         parcelaSAC={propostaData?.parcelaSACPrimeira ?? 0}
                         parcelaPRICE={propostaData?.parcelaPRICE ?? resultadoSimulacao.parcelaPricePrimeira}
@@ -947,10 +946,10 @@ export default function EmpreendimentoApp({
                         </h3>
                         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                           {[
-                            ["Empreendimento",                       emp.nome],
+                            ["Empreendimento",                       empFresh.nome],
                             ["Modelo sugerido",                      `${modelo?.nome} · ${modelo?.area}m²`],
                             ["Valor do Contrato",                    formatBRL(modelo?.valor || 0)],
-                            ["Valor de Avaliação Estimado (Laudo)",  formatBRL(propostaData.valorAvaliacao || 0)], // ATUALIZADO
+                            ["Valor de Avaliação Estimado (Laudo)",  formatBRL(propostaData.valorAvaliacao || 0)], 
                             ["Valor do Lote",                        formatBRL(valorLoteEmpreendimento)],
                             ["Entrada Real Exigida",                 formatBRL(entrada)],
                             ["  ↳ Ato mínimo no contrato",           formatBRL(entrada * atoPercent)],
@@ -960,7 +959,7 @@ export default function EmpreendimentoApp({
                               : []),
                             ["Financiamento Aprovado (80% do Laudo)",formatBRL(resultadoSimulacao?.finLiberadoPRICE || 0)],
                             ["Taxa de juros anual",                  `${taxaAtual}% a.a.`],
-                            ["Prazo selecionado",                    `${emp.simulador.prazoMeses} meses (${emp.simulador.prazoMeses / 12} anos)`],
+                            ["Prazo selecionado",                    `${empFresh.simulador.prazoMeses} meses (${empFresh.simulador.prazoMeses / 12} anos)`],
                             ...(propostaData?.sacAprovadoPDF !== false ? [
                               ["Parcela SAC (1ª)", formatBRL(propostaData?.parcelaSACPrimeira || 0)],
                             ] : [
@@ -1023,10 +1022,9 @@ export default function EmpreendimentoApp({
                     <div className="glass-card-nohover">
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
                         <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)" }}>
-                          Localização — {emp.cidade}, {emp.estado}
+                          Localização — {empFresh.cidade}, {empFresh.estado}
                         </h3>
                         
-                        {/* ATUALIZADO: LINK DO GOOGLE MAPS CORRIGIDO */}
                         <button
                           onClick={handleCompartilharLocalizacao}
                           style={{
@@ -1048,7 +1046,7 @@ export default function EmpreendimentoApp({
                           src={`https://maps.google.com/maps?q=${empFresh.coordenadas.lat},${empFresh.coordenadas.lng}&z=15&output=embed`}
                           width="100%" height="100%" style={{ border: 0 }}
                           loading="lazy" referrerPolicy="no-referrer-when-downgrade"
-                          title={`Mapa ${emp.cidade}`}
+                          title={`Mapa ${empFresh.cidade}`}
                         />
                       </div>
                     </div>

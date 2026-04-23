@@ -45,8 +45,15 @@ function Lightbox({
   const [current, setCurrent] = useState(index);
   const [zoom, setZoom] = useState(false);
 
-  const prev = useCallback(() => setCurrent((c) => (c - 1 + fotos.length) % fotos.length), [fotos.length]);
-  const next = useCallback(() => setCurrent((c) => (c + 1) % fotos.length), [fotos.length]);
+  const prev = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setCurrent((c) => (c - 1 + fotos.length) % fotos.length);
+  }, [fotos.length]);
+
+  const next = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setCurrent((c) => (c + 1) % fotos.length);
+  }, [fotos.length]);
 
   // Teclado
   useEffect(() => {
@@ -75,11 +82,11 @@ function Lightbox({
         }}
         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       >
-        {/* Header */}
+        {/* Header - A z-index is set to ensure buttons are above the image */}
         <div style={{
           position: "absolute", top: 0, left: 0, right: 0,
           display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "16px 20px",
+          padding: "16px 20px", zIndex: 1010,
           background: "linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)",
         }}>
           <div>
@@ -90,7 +97,7 @@ function Lightbox({
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button
-              onClick={() => setZoom(!zoom)}
+              onClick={(e) => { e.stopPropagation(); setZoom(!zoom); }}
               style={{
                 width: 36, height: 36, borderRadius: 8, cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -102,7 +109,7 @@ function Lightbox({
               <ZoomIn size={16} />
             </button>
             <button
-              onClick={onClose}
+              onClick={(e) => { e.stopPropagation(); onClose(); }}
               style={{
                 width: 36, height: 36, borderRadius: 8, cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -122,9 +129,9 @@ function Lightbox({
             height: zoom ? "100vh" : "min(80vh, 640px)",
             transition: "all 0.3s ease",
             cursor: zoom ? "zoom-out" : "zoom-in",
-            overflow: "hidden",
+            overflow: "hidden", zIndex: 1005
           }}
-          onClick={() => setZoom(!zoom)}
+          onClick={(e) => { e.stopPropagation(); setZoom(!zoom); }}
         >
           <AnimatePresence mode="wait">
             <motion.div
@@ -156,7 +163,7 @@ function Lightbox({
                 width: 44, height: 44, borderRadius: "50%", cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 background: "rgba(255,255,255,0.12)", border: "none", color: "white",
-                backdropFilter: "blur(8px)",
+                backdropFilter: "blur(8px)", zIndex: 1010
               }}
             >
               <ChevronLeft size={22} />
@@ -168,7 +175,7 @@ function Lightbox({
                 width: 44, height: 44, borderRadius: "50%", cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 background: "rgba(255,255,255,0.12)", border: "none", color: "white",
-                backdropFilter: "blur(8px)",
+                backdropFilter: "blur(8px)", zIndex: 1010
               }}
             >
               <ChevronRight size={22} />
@@ -182,12 +189,12 @@ function Lightbox({
             position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)",
             display: "flex", gap: 8, padding: "8px 12px", borderRadius: 12,
             background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
-            maxWidth: "90vw", overflowX: "auto",
+            maxWidth: "90vw", overflowX: "auto", zIndex: 1010
           }}>
             {fotos.map((f, i) => (
               <button
                 key={i}
-                onClick={() => setCurrent(i)}
+                onClick={(e) => { e.stopPropagation(); setCurrent(i); }}
                 style={{
                   width: 48, height: 36, borderRadius: 6, cursor: "pointer",
                   border: `2px solid ${i === current ? "var(--terracota)" : "transparent"}`,
