@@ -40,6 +40,7 @@ interface LeadData {
     modeloCasa: string;
     valorVenda: number;
   };
+  propostaUrl?: string; // NOVO: Link do PDF guardado no Storage
 }
 
 interface GrupoLeads {
@@ -241,9 +242,9 @@ export default function PainelCorretor() {
     }
   };
 
+  // ATUALIZADO: Tratamento de documento fantasma
   const desvincularLote = async (lead: LeadData) => {
     if (!lead.loteReserva || !confirm("Deseja remover a reserva deste lote? Ele voltará a ficar disponível para outros corretores.")) return;
-
     try {
       const { quadraId, loteId } = lead.loteReserva;
       const loteRef = doc(db, "empreendimentos", lead.empreendimentoId, "quadras", quadraId, "lotes", loteId);
@@ -254,10 +255,7 @@ export default function PainelCorretor() {
         const novaFila = filaAtual.filter((f: any) => f.leadId !== lead.id);
         const novoStatus = novaFila.length === 0 ? "disponivel" : "vinculado";
 
-        await updateDoc(loteRef, {
-          fila: novaFila,
-          status: novoStatus
-        });
+        await updateDoc(loteRef, { fila: novaFila, status: novoStatus });
       }
 
       // Verifica se o lead existe antes de o atualizar
@@ -600,6 +598,25 @@ export default function PainelCorretor() {
                               >
                                 <FolderOpen size={15} /> Dossiê
                               </button>
+
+                              {/* NOVO: BOTÃO PARA VER A SIMULAÇÃO (PDF) GUARDADA */}
+                              {lead.propostaUrl && (
+                                <a
+                                  href={lead.propostaUrl}
+                                  target="_blank" rel="noopener noreferrer"
+                                  title="Ver Simulação Guardada"
+                                  style={{
+                                    padding: "8px 14px", borderRadius: 8,
+                                    fontSize: 13, fontWeight: 700, display: "flex", gap: 6,
+                                    background: "rgba(56,189,248,0.1)",
+                                    border: "1px dashed rgba(56,189,248,0.3)",
+                                    color: "#38bdf8", cursor: "pointer", transition: "0.2s", textDecoration: "none"
+                                  }}
+                                >
+                                  <FileText size={15} />
+                                  <span className="hidden sm:inline">Simulação</span>
+                                </a>
+                              )}
 
                               <div style={{ display: "flex", gap: 6 }}>
                                 <a

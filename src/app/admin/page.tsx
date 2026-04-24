@@ -43,6 +43,7 @@ interface Lead {
   status?: LeadStatus | string;
   dossie?: any;
   documentosConstrutora?: any;
+  propostaUrl?: string; 
 }
 
 interface DocumentoPadrao {
@@ -230,10 +231,11 @@ export default function AdminPage() {
 
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // Estados do Mapa de Lotes (Visão Geral - Read Only)
+  // Estados do Mapa de Lotes (Visão Geral)
   const [mapaVisaoGeral, setMapaVisaoGeral] = useState<{aberto: boolean, empreendimento: Empreendimento | null}>({aberto: false, empreendimento: null});
   const [lotesVisaoGeral, setLotesVisaoGeral] = useState<any[]>([]);
   const [loadingVisaoGeral, setLoadingVisaoGeral] = useState(false);
+  const [loteDetalhe, setLoteDetalhe] = useState<any | null>(null); // NOVO: Para ver quem está no lote
 
   const router = useRouter();
 
@@ -562,7 +564,6 @@ export default function AdminPage() {
               <tr key={lead.id} style={{ background: idx % 2 === 0 ? "white" : "#fafafa", borderBottom: "1px solid #eee" }}>
                 <td style={{ padding: "8px" }}>{new Date(lead.timestamp).toLocaleDateString("pt-BR")}</td>
                 <td style={{ padding: "8px", fontWeight: "bold" }}>{lead.nome}</td>
-                {/* ATUALIZADO NO PDF: Exibindo os dois números */}
                 <td style={{ padding: "8px" }}>{lead.whatsapp} {lead.whatsapp2 ? ` / ${lead.whatsapp2}` : ""}</td>
                 <td style={{ padding: "8px" }}>{lead.empreendimentoNome || "-"}</td>
                 <td style={{ padding: "8px" }}>{lead.modelo || "-"}</td>
@@ -729,7 +730,6 @@ export default function AdminPage() {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       
-                      {/* NOVO: BOTÃO VER MAPA NO ADMIN (VISÃO GERAL) */}
                       <button
                         onClick={() => abrirVisaoGeralMapa(emp)}
                         style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, cursor: "pointer", background: "var(--terracota-glow)", border: "1px solid var(--border-active)", color: "var(--terracota-light)", fontSize: 13, fontWeight: 600 }}
@@ -867,7 +867,6 @@ export default function AdminPage() {
                           <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>{leadsEmp.length} lead{leadsEmp.length !== 1 ? "s" : ""}</p>
                         </div>
                         
-                        {/* NOVO: BOTÃO VER MAPA NO ADMIN (CABEÇALHO DA LISTA DE LEADS) */}
                         <button 
                           onClick={() => abrirVisaoGeralMapa(emp)} 
                           style={{ padding: "4px 10px", background: "rgba(255,255,255,0.1)", borderRadius: 6, fontSize: 11, fontWeight: 700, color: "white", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginLeft: 8 }}
@@ -1008,6 +1007,24 @@ export default function AdminPage() {
                                   <FolderOpen size={15} />
                                   <span className="hidden sm:inline">Dossiê</span>
                                 </button>
+
+                                {lead.propostaUrl && (
+                                  <a
+                                    href={lead.propostaUrl}
+                                    target="_blank" rel="noopener noreferrer"
+                                    title="Ver Simulação Guardada"
+                                    style={{
+                                      padding: "8px 14px", borderRadius: 8,
+                                      fontSize: 13, fontWeight: 700, display: "flex", gap: 6,
+                                      background: "rgba(56,189,248,0.1)",
+                                      border: "1px dashed rgba(56,189,248,0.3)",
+                                      color: "#38bdf8", cursor: "pointer", transition: "0.2s", textDecoration: "none"
+                                    }}
+                                  >
+                                    <FileText size={15} />
+                                    <span className="hidden sm:inline">Simulação</span>
+                                  </a>
+                                )}
 
                                 {isAprovado && (
                                   <button
@@ -1297,7 +1314,7 @@ export default function AdminPage() {
         isAdmin={true}
       />
 
-      {/* MODAL DE MAPA INTERATIVO (VISÃO GERAL / READ-ONLY) */}
+      {/* MODAL DE MAPA INTERATIVO (VISÃO GERAL / READ-ONLY COM DETALHES DE CLIQUE) */}
       {mapaVisaoGeral.aberto && mapaVisaoGeral.empreendimento && (
         <div style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,0.9)", backdropFilter: "blur(8px)", display: "flex", flexDirection: "column" }}>
           <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(15,30,22,0.95)" }}>
@@ -1307,7 +1324,7 @@ export default function AdminPage() {
                 Mapa Geral — {mapaVisaoGeral.empreendimento.nome}
               </h2>
               <p style={{ fontSize: 13, color: "var(--gray-mid)", marginTop: 4 }}>
-                Modo de visualização. Apenas para acompanhamento de vendas.
+                Modo de visualização. Clique num lote para ver os clientes na fila.
               </p>
             </div>
             <button onClick={() => setMapaVisaoGeral({ aberto: false, empreendimento: null })} style={{ padding: 8, background: "rgba(255,255,255,0.1)", borderRadius: 8, border: "none", color: "white", cursor: "pointer" }}>
@@ -1322,9 +1339,56 @@ export default function AdminPage() {
               <MapaInterativo 
                 mapaUrl={mapaVisaoGeral.empreendimento.mapaUrl || ""} 
                 lotes={lotesVisaoGeral} 
-                onLoteClick={() => {}} 
+                onLoteClick={(lote) => setLoteDetalhe(lote)} 
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE DETALHES DO LOTE (QUEM ESTÁ NA FILA) */}
+      {loteDetalhe && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 130, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", padding: 24, borderRadius: 20, width: "100%", maxWidth: 500, border: "1px solid var(--border-subtle)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <h3 style={{ color: "white", fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+                <MapIcon size={20} color="var(--terracota)" /> Detalhes do Lote {loteDetalhe.numero}
+              </h3>
+              <button onClick={() => setLoteDetalhe(null)} style={{ background: "transparent", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <span style={{ fontSize: 12, padding: "6px 12px", borderRadius: 8, fontWeight: 700, textTransform: "uppercase", background: "rgba(255,255,255,0.1)", color: "white" }}>
+                Status: {loteDetalhe.status}
+              </span>
+            </div>
+
+            {loteDetalhe.fila && loteDetalhe.fila.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <h4 style={{ fontSize: 13, color: "var(--gray-mid)", fontWeight: 700, textTransform: "uppercase" }}>Fila de Clientes ({loteDetalhe.fila.length})</h4>
+                {loteDetalhe.fila.map((f: any, idx: number) => (
+                  <div key={idx} style={{ padding: 16, background: "rgba(0,0,0,0.3)", borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
+                    <p style={{ fontSize: 15, fontWeight: 800, color: "white", marginBottom: 4 }}>{idx + 1}º - {f.nomeCliente}</p>
+                    <p style={{ fontSize: 12, color: "var(--gray-mid)", marginBottom: 2 }}>Corretor: <strong style={{ color: "var(--gray-light)" }}>{f.nomeCorretor || "Não informado"}</strong></p>
+                    <p style={{ fontSize: 12, color: "var(--gray-mid)", marginBottom: 2 }}>Modelo: <strong style={{ color: "var(--terracota-light)" }}>{f.modeloCasa}</strong></p>
+                    <p style={{ fontSize: 12, color: "var(--gray-mid)", marginBottom: 2 }}>Valor: <strong style={{ color: "#4ade80" }}>R$ {(f.valorVenda || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></p>
+                    <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>Data da reserva: {new Date(f.timestamp).toLocaleString("pt-BR")}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+               <div style={{ padding: 20, textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 12, border: "1px dashed var(--border-subtle)" }}>
+                 <p style={{ fontSize: 13, color: "var(--gray-mid)" }}>Nenhum cliente vinculado a este lote no momento.</p>
+               </div>
+            )}
+
+            <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end" }}>
+              <button onClick={() => setLoteDetalhe(null)} style={{ padding: "10px 20px", background: "rgba(255,255,255,0.1)", color: "white", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer" }}>
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

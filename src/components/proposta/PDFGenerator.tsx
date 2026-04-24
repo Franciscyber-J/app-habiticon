@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { FileText, Send, X, User, Phone, Download, CheckCircle2, ShieldCheck, Zap } from "lucide-react";
 import { formatBRL, formatBRLDecimal } from "@/lib/calculos";
-import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, addDoc, doc, getDoc } from "firebase/firestore";
+import { db, storage } from "@/lib/firebase";
+import { collection, query, where, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
 interface Lead {
   nome: string;
@@ -128,31 +129,41 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
           if (c) finalNomeCorretor = c.nome;
       }
 
-      await fetch("/api/leads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...lead,
-          corretorId: finalCorretorId,
-          nomeCorretor: finalNomeCorretor,
-          empreendimento: proposta.empreendimento,
-          modelo: proposta.modelo,
-          area: proposta.area || 0,
-          quartos: proposta.quartos || 0,
-          valorImovel: proposta.valorImovel,
-          origem: proposta.origem || "organico",
-          simulacao: {
+      // 1. CRIAR O LEAD NA API E CAPTURAR O ID
+      let leadIdGerado = "";
+      try {
+        const res = await fetch("/api/leads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...lead,
+            corretorId: finalCorretorId,
+            nomeCorretor: finalNomeCorretor,
+            empreendimento: proposta.empreendimento,
+            modelo: proposta.modelo,
+            area: proposta.area || 0,
+            quartos: proposta.quartos || 0,
             valorImovel: proposta.valorImovel,
-            valorAvaliacao: proposta.valorAvaliacao || proposta.valorImovel,
-            entrada: proposta.entrada,
-            valorFinanciado: proposta.valorFinanciado,
-            rendaFamiliar: proposta.rendaFamiliar || 0,
-            subsidio: proposta.subsidio
-          },
-          timestamp: new Date().toISOString(),
-        }),
-      }).catch(() => {});
+            origem: proposta.origem || "organico",
+            simulacao: {
+              valorImovel: proposta.valorImovel,
+              valorAvaliacao: proposta.valorAvaliacao || proposta.valorImovel,
+              entrada: proposta.entrada,
+              valorFinanciado: proposta.valorFinanciado,
+              rendaFamiliar: proposta.rendaFamiliar || 0,
+              subsidio: proposta.subsidio
+            },
+            timestamp: new Date().toISOString(),
+          }),
+        });
+        const data = await res.json();
+        if (data.lead?.id) leadIdGerado = data.lead.id;
+        else if (data.id) leadIdGerado = data.id;
+      } catch (err) {
+        console.error("Erro ao registrar lead na API:", err);
+      }
 
+      // 2. GERAR O CONTEÚDO DO PDF
       const { jsPDF } = await import("jspdf");
       const pdfDoc = new jsPDF({ orientation: "portrait", format: "a4" });
       const pageW = pdfDoc.internal.pageSize.getWidth();
@@ -336,6 +347,19 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       const pdfBlob = pdfDoc.output("blob");
       const pdfFile = new File([pdfBlob], nomeArquivo, { type: "application/pdf" });
 
+      // 3. FAZER UPLOAD DO PDF E SALVAR O LINK NO LEAD (Background task)
+      if (leadIdGerado) {
+        try {
+          const fileRef = ref(storage, `leads/${leadIdGerado}/proposta_simulacao.pdf`);
+          await uploadBytesResumable(fileRef, pdfBlob);
+          const pdfUrl = await getDownloadURL(fileRef);
+          await updateDoc(doc(db, "leads", leadIdGerado), { propostaUrl: pdfUrl });
+        } catch (uploadErr) {
+          console.error("Aviso: Falha ao fazer backup do PDF no Storage", uploadErr);
+        }
+      }
+
+      // 4. ENTREGAR O PDF AO USUÁRIO
       const canShareFile = typeof navigator !== "undefined"
         && "share" in navigator
         && "canShare" in navigator
@@ -343,8 +367,6 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
 
       if (canShareFile) {
         try {
-          // ATUALIZADO: Agora partilha SEMPRE nativamente no mobile (abre a folha de share de iOS/Android)
-          // independentemente de ser o corretor ou o cliente a gerar o PDF.
           await navigator.share({
             files: [pdfFile],
             title: nomeArquivo,
@@ -352,17 +374,14 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
           });
           setEtapa("success");
         } catch (shareErr: any) {
-          // Se o usuário clicar em "Cancelar" no menu do telemóvel, ele entra aqui
           if (shareErr?.name === "AbortError") {
             setEtapa("success");
           } else {
-            // Fallback de segurança se o share falhar por algum motivo do browser
             pdfDoc.save(nomeArquivo);
             setEtapa("success");
           }
         }
       } else {
-        // Fallback padrão para Desktop e browsers incompatíveis
         pdfDoc.save(nomeArquivo);
         if (temCorretor) {
           const wppUrl = `https://wa.me/55${lead.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(mensagemWpp)}`;
@@ -602,7 +621,6 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     </div>
                   )}
 
-                  {/* ATUALIZADO: GATILHO MENTAL DA URGÊNCIA SUAVE E COMPROMISSO */}
                   {!temCorretor && !isLinkProtegido && (
                     <div style={{ marginBottom: 24, padding: "16px 20px", borderRadius: 12, background: "rgba(251,146,60,0.08)", border: "1px dashed rgba(251,146,60,0.3)" }}>
                        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
