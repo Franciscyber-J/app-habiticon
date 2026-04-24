@@ -669,6 +669,7 @@ export default function AdminPage() {
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             <CardConviteEquipe titulo="Corretor" cargo="corretores" path="/cadastro-corretor" />
             <CardConviteEquipe titulo="Correspondente Bancário" cargo="correspondentes e parceiros" path="/cadastro-correspondente" />
+            <CardConviteEquipe titulo="Coordenador de Vendas" cargo="coordenadores" path="/cadastro-coordenador" />
           </div>
         </div>
 

@@ -40,7 +40,7 @@ interface LeadData {
     modeloCasa: string;
     valorVenda: number;
   };
-  propostaUrl?: string; // NOVO: Link do PDF guardado no Storage
+  propostaUrl?: string;
 }
 
 interface GrupoLeads {
@@ -82,6 +82,13 @@ export default function PainelCorretor() {
   const [perfilData, setPerfilData] = useState({
     nome: "", email: "", telefone: "", creci: "",
     cpf: "", chavePix: "", banco: "", agencia: "", conta: ""
+  });
+
+  // Estados de Cadastro Manual de Lead
+  const [modalNovoLeadAberto, setModalNovoLeadAberto] = useState(false);
+  const [salvandoNovoLead, setSalvandoNovoLead] = useState(false);
+  const [novoLeadData, setNovoLeadData] = useState({
+    nome: "", whatsapp: "", whatsapp2: "", empreendimentoId: "", modeloId: ""
   });
 
   const leadDossieSelecionado = meusLeads.find(l => l.id === leadDossieId) || null;
@@ -182,11 +189,72 @@ export default function PainelCorretor() {
     };
     
     carregarEmpreendimentos();
-  }, [abaAtiva]);
+  }, [abaAtiva, modalNovoLeadAberto]);
 
   // ─────────────────────────────────────────────────────────
   // FUNÇÕES DE AÇÃO E MODAIS DE MAPA
   // ─────────────────────────────────────────────────────────
+
+  const formatWhatsApp = (val: string) => {
+    const num = val.replace(/\D/g, "").slice(0, 11);
+    if (num.length <= 2) return num;
+    if (num.length <= 7) return `(${num.slice(0, 2)}) ${num.slice(2)}`;
+    return `(${num.slice(0, 2)}) ${num.slice(2, 7)}-${num.slice(7)}`;
+  };
+
+  const handleCadastrarLeadManual = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!novoLeadData.nome || !novoLeadData.whatsapp || !novoLeadData.empreendimentoId) {
+      alert("Preencha os campos obrigatórios.");
+      return;
+    }
+
+    setSalvandoNovoLead(true);
+    try {
+      const empSelecionado = empreendimentos.find(e => e.slug === novoLeadData.empreendimentoId);
+      const modeloSelecionado = empSelecionado?.modelos?.find(m => m.id === novoLeadData.modeloId);
+
+      // Envia para a API padronizada (mesmo fluxo do simulador)
+      const res = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome: novoLeadData.nome,
+          whatsapp: novoLeadData.whatsapp,
+          whatsapp2: novoLeadData.whatsapp2,
+          corretorId: userId,
+          nomeCorretor: perfilData.nome || userName,
+          empreendimento: empSelecionado?.nome || "",
+          empreendimentoId: empSelecionado?.slug || "",
+          modelo: modeloSelecionado?.nome || "",
+          valorImovel: modeloSelecionado?.valor || 0,
+          area: modeloSelecionado?.area || 0,
+          quartos: modeloSelecionado?.quartos || 0,
+          origem: "cadastro_manual",
+          timestamp: new Date().toISOString(),
+        }),
+      });
+
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      // Como a API cria com status "novo", nós forçamos para "em_atendimento" 
+      // pois foi o corretor que inseriu manualmente.
+      if (data.lead?.id) {
+         await updateDoc(doc(db, "leads", data.lead.id), { status: "em_atendimento" });
+      }
+
+      alert("Cliente cadastrado e vinculado a você com sucesso!");
+      setModalNovoLeadAberto(false);
+      setNovoLeadData({ nome: "", whatsapp: "", whatsapp2: "", empreendimentoId: "", modeloId: "" });
+      setAbaAtiva("meus"); // Direciona para a aba correta
+    } catch (error) {
+      console.error("Erro ao cadastrar lead:", error);
+      alert("Houve um erro ao tentar cadastrar o cliente.");
+    } finally {
+      setSalvandoNovoLead(false);
+    }
+  };
 
   const leadsAgrupados = meusLeads.reduce((acc, lead) => {
     const empId = lead.empreendimentoId || "sem-empreendimento";
@@ -242,7 +310,6 @@ export default function PainelCorretor() {
     }
   };
 
-  // ATUALIZADO: Tratamento de documento fantasma
   const desvincularLote = async (lead: LeadData) => {
     if (!lead.loteReserva || !confirm("Deseja remover a reserva deste lote? Ele voltará a ficar disponível para outros corretores.")) return;
     try {
@@ -258,13 +325,10 @@ export default function PainelCorretor() {
         await updateDoc(loteRef, { fila: novaFila, status: novoStatus });
       }
 
-      // Verifica se o lead existe antes de o atualizar
       const leadRef = doc(db, "leads", lead.id);
       const leadSnap = await getDoc(leadRef);
       if (leadSnap.exists()) {
-        await updateDoc(leadRef, {
-          loteReserva: null
-        });
+        await updateDoc(leadRef, { loteReserva: null });
       }
 
       alert("Lote desvinculado com sucesso.");
@@ -375,7 +439,6 @@ export default function PainelCorretor() {
       return;
     }
 
-    // Abre o modal de seleção de modelo
     setLoteParaReservar(lote);
   };
 
@@ -437,7 +500,20 @@ export default function PainelCorretor() {
       <main className="container-app" style={{ padding: "30px 20px", maxWidth: 800, margin: "0 auto" }}>
 
         <div style={{ marginBottom: 30 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: "white", marginBottom: 20 }}>Área de Vendas</h1>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16, marginBottom: 20 }}>
+            <h1 style={{ fontSize: 24, fontWeight: 800, color: "white" }}>Área de Vendas</h1>
+            <button 
+              onClick={() => setModalNovoLeadAberto(true)}
+              style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", 
+                background: "var(--terracota)", color: "white", borderRadius: 12, 
+                fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer", 
+                boxShadow: "0 4px 14px rgba(175,111,83,0.3)", transition: "all 0.2s"
+              }}
+            >
+              <UserPlus size={16} /> Cadastrar Cliente
+            </button>
+          </div>
 
           {/* ABAS */}
           <div style={{ display: "flex", gap: 10, background: "rgba(0,0,0,0.3)", padding: 6, borderRadius: 14, border: "1px solid var(--border-subtle)", flexWrap: "wrap" }}>
@@ -503,7 +579,7 @@ export default function PainelCorretor() {
                   <Users size={24} color="var(--gray-dark)" />
                 </div>
                 <p style={{ color: "var(--gray-mid)", fontWeight: 600 }}>Você ainda não possui leads.</p>
-                <p style={{ color: "var(--gray-dark)", fontSize: 13, marginTop: 8 }}>Vá para a aba "Leads Livres" ou compartilhe seu link de divulgação (na aba Material de Vendas).</p>
+                <p style={{ color: "var(--gray-dark)", fontSize: 13, marginTop: 8 }}>Cadastre manualmente, vá para "Leads Livres" ou compartilhe seu link de divulgação.</p>
               </div>
             ) : (
               Object.entries(leadsAgrupados).map(([empId, grupo], index) => (
@@ -599,7 +675,6 @@ export default function PainelCorretor() {
                                 <FolderOpen size={15} /> Dossiê
                               </button>
 
-                              {/* NOVO: BOTÃO PARA VER A SIMULAÇÃO (PDF) GUARDADA */}
                               {lead.propostaUrl && (
                                 <a
                                   href={lead.propostaUrl}
@@ -880,6 +955,115 @@ export default function PainelCorretor() {
         )}
 
       </main>
+
+      {/* =========================================================
+          MODAL DE CADASTRO MANUAL DE LEAD
+          ========================================================= */}
+      {modalNovoLeadAberto && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 100,
+          background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: "20px"
+        }}>
+          <div style={{
+            background: "var(--bg-card)", width: "100%", maxWidth: 500,
+            borderRadius: 24, border: "1px solid var(--border-subtle)",
+            boxShadow: "0 20px 40px rgba(0,0,0,0.5)", overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "90vh"
+          }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.2)" }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 10 }}>
+                <UserPlus size={20} color="var(--terracota)" /> Cadastrar Cliente
+              </h2>
+              <button onClick={() => setModalNovoLeadAberto(false)} style={{ background: "transparent", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleCadastrarLeadManual} style={{ padding: "24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 20 }}>
+              
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Nome Completo *</label>
+                <input type="text" required value={novoLeadData.nome} onChange={(e) => setNovoLeadData({...novoLeadData, nome: e.target.value})} className="input-field" style={{ fontSize: 14 }} placeholder="Nome do cliente" />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>WhatsApp *</label>
+                  <input type="text" required value={novoLeadData.whatsapp} onChange={(e) => setNovoLeadData({...novoLeadData, whatsapp: formatWhatsApp(e.target.value)})} className="input-field" style={{ fontSize: 14 }} placeholder="(62) 99999-9999" />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>WhatsApp 2</label>
+                  <input type="text" value={novoLeadData.whatsapp2} onChange={(e) => setNovoLeadData({...novoLeadData, whatsapp2: formatWhatsApp(e.target.value)})} className="input-field" style={{ fontSize: 14 }} placeholder="Opcional" />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Empreendimento de Interesse *</label>
+                <select
+                  required
+                  value={novoLeadData.empreendimentoId}
+                  onChange={(e) => setNovoLeadData({...novoLeadData, empreendimentoId: e.target.value, modeloId: ""})}
+                  className="input-field"
+                  style={{ fontSize: 14, color: novoLeadData.empreendimentoId ? "white" : "var(--gray-dark)", cursor: "pointer", appearance: "none" }}
+                >
+                  <option value="" disabled>Selecione o Empreendimento</option>
+                  {empreendimentos.map(e => (
+                    <option key={e.slug} value={e.slug} style={{ background: "#17271C", color: "white" }}>{e.nome}</option>
+                  ))}
+                </select>
+              </div>
+
+              {novoLeadData.empreendimentoId && (
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Modelo (Opcional)</label>
+                  <select
+                    value={novoLeadData.modeloId}
+                    onChange={(e) => setNovoLeadData({...novoLeadData, modeloId: e.target.value})}
+                    className="input-field"
+                    style={{ fontSize: 14, color: novoLeadData.modeloId ? "white" : "var(--gray-dark)", cursor: "pointer", appearance: "none" }}
+                  >
+                    <option value="">Ainda não definiu o modelo</option>
+                    {empreendimentos.find(e => e.slug === novoLeadData.empreendimentoId)?.modelos?.map((m: any) => (
+                      <option key={m.id} value={m.id} style={{ background: "#17271C", color: "white" }}>
+                        {m.nome} — {formatBRL(m.valor)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div style={{ marginTop: 8, padding: "12px", background: "rgba(74,222,128,0.05)", border: "1px dashed rgba(74,222,128,0.2)", borderRadius: 10 }}>
+                 <p style={{ fontSize: 12, color: "var(--gray-mid)", lineHeight: 1.5, textAlign: "center" }}>
+                   Este cliente será cadastrado diretamente na sua carteira (<strong style={{ color: "white" }}>Meus Atendimentos</strong>). A plataforma manterá o mesmo padrão de segurança dos leads captados online.
+                 </p>
+              </div>
+
+              <button
+                type="submit" disabled={salvandoNovoLead}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  padding: "16px", borderRadius: 12, border: "none", cursor: "pointer",
+                  background: "var(--terracota)", color: "white", fontSize: 15, fontWeight: 800,
+                  marginTop: 8, transition: "all 0.2s", boxShadow: "0 4px 14px rgba(175,111,83,0.3)"
+                }}
+              >
+                {salvandoNovoLead ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 1s linear infinite" }}>
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                    </svg>
+                    Cadastrando...
+                  </span>
+                ) : (
+                  <>
+                    <UserPlus size={18} /> Finalizar Cadastro
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* =========================================================
           MODAL DE PERFIL DO CORRETOR

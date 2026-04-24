@@ -42,7 +42,8 @@ export default function LoginPage() {
         if (userData.role === "admin")           router.push("/admin");
         else if (userData.role === "corretor")   router.push("/painel-corretor");
         else if (userData.role === "correspondente") router.push("/painel-correspondente");
-        else router.push("/admin");
+        else if (userData.role === "coordenador") router.push("/painel-coordenador");
+        else router.push("/");
       } else {
         router.push("/admin");
       }
