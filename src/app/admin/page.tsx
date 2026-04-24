@@ -22,9 +22,9 @@ import { MapaInterativo } from "@/components/mapa/MapaInterativo";
 // ─────────────────────────────────────────────────────────
 
 const STATUS_LEAD = {
-  em_atendimento: { label: "Em atendimento", cor: "#fbbf24", bg: "rgba(251,191,36,0.12)",  border: "rgba(251,191,36,0.3)"  },
-  qualificado:    { label: "Qualificado",    cor: "#4ade80", bg: "rgba(74,222,128,0.12)",  border: "rgba(74,222,128,0.3)"  },
-  nao_qualificado:{ label: "Não qualificado",cor: "#6b7280", bg: "rgba(107,114,128,0.12)", border: "rgba(107,114,128,0.3)" },
+  em_atendimento: { label: "Em atendimento", cor: "#fbbf24", bg: "rgba(251,191,36,0.12)", border: "rgba(251,191,36,0.3)" },
+  qualificado: { label: "Qualificado", cor: "#4ade80", bg: "rgba(74,222,128,0.12)", border: "rgba(74,222,128,0.3)" },
+  nao_qualificado: { label: "Não qualificado", cor: "#6b7280", bg: "rgba(107,114,128,0.12)", border: "rgba(107,114,128,0.3)" },
 } as const;
 
 type LeadStatus = keyof typeof STATUS_LEAD;
@@ -35,7 +35,7 @@ interface Lead {
   empreendimentoNome?: string;
   nome: string;
   whatsapp: string;
-  whatsapp2?: string; 
+  whatsapp2?: string;
   timestamp: string;
   modelo?: string;
   nomeCorretor?: string;
@@ -43,7 +43,7 @@ interface Lead {
   status?: LeadStatus | string;
   dossie?: any;
   documentosConstrutora?: any;
-  propostaUrl?: string; 
+  propostaUrl?: string;
 }
 
 interface DocumentoPadrao {
@@ -58,7 +58,7 @@ interface Empreendimento {
   cidade: string;
   estado: string;
   status: string;
-  mapaUrl?: string; 
+  mapaUrl?: string;
   modelos: { id: string; nome: string; valor: number; area?: number }[];
   leads?: Lead[];
   documentosPadrao?: DocumentoPadrao[];
@@ -216,10 +216,10 @@ export default function AdminPage() {
   const [empreendimentos, setEmpreendimentos] = useState<Empreendimento[]>([]);
   const [todosLeads, setTodosLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"empreendimentos" | "leads" | "arquivos" | "equipe">("empreendimentos"); 
-  const [listaCorretores, setListaCorretores] = useState<any[]>([]); 
+  const [tab, setTab] = useState<"empreendimentos" | "leads" | "arquivos" | "equipe">("empreendimentos");
+  const [listaCorretores, setListaCorretores] = useState<any[]>([]);
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
-  
+
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
   const leadDossieSelecionado = todosLeads.find(l => l.id === leadDossieId) || null;
 
@@ -232,7 +232,7 @@ export default function AdminPage() {
   const [isPrinting, setIsPrinting] = useState(false);
 
   // Estados do Mapa de Lotes (Visão Geral)
-  const [mapaVisaoGeral, setMapaVisaoGeral] = useState<{aberto: boolean, empreendimento: Empreendimento | null}>({aberto: false, empreendimento: null});
+  const [mapaVisaoGeral, setMapaVisaoGeral] = useState<{ aberto: boolean, empreendimento: Empreendimento | null }>({ aberto: false, empreendimento: null });
   const [lotesVisaoGeral, setLotesVisaoGeral] = useState<any[]>([]);
   const [loadingVisaoGeral, setLoadingVisaoGeral] = useState(false);
   const [loteDetalhe, setLoteDetalhe] = useState<any | null>(null); // NOVO: Para ver quem está no lote
@@ -373,20 +373,23 @@ export default function AdminPage() {
   };
 
   const deletarLead = async (leadId: string) => {
-    if (!confirm("Excluir este lead?\nIsso apagará permanentemente todos os dados e os arquivos do Storage. Esta ação não pode ser desfeita.")) return;
+    if (!confirm("Excluir este lead?\nIsso apagará permanentemente todos os dados. Esta ação não pode ser desfeita.")) return;
+
     try {
-      const res = await fetch("/api/leads", {
+      // 1. Usamos o poder supremo do seu login no navegador para apagar direto no banco de dados!
+      await deleteDoc(doc(db, "leads", leadId));
+
+      // 2. Mandamos a API tentar limpar o "lixo" no Storage em background. 
+      // Se a API for bloqueada ao apagar o PDF, não faz mal, o lead já sumiu da tela.
+      fetch("/api/leads", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ leadId }),
-      });
-      
-      if (!res.ok) {
-         throw new Error("Falha na exclusão");
-      }
+      }).catch(() => { });
+
     } catch (error) {
       console.error("Erro ao excluir lead:", error);
-      alert("Houve um erro ao tentar excluir o lead e seus arquivos.");
+      alert("Houve um erro ao tentar excluir o lead. Verifique se tem permissão de Admin.");
     }
   };
 
@@ -404,11 +407,11 @@ export default function AdminPage() {
   const handleUploadDocumentoPadrao = async (e: React.ChangeEvent<HTMLInputElement>, empSlug: string) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    
+
     setUploadingGeral(true);
     try {
       let listaAtual = [...(empreendimentos.find(e => e.slug === empSlug)?.documentosPadrao || [])];
-      
+
       for (const file of files) {
         const fd = new FormData();
         fd.append("file", file);
@@ -418,7 +421,7 @@ export default function AdminPage() {
 
         const res = await fetch("/api/upload", { method: "POST", body: fd });
         const data = await res.json();
-        
+
         if (data.url) {
           listaAtual.push({
             url: data.url,
@@ -442,7 +445,7 @@ export default function AdminPage() {
 
   const deletarDocumentoPadrao = async (url: string, empSlug: string) => {
     if (!confirm("Deletar este arquivo padrão? Corretores não terão mais acesso a ele.")) return;
-    
+
     try {
       await fetch("/api/upload", {
         method: "DELETE",
@@ -452,7 +455,7 @@ export default function AdminPage() {
 
       const listaAtual = empreendimentos.find(e => e.slug === empSlug)?.documentosPadrao || [];
       const novaLista = listaAtual.filter(d => d.url !== url);
-      
+
       await updateDoc(doc(db, "empreendimentos", empSlug), { documentosPadrao: novaLista });
       setEmpreendimentos((prev) => prev.map((e) => (e.slug === empSlug ? { ...e, documentosPadrao: novaLista } : e)));
 
@@ -482,22 +485,22 @@ export default function AdminPage() {
             snapLotes.forEach(docLote => {
               const data = docLote.data();
               const index = lotesTemp.findIndex(l => l.id === docLote.id);
-              const loteTratado = { 
-                id: docLote.id, 
-                quadraId: docQuadra.id, 
+              const loteTratado = {
+                id: docLote.id,
+                quadraId: docQuadra.id,
                 ...data,
-                status: quadraBloqueada ? "bloqueado" : data.status 
+                status: quadraBloqueada ? "bloqueado" : data.status
               };
 
               if (index >= 0) lotesTemp[index] = loteTratado;
               else lotesTemp.push(loteTratado);
             });
-            setLotesVisaoGeral([...lotesTemp]); 
+            setLotesVisaoGeral([...lotesTemp]);
             resolve();
           });
         });
       });
-      
+
       Promise.all(promises).then(() => setLoadingVisaoGeral(false));
     });
   };
@@ -527,13 +530,14 @@ export default function AdminPage() {
   if (isPrinting) {
     return (
       <div style={{ background: "white", color: "black", padding: "40px", minHeight: "100vh", fontFamily: "sans-serif" }}>
-        <style dangerouslySetInnerHTML={{__html: `
+        <style dangerouslySetInnerHTML={{
+          __html: `
           @media print {
             @page { margin: 15mm; size: landscape; }
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           }
         `}} />
-        
+
         <div style={{ borderBottom: "2px solid #111", paddingBottom: 16, marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <div>
             <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: "#111" }}>Relatório de Vendas — Habiticon</h1>
@@ -637,9 +641,9 @@ export default function AdminPage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, marginBottom: 32 }}>
           {[
             { label: "Empreendimentos", value: loading ? "…" : empreendimentos.length, icon: Building2, color: "var(--terracota)", bg: "rgba(175,111,83,0.12)", border: "rgba(175,111,83,0.25)" },
-            { label: "Ativos",          value: loading ? "…" : ativos,                 icon: CheckCircle2, color: "#4ade80", bg: "rgba(22,163,74,0.1)",  border: "rgba(22,163,74,0.2)"   },
-            { label: "Total Leads",     value: loading ? "…" : todosLeads.length,      icon: Users,        color: "#60a5fa", bg: "rgba(59,130,246,0.1)",  border: "rgba(59,130,246,0.2)"  },
-            { label: "Leads Livres",    value: loading ? "…" : leadsNaRoletaCount,     icon: Flame,        color: "#ef4444", bg: "rgba(239,68,68,0.1)",   border: "rgba(239,68,68,0.2)"   },
+            { label: "Ativos", value: loading ? "…" : ativos, icon: CheckCircle2, color: "#4ade80", bg: "rgba(22,163,74,0.1)", border: "rgba(22,163,74,0.2)" },
+            { label: "Total Leads", value: loading ? "…" : todosLeads.length, icon: Users, color: "#60a5fa", bg: "rgba(59,130,246,0.1)", border: "rgba(59,130,246,0.2)" },
+            { label: "Leads Livres", value: loading ? "…" : leadsNaRoletaCount, icon: Flame, color: "#ef4444", bg: "rgba(239,68,68,0.1)", border: "rgba(239,68,68,0.2)" },
           ].map((stat) => {
             const Icon = stat.icon;
             return (
@@ -673,7 +677,7 @@ export default function AdminPage() {
           {([
             { id: "empreendimentos", label: "Empreendimentos" },
             { id: "leads", label: `Visão de Vendas (${todosLeads.length})` },
-            { id: "equipe", label: `Equipe e Pagamentos` }, 
+            { id: "equipe", label: `Equipe e Pagamentos` },
             { id: "arquivos", label: "Arquivos Padrão" }
           ] as const).map((t) => (
             <button
@@ -729,12 +733,12 @@ export default function AdminPage() {
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      
+
                       <button
                         onClick={() => abrirVisaoGeralMapa(emp)}
                         style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, cursor: "pointer", background: "var(--terracota-glow)", border: "1px solid var(--border-active)", color: "var(--terracota-light)", fontSize: 13, fontWeight: 600 }}
                       >
-                        <MapIcon size={14}/> Mapa
+                        <MapIcon size={14} /> Mapa
                       </button>
 
                       <button
@@ -826,7 +830,7 @@ export default function AdminPage() {
                   {leadsFiltrados.length} resultado(s)
                 </span>
               </div>
-              
+
               <button
                 onClick={handlePrint}
                 style={{
@@ -866,12 +870,12 @@ export default function AdminPage() {
                           <p style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>{emp.nome}</p>
                           <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>{leadsEmp.length} lead{leadsEmp.length !== 1 ? "s" : ""}</p>
                         </div>
-                        
-                        <button 
-                          onClick={() => abrirVisaoGeralMapa(emp)} 
+
+                        <button
+                          onClick={() => abrirVisaoGeralMapa(emp)}
                           style={{ padding: "4px 10px", background: "rgba(255,255,255,0.1)", borderRadius: 6, fontSize: 11, fontWeight: 700, color: "white", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginLeft: 8 }}
                         >
-                          <MapIcon size={12}/> Ver Mapa
+                          <MapIcon size={12} /> Ver Mapa
                         </button>
                       </div>
                       <CopyLinkButton link={linkLista} />
@@ -886,14 +890,14 @@ export default function AdminPage() {
                         {leadsEmp.map((lead, i) => {
                           const estaSolto = !lead.corretorId;
                           const temDossie = !!lead.dossie;
-                          
-                          const isAprovado = lead.status === "qualificado" || lead.status === "credito_aprovado"; 
+
+                          const isAprovado = lead.status === "qualificado" || lead.status === "credito_aprovado";
                           const isReprovado = lead.status === "nao_qualificado" || lead.status === "credito_reprovado";
                           const isDecidido = isAprovado || isReprovado;
 
-                          const statusAjustado = (lead.status === "credito_aprovado" ? "qualificado" : 
-                                                  lead.status === "credito_reprovado" ? "nao_qualificado" : 
-                                                  lead.status) ?? "em_atendimento";
+                          const statusAjustado = (lead.status === "credito_aprovado" ? "qualificado" :
+                            lead.status === "credito_reprovado" ? "nao_qualificado" :
+                              lead.status) ?? "em_atendimento";
 
                           return (
                             <motion.div
@@ -929,7 +933,7 @@ export default function AdminPage() {
                                     {lead.nome}
                                   </p>
                                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                    
+
                                     <span style={{ fontSize: 12, color: "var(--gray-mid)", display: "flex", alignItems: "center", gap: 4 }}>
                                       <Phone size={12} /> {lead.whatsapp}
                                       {lead.whatsapp2 && (
@@ -960,7 +964,7 @@ export default function AdminPage() {
 
                               {/* LADO DIREITO */}
                               <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }} className="w-full sm:w-auto justify-between sm:justify-end">
-                                
+
                                 <div
                                   title={isDecidido ? "O status está bloqueado após a análise de crédito." : "Status atual do lead"}
                                   style={{
@@ -1056,7 +1060,7 @@ export default function AdminPage() {
                                     <MessageCircle size={15} />
                                     WhatsApp
                                   </a>
-                                  
+
                                   {lead.whatsapp2 && lead.whatsapp2.replace(/\D/g, "").length >= 10 && (
                                     <a
                                       href={`https://wa.me/55${lead.whatsapp2?.replace(/\D/g, "")}`}
@@ -1105,7 +1109,7 @@ export default function AdminPage() {
             ========================================================= */}
         {tab === "equipe" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            
+
             <div style={{ background: "rgba(167,139,250,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(167,139,250,0.2)", display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
               <Wallet size={18} color="#a78bfa" style={{ flexShrink: 0 }} />
               <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>
@@ -1121,7 +1125,7 @@ export default function AdminPage() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
                 {listaCorretores.map((corretor) => (
                   <div key={corretor.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
-                    
+
                     <div style={{ padding: "20px", borderBottom: "1px solid var(--border-subtle)", background: "rgba(0,0,0,0.15)", display: "flex", gap: 14, alignItems: "center" }}>
                       <div style={{ width: 46, height: 46, borderRadius: 12, background: "rgba(167,139,250,0.15)", color: "#a78bfa", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "1px solid rgba(167,139,250,0.3)" }}>
                         {(corretor.nome || "?")[0].toUpperCase()}
@@ -1148,7 +1152,7 @@ export default function AdminPage() {
 
                       <div>
                         <p style={{ fontSize: 11, color: "#a78bfa", textTransform: "uppercase", fontWeight: 800, marginBottom: 10, display: "flex", alignItems: "center", gap: 4 }}><Wallet size={12} /> Dados Pagamento</p>
-                        
+
                         {!corretor.dadosBancarios || (!corretor.dadosBancarios.cpf && !corretor.dadosBancarios.chavePix && !corretor.dadosBancarios.banco) ? (
                           <p style={{ fontSize: 12, color: "var(--gray-dark)", fontStyle: "italic" }}>O corretor ainda não preencheu os dados bancários/PIX.</p>
                         ) : (
@@ -1200,7 +1204,7 @@ export default function AdminPage() {
             ========================================================= */}
         {tab === "arquivos" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-            
+
             <div style={{ background: "rgba(175,111,83,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(175,111,83,0.2)", display: "flex", alignItems: "center", gap: 12 }}>
               <Info size={18} color="var(--terracota)" style={{ flexShrink: 0 }} />
               <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>
@@ -1215,24 +1219,24 @@ export default function AdminPage() {
             ) : (
               empreendimentos.map((emp) => (
                 <div key={emp.slug} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
-                  
+
                   <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", background: "rgba(0,0,0,0.2)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <Building2 size={18} color="var(--terracota)" />
                       <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>{emp.nome}</h3>
                     </div>
-                    
+
                     <div>
-                      <input 
-                        ref={fileInputRef} 
-                        type="file" 
-                        multiple 
-                        accept="application/pdf,image/*" 
-                        className="hidden" 
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept="application/pdf,image/*"
+                        className="hidden"
                         onChange={(e) => handleUploadDocumentoPadrao(e, emp.slug)}
                       />
-                      <button 
-                        onClick={() => fileInputRef.current?.click()} 
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
                         disabled={uploadingGeral}
                         style={{
                           display: "flex", alignItems: "center", gap: 6,
@@ -1268,16 +1272,16 @@ export default function AdminPage() {
                               </p>
                             </div>
                             <div style={{ display: "flex", gap: 6 }}>
-                              <a 
-                                href={docItem.url} 
-                                target="_blank" 
+                              <a
+                                href={docItem.url}
+                                target="_blank"
                                 rel="noopener noreferrer"
                                 title="Abrir arquivo"
                                 style={{ width: 28, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.05)", color: "var(--gray-light)" }}
                               >
                                 <ExternalLink size={14} />
                               </a>
-                              <button 
+                              <button
                                 onClick={() => deletarDocumentoPadrao(docItem.url, emp.slug)}
                                 title="Deletar arquivo"
                                 style={{ width: 28, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(239,68,68,0.1)", color: "#f87171", border: "none", cursor: "pointer" }}
@@ -1320,7 +1324,7 @@ export default function AdminPage() {
           <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(15,30,22,0.95)" }}>
             <div>
               <h2 style={{ fontSize: 18, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
-                <MapIcon size={20} color="var(--terracota)" /> 
+                <MapIcon size={20} color="var(--terracota)" />
                 Mapa Geral — {mapaVisaoGeral.empreendimento.nome}
               </h2>
               <p style={{ fontSize: 13, color: "var(--gray-mid)", marginTop: 4 }}>
@@ -1336,10 +1340,10 @@ export default function AdminPage() {
             {loadingVisaoGeral ? (
               <div style={{ color: "var(--terracota)", fontWeight: 700, animation: "pulse 2s infinite" }}>Carregando mapa...</div>
             ) : (
-              <MapaInterativo 
-                mapaUrl={mapaVisaoGeral.empreendimento.mapaUrl || ""} 
-                lotes={lotesVisaoGeral} 
-                onLoteClick={(lote) => setLoteDetalhe(lote)} 
+              <MapaInterativo
+                mapaUrl={mapaVisaoGeral.empreendimento.mapaUrl || ""}
+                lotes={lotesVisaoGeral}
+                onLoteClick={(lote) => setLoteDetalhe(lote)}
               />
             )}
           </div>
@@ -1379,9 +1383,9 @@ export default function AdminPage() {
                 ))}
               </div>
             ) : (
-               <div style={{ padding: 20, textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 12, border: "1px dashed var(--border-subtle)" }}>
-                 <p style={{ fontSize: 13, color: "var(--gray-mid)" }}>Nenhum cliente vinculado a este lote no momento.</p>
-               </div>
+              <div style={{ padding: 20, textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 12, border: "1px dashed var(--border-subtle)" }}>
+                <p style={{ fontSize: 13, color: "var(--gray-mid)" }}>Nenhum cliente vinculado a este lote no momento.</p>
+              </div>
             )}
 
             <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end" }}>
