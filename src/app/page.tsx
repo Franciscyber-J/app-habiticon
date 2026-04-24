@@ -367,9 +367,17 @@ export default function HomePage() {
             height={34}
             style={{ height: "clamp(28px,4vw,40px)", width: "auto", opacity: 0.8 }}
           />
-          <p style={{ fontSize: 12, color: "var(--gray-dark)" }}>
-            © 2026 Habiticon Construção Inteligente · CNPJ 61.922.155/0001-70
-          </p>
+          <div style={{ textAlign: "right" }}>
+            <p style={{ fontSize: 12, color: "var(--gray-dark)", marginBottom: 4 }}>
+              © 2026 Habiticon Construção Inteligente · CNPJ 61.922.155/0001-70
+            </p>
+            <p style={{ fontSize: 11, color: "var(--gray-mid)" }}>
+              Ao utilizar a plataforma, você concorda com nossos{" "}
+              <Link href="/termos" target="_blank" style={{ color: "var(--terracota-light)", textDecoration: "underline" }}>
+                Termos e Política de Privacidade
+              </Link>.
+            </p>
+          </div>
         </div>
       </footer>
 

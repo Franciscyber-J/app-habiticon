@@ -633,6 +633,11 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
                     </div>
                   )}
 
+                  <p style={{ fontSize: 11, color: "var(--gray-mid)", textAlign: "center", marginBottom: 16, lineHeight: 1.5 }}>
+                    Ao gerar a proposta, você concorda com os nossos{" "}
+                    <a href="/termos" target="_blank" rel="noopener noreferrer" style={{ color: "var(--terracota-light)", textDecoration: "underline" }}>Termos e Política de Privacidade</a>.
+                  </p>
+
                   <button
                     onClick={gerarPDF}
                     disabled={!formValido || loading}

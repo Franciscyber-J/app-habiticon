@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { CookieBanner } from "@/components/CookieBanner"; // <-- IMPORTAÇÃO DO BANNER
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -48,6 +49,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         {children}
+        <CookieBanner /> {/* <-- BANNER INJETADO AQUI PARA APARECER EM TODAS AS PÁGINAS */}
       </body>
     </html>
   );
