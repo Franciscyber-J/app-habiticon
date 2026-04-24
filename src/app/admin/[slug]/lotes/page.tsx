@@ -286,7 +286,6 @@ export default function GestaoLotesPage({ params }: Params) {
   const forcarDisponivel = async (quadraId: string, loteId: string) => {
     if (!confirm("Isso irá remover TODOS da fila e desvincular os leads. O lote ficará DISPONÍVEL verde no mapa. Tem certeza?")) return;
     try {
-      // 1. Pega os dados atuais do lote para saber quem estava na fila
       const loteRef = doc(db, "empreendimentos", slug, "quadras", quadraId, "lotes", loteId);
       const loteSnap = await getDoc(loteRef);
       
@@ -294,20 +293,20 @@ export default function GestaoLotesPage({ params }: Params) {
         const loteData = loteSnap.data() as Lote;
         const fila = loteData.fila || [];
 
-        // 2. Remove o lote de todos os leads que estavam na fila e marca como desqualificado
-        const batch = writeBatch(db);
-        fila.forEach(itemFila => {
+        // Remove o lote dos leads um por um, verificando se eles ainda existem (evita o crash do documento fantasma)
+        for (const itemFila of fila) {
           const leadRef = doc(db, "leads", itemFila.leadId);
-          batch.update(leadRef, {
-            loteReserva: null,
-            status: "venda_desfeita" // Status que o painel do corretor vai entender para mostrar o aviso
-          });
-        });
-        
-        await batch.commit();
+          const leadSnap = await getDoc(leadRef);
+          if (leadSnap.exists()) {
+            await updateDoc(leadRef, {
+              loteReserva: null,
+              status: "venda_desfeita" 
+            });
+          }
+        }
       }
 
-      // 3. Atualiza o status do próprio lote para livre
+      // Atualiza o status do próprio lote para livre
       await updateDoc(loteRef, {
         status: "disponivel", 
         fila: [], 

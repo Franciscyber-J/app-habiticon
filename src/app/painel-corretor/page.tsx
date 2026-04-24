@@ -243,6 +243,7 @@ export default function PainelCorretor() {
 
   const desvincularLote = async (lead: LeadData) => {
     if (!lead.loteReserva || !confirm("Deseja remover a reserva deste lote? Ele voltará a ficar disponível para outros corretores.")) return;
+
     try {
       const { quadraId, loteId } = lead.loteReserva;
       const loteRef = doc(db, "empreendimentos", lead.empreendimentoId, "quadras", quadraId, "lotes", loteId);
@@ -253,10 +254,21 @@ export default function PainelCorretor() {
         const novaFila = filaAtual.filter((f: any) => f.leadId !== lead.id);
         const novoStatus = novaFila.length === 0 ? "disponivel" : "vinculado";
 
-        await updateDoc(loteRef, { fila: novaFila, status: novoStatus });
+        await updateDoc(loteRef, {
+          fila: novaFila,
+          status: novoStatus
+        });
       }
 
-      await updateDoc(doc(db, "leads", lead.id), { loteReserva: null });
+      // Verifica se o lead existe antes de o atualizar
+      const leadRef = doc(db, "leads", lead.id);
+      const leadSnap = await getDoc(leadRef);
+      if (leadSnap.exists()) {
+        await updateDoc(leadRef, {
+          loteReserva: null
+        });
+      }
+
       alert("Lote desvinculado com sucesso.");
     } catch (error) {
       console.error("Erro ao desvincular:", error);
