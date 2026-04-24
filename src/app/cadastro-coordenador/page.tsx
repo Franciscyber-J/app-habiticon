@@ -7,7 +7,7 @@ import { setDoc, doc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { User, Mail, Lock, ShieldCheck, ArrowLeft, Loader2 } from "lucide-react";
+import { User, Mail, Lock, ShieldCheck, ArrowLeft, Loader2, Eye, EyeOff } from "lucide-react";
 
 export default function CadastroCoordenador() {
   const [nome, setNome] = useState("");
@@ -16,6 +16,7 @@ export default function CadastroCoordenador() {
   const [confirmarSenha, setConfirmarSenha] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
+  const [mostrarSenha, setMostrarSenha] = useState(false); // Estado para o "olhinho"
   const router = useRouter();
 
   const handleCadastro = async (e: React.FormEvent) => {
@@ -94,14 +95,42 @@ export default function CadastroCoordenador() {
               <label style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Senha</label>
               <div style={{ position: "relative" }}>
                 <Lock size={18} style={{ position: "absolute", left: 16, top: 14, color: "var(--terracota)" }} />
-                <input type="password" required value={senha} onChange={(e) => setSenha(e.target.value)} className="input-field" style={{ paddingLeft: 48, height: 48 }} />
+                <input 
+                  type={mostrarSenha ? "text" : "password"} 
+                  required 
+                  value={senha} 
+                  onChange={(e) => setSenha(e.target.value)} 
+                  className="input-field" 
+                  style={{ paddingLeft: 48, paddingRight: 40, height: 48 }} 
+                />
+                <button
+                  type="button" 
+                  onClick={() => setMostrarSenha(!mostrarSenha)}
+                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                >
+                  {mostrarSenha ? <EyeOff size={16} color="var(--gray-mid)" /> : <Eye size={16} color="var(--gray-mid)" />}
+                </button>
               </div>
             </div>
             <div>
               <label style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Confirmar</label>
               <div style={{ position: "relative" }}>
                 <Lock size={18} style={{ position: "absolute", left: 16, top: 14, color: "var(--terracota)" }} />
-                <input type="password" required value={confirmarSenha} onChange={(e) => setConfirmarSenha(e.target.value)} className="input-field" style={{ paddingLeft: 48, height: 48 }} />
+                <input 
+                  type={mostrarSenha ? "text" : "password"} 
+                  required 
+                  value={confirmarSenha} 
+                  onChange={(e) => setConfirmarSenha(e.target.value)} 
+                  className="input-field" 
+                  style={{ paddingLeft: 48, paddingRight: 40, height: 48 }} 
+                />
+                 <button
+                  type="button" 
+                  onClick={() => setMostrarSenha(!mostrarSenha)}
+                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                >
+                  {mostrarSenha ? <EyeOff size={16} color="var(--gray-mid)" /> : <Eye size={16} color="var(--gray-mid)" />}
+                </button>
               </div>
             </div>
           </div>
