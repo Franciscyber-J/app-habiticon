@@ -574,3 +574,18 @@ body {
   border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 8px;
 }
+
+/* Esconder setinhas (spinners) dos inputs do tipo number */
+/* Chrome, Safari, Edge, Opera */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none; /* <-- Linha padrão adicionada para tirar o aviso */
+  margin: 0;
+}
+
+/* Firefox */
+input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield; /* <-- Linha padrão adicionada para tirar o aviso */
+}

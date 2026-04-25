@@ -6,7 +6,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { db, auth } from "@/lib/firebase";
-import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, updateDoc, onSnapshot, query, where } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, updateDoc, onSnapshot, query, where, arrayUnion } from "firebase/firestore";
 import {
   Building2, Settings, Users, MapPin,
   ToggleLeft, ToggleRight, Plus, ExternalLink,
@@ -16,6 +17,9 @@ import {
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { DocumentosConstrutorModal } from "@/components/admin/DocumentosConstrutorModal";
 import { MapaInterativo } from "@/components/mapa/MapaInterativo";
+import { DashboardFinanceiro } from "@/components/admin/DashboardFinanceiro";
+import { GestaoComissoes } from "@/components/admin/GestaoComissoes";
+import { GestaoRecebiveis } from "@/components/admin/GestaoRecebiveis";
 
 // ─────────────────────────────────────────────────────────
 // TIPAGENS E CONSTANTES
@@ -38,6 +42,8 @@ interface Lead {
   whatsapp2?: string;
   timestamp: string;
   modelo?: string;
+  valorImovel?: number;
+  loteReserva?: { valorVenda: number; numero?: string; [key: string]: any };
   nomeCorretor?: string;
   corretorId?: string;
   status?: LeadStatus | string;
@@ -213,10 +219,12 @@ function CardConviteEquipe({ titulo, cargo, path }: { titulo: string, cargo: str
 // ─────────────────────────────────────────────────────────
 
 export default function AdminPage() {
+  const [verificandoAuth, setVerificandoAuth] = useState(true);
+  const [authVerificado, setAuthVerificado] = useState(false);
   const [empreendimentos, setEmpreendimentos] = useState<Empreendimento[]>([]);
   const [todosLeads, setTodosLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"empreendimentos" | "leads" | "arquivos" | "equipe">("empreendimentos");
+  const [tab, setTab] = useState<"empreendimentos" | "leads" | "financeiro" | "equipe" | "recebiveis" | "arquivos">("empreendimentos");
   const [listaCorretores, setListaCorretores] = useState<any[]>([]);
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
 
@@ -231,31 +239,72 @@ export default function AdminPage() {
 
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // Estados do Mapa de Lotes (Visão Geral)
+  // Estados do Mapa de Lotes (Visão Geral e Reserva Direta)
   const [mapaVisaoGeral, setMapaVisaoGeral] = useState<{ aberto: boolean, empreendimento: Empreendimento | null }>({ aberto: false, empreendimento: null });
+  const [mapaReserva, setMapaReserva] = useState<{ aberto: boolean, lead: Lead | null, emp: Empreendimento | null }>({ aberto: false, lead: null, emp: null });
   const [lotesVisaoGeral, setLotesVisaoGeral] = useState<any[]>([]);
   const [loadingVisaoGeral, setLoadingVisaoGeral] = useState(false);
-  const [loteDetalhe, setLoteDetalhe] = useState<any | null>(null); // NOVO: Para ver quem está no lote
+  const [loteDetalhe, setLoteDetalhe] = useState<any | null>(null);
+  
+  // Estado do Formulário de Vínculo de Lote (House)
+  const [loteReservaModal, setLoteReservaModal] = useState<any | null>(null);
+  const [formReserva, setFormReserva] = useState({ modeloId: "", valor: 0 });
+
+  // ESTADOS DA VENDA DIRETA
+  const [modalVendaDireta, setModalVendaDireta] = useState(false);
+  const [novaVenda, setNovaVenda] = useState({ nome: "", whatsapp: "", empreendimentoId: "" });
 
   const router = useRouter();
 
-  // ── SEGURANÇA ──
+  // ── SEGURANÇA CORRIGIDA E SINCRONIZADA ──
   useEffect(() => {
-    const monitorarAcesso = async () => {
-      const user = auth.currentUser;
-      if (!user) { router.push("/login"); return; }
+    let cancelled = false;
 
-      const userDoc = await getDoc(doc(db, "usuarios", user.uid));
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        if (userData.role !== "admin") {
-          router.push(userData.role === "corretor" ? "/painel-corretor" : "/painel-correspondente");
+    auth.authStateReady().then(() => {
+      const unsubAuth = onAuthStateChanged(auth, async (user) => {
+        if (cancelled) return;
+
+        if (!user) {
+          router.replace("/login");
+          setVerificandoAuth(false);
+          return;
         }
-      } else {
-        router.push("/login");
-      }
-    };
-    monitorarAcesso();
+
+        try {
+          if (user.email === "contax002@gmail.com") {
+            setAuthVerificado(true);
+            setVerificandoAuth(false);
+            return;
+          }
+
+          const userDoc = await getDoc(doc(db, "usuarios", user.uid));
+
+          if (cancelled) return;
+
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            if (userData.role !== "admin") {
+              router.replace(userData.role === "corretor" ? "/painel-corretor" : "/painel-correspondente");
+              return;
+            }
+            setAuthVerificado(true);
+          } else {
+            router.replace("/login");
+          }
+        } catch (error) {
+          router.replace("/login");
+        } finally {
+          if (!cancelled) setVerificandoAuth(false);
+        }
+      });
+
+      return () => {
+        cancelled = true;
+        unsubAuth();
+      };
+    });
+
+    return () => { cancelled = true; };
   }, [router]);
 
   // ── CARREGAMENTO DE DADOS ──
@@ -281,11 +330,13 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
+    if (!authVerificado) return;
     const cleanup = carregarDados();
     return () => { cleanup.then(unsub => { if (unsub) unsub(); }); };
-  }, [carregarDados]);
+  }, [carregarDados, authVerificado]);
 
   useEffect(() => {
+    if (!authVerificado) return;
     const qCorretores = query(
       collection(db, "usuarios"),
       where("status", "==", "ativo"),
@@ -300,7 +351,7 @@ export default function AdminPage() {
       console.error("Erro ao carregar corretores:", error);
     });
     return () => unsub();
-  }, []);
+  }, [authVerificado]);
 
   // ─────────────────────────────────────────────────────────
   // FUNÇÕES DE AÇÃO
@@ -376,11 +427,8 @@ export default function AdminPage() {
     if (!confirm("Excluir este lead?\nIsso apagará permanentemente todos os dados. Esta ação não pode ser desfeita.")) return;
 
     try {
-      // 1. Usamos o poder supremo do seu login no navegador para apagar direto no banco de dados!
       await deleteDoc(doc(db, "leads", leadId));
 
-      // 2. Mandamos a API tentar limpar o "lixo" no Storage em background. 
-      // Se a API for bloqueada ao apagar o PDF, não faz mal, o lead já sumiu da tela.
       fetch("/api/leads", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
@@ -465,6 +513,7 @@ export default function AdminPage() {
     }
   };
 
+  // ── MAPA VISÃO GERAL (READ ONLY) ──
   const abrirVisaoGeralMapa = async (emp: Empreendimento) => {
     if (!emp.mapaUrl) {
       alert("Este empreendimento ainda não tem um mapa SVG configurado.");
@@ -485,30 +534,138 @@ export default function AdminPage() {
             snapLotes.forEach(docLote => {
               const data = docLote.data();
               const index = lotesTemp.findIndex(l => l.id === docLote.id);
-              const loteTratado = {
-                id: docLote.id,
-                quadraId: docQuadra.id,
-                ...data,
-                status: quadraBloqueada ? "bloqueado" : data.status
-              };
-
-              if (index >= 0) lotesTemp[index] = loteTratado;
-              else lotesTemp.push(loteTratado);
+              const loteTratado = { id: docLote.id, quadraId: docQuadra.id, ...data, status: quadraBloqueada ? "bloqueado" : data.status };
+              if (index >= 0) lotesTemp[index] = loteTratado; else lotesTemp.push(loteTratado);
             });
             setLotesVisaoGeral([...lotesTemp]);
             resolve();
           });
         });
       });
-
       Promise.all(promises).then(() => setLoadingVisaoGeral(false));
     });
   };
+
+  // ── MAPA PARA VÍNCULO DE LOTE (HOUSE) ──
+  const iniciarReservaMapa = async (lead: Lead) => {
+    const emp = empreendimentos.find(e => e.slug === lead.empreendimentoId);
+    if (!emp) return alert("Empreendimento não encontrado.");
+    if (!emp.mapaUrl) return alert("Este empreendimento ainda não tem um mapa SVG configurado.");
+
+    setMapaReserva({ aberto: true, lead, emp });
+    setLoadingVisaoGeral(true);
+
+    const qQuadras = query(collection(db, "empreendimentos", emp.slug, "quadras"));
+    onSnapshot(qQuadras, (snapQuadras) => {
+      const lotesTemp: any[] = [];
+      let promises = snapQuadras.docs.map(docQuadra => {
+        const quadraBloqueada = docQuadra.data().bloqueada === true;
+        return new Promise<void>((resolve) => {
+          onSnapshot(collection(db, "empreendimentos", emp.slug, "quadras", docQuadra.id, "lotes"), (snapLotes) => {
+            snapLotes.forEach(docLote => {
+              const data = docLote.data();
+              const index = lotesTemp.findIndex(l => l.id === docLote.id);
+              const loteTratado = { id: docLote.id, quadraId: docQuadra.id, ...data, status: quadraBloqueada ? "bloqueado" : data.status };
+              if (index >= 0) lotesTemp[index] = loteTratado; else lotesTemp.push(loteTratado);
+            });
+            setLotesVisaoGeral([...lotesTemp]);
+            resolve();
+          });
+        });
+      });
+      Promise.all(promises).then(() => setLoadingVisaoGeral(false));
+    });
+  };
+
+  const confirmarReservaLote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mapaReserva.lead || !mapaReserva.emp || !loteReservaModal) return;
+
+    const modeloSelecionado = mapaReserva.emp.modelos.find(m => m.id === formReserva.modeloId);
+    if (!modeloSelecionado) return alert("Selecione um modelo da casa.");
+
+    if (formReserva.valor <= 0) return alert("Indique o valor fechado.");
+
+    setUploadingGeral(true);
+    try {
+        // 1. Atualizar o status do Lead e vincular o Lote (Já aprovando direto)
+        await updateDoc(doc(db, "leads", mapaReserva.lead.id), {
+            modelo: modeloSelecionado.nome,
+            valorImovel: formReserva.valor,
+            loteReserva: {
+                numero: loteReservaModal.numero || loteReservaModal.id,
+                quadraId: loteReservaModal.quadraId,
+                loteId: loteReservaModal.id,
+                valorVenda: formReserva.valor
+            },
+            status: "qualificado" // Entra direto no Financeiro
+        });
+
+        // 2. Colocar o Lead na Fila do Lote para bloquear visualmente para os outros
+        const loteRef = doc(db, "empreendimentos", mapaReserva.emp.slug, "quadras", loteReservaModal.quadraId, "lotes", loteReservaModal.id);
+        await updateDoc(loteRef, {
+            fila: arrayUnion({
+                leadId: mapaReserva.lead.id,
+                nomeCliente: mapaReserva.lead.nome,
+                nomeCorretor: "Venda Direta (House)",
+                modeloCasa: modeloSelecionado.nome,
+                valorVenda: formReserva.valor,
+                timestamp: new Date().toISOString()
+            })
+        });
+
+        alert("Lote vinculado e Venda aprovada com sucesso! O cliente já consta na aba de Recebíveis.");
+        setLoteReservaModal(null);
+        setMapaReserva({ aberto: false, lead: null, emp: null });
+    } catch (error) {
+        console.error("Erro ao vincular lote:", error);
+        alert("Erro ao gravar vínculo.");
+    } finally {
+        setUploadingGeral(false);
+    }
+  };
+
+  // ── CRIAR VENDA DIRETA (HOUSE) ──
+  const handleCriarVendaDireta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!novaVenda.nome || !novaVenda.whatsapp || !novaVenda.empreendimentoId) {
+      alert("Preencha todos os campos para criar o cliente.");
+      return;
+    }
+
+    setUploadingGeral(true);
+    try {
+      const emp = empreendimentos.find(e => e.slug === novaVenda.empreendimentoId);
+      const novoId = `lead_int_${Date.now()}`;
+      
+      await setDoc(doc(db, "leads", novoId), {
+        nome: novaVenda.nome,
+        whatsapp: novaVenda.whatsapp,
+        empreendimentoId: novaVenda.empreendimentoId,
+        empreendimentoNome: emp?.nome || "",
+        corretorId: "interno", 
+        nomeCorretor: "Venda Direta (House)",
+        status: "em_atendimento",
+        timestamp: new Date().toISOString(),
+        origem: "painel_admin"
+      });
+
+      setModalVendaDireta(false);
+      setNovaVenda({ nome: "", whatsapp: "", empreendimentoId: "" });
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao registrar cliente.");
+    } finally {
+      setUploadingGeral(false);
+    }
+  };
+
 
   // ── FILTRAGEM DE LEADS ──
   const leadsFiltrados = useMemo(() => {
     if (filtroCorretor === "todos") return todosLeads;
     if (filtroCorretor === "roleta") return todosLeads.filter(l => !l.corretorId);
+    if (filtroCorretor === "interno") return todosLeads.filter(l => l.corretorId === "interno");
     return todosLeads.filter(l => l.corretorId === filtroCorretor);
   }, [todosLeads, filtroCorretor]);
 
@@ -542,7 +699,7 @@ export default function AdminPage() {
           <div>
             <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: "#111" }}>Relatório de Vendas — Habiticon</h1>
             <p style={{ margin: "4px 0 0 0", fontSize: 14, color: "#444" }}>
-              <strong>Filtro Aplicado:</strong> {filtroCorretor === "todos" ? "Todos os Corretores" : filtroCorretor === "roleta" ? "Leads Livres (Roleta)" : listaCorretores.find(c => c.id === filtroCorretor)?.nome}
+              <strong>Filtro Aplicado:</strong> {filtroCorretor === "todos" ? "Todos os Corretores" : filtroCorretor === "roleta" ? "Leads Livres (Roleta)" : filtroCorretor === "interno" ? "Vendas Diretas (House)" : listaCorretores.find(c => c.id === filtroCorretor)?.nome}
             </p>
           </div>
           <div style={{ textAlign: "right", fontSize: 12, color: "#666" }}>
@@ -571,7 +728,7 @@ export default function AdminPage() {
                 <td style={{ padding: "8px" }}>{lead.whatsapp} {lead.whatsapp2 ? ` / ${lead.whatsapp2}` : ""}</td>
                 <td style={{ padding: "8px" }}>{lead.empreendimentoNome || "-"}</td>
                 <td style={{ padding: "8px" }}>{lead.modelo || "-"}</td>
-                <td style={{ padding: "8px" }}>{lead.corretorId ? lead.nomeCorretor : "Não assumido"}</td>
+                <td style={{ padding: "8px" }}>{lead.corretorId === "interno" ? "Venda Direta" : lead.corretorId ? lead.nomeCorretor : "Não assumido"}</td>
                 <td style={{ padding: "8px", textTransform: "capitalize" }}>
                   {(lead.status === "credito_aprovado" ? "Qualificado" : lead.status === "credito_reprovado" ? "Não Qualificado" : lead.status)?.replace(/_/g, " ") || "Novo"}
                 </td>
@@ -581,6 +738,19 @@ export default function AdminPage() {
         </table>
       </div>
     );
+  }
+
+  if (verificandoAuth) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-base)" }}>
+        <div style={{ color: "var(--terracota)", fontWeight: 700, animation: "pulse 2s infinite" }}>Verificando acessos...</div>
+        <style dangerouslySetInnerHTML={{__html: `@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }`}} />
+      </div>
+    );
+  }
+
+  if (!authVerificado) {
+    return null;
   }
 
   // ─────────────────────────────────────────────────────────
@@ -678,12 +848,14 @@ export default function AdminPage() {
           {([
             { id: "empreendimentos", label: "Empreendimentos" },
             { id: "leads", label: `Visão de Vendas (${todosLeads.length})` },
-            { id: "equipe", label: `Equipe e Pagamentos` },
+            { id: "financeiro", label: "Dashboard Financeiro" },
+            { id: "equipe", label: "Equipe e Pagamentos" },
+            { id: "recebiveis", label: "Contratos & Recebíveis" }, 
             { id: "arquivos", label: "Arquivos Padrão" }
           ] as const).map((t) => (
             <button
               key={t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => setTab(t.id as any)}
               style={{
                 padding: "10px 20px", borderRadius: 9, border: "none",
                 fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all 150ms ease",
@@ -823,6 +995,7 @@ export default function AdminPage() {
                 >
                   <option value="todos">Mostrar Todos os Leads</option>
                   <option value="roleta">🔥 Leads Livres (Roleta)</option>
+                  <option value="interno">🏢 Vendas Diretas (House)</option>
                   {listaCorretores.map(c => (
                     <option key={c.id} value={c.id}>Corretor: {c.nome}</option>
                   ))}
@@ -832,17 +1005,31 @@ export default function AdminPage() {
                 </span>
               </div>
 
-              <button
-                onClick={handlePrint}
-                style={{
-                  display: "flex", alignItems: "center", gap: 8, padding: "10px 16px",
-                  background: "var(--terracota-glow)", color: "var(--terracota-light)",
-                  border: "1px solid var(--border-active)", borderRadius: 10,
-                  fontSize: 13, fontWeight: 700, cursor: "pointer"
-                }}
-              >
-                <Printer size={16} /> Relatório PDF
-              </button>
+              <div style={{ display: "flex", gap: 12 }}>
+                <button
+                  onClick={() => setModalVendaDireta(true)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, padding: "10px 16px",
+                    background: "rgba(168,85,247,0.15)", color: "#c084fc",
+                    border: "1px solid rgba(168,85,247,0.3)", borderRadius: 10,
+                    fontSize: 13, fontWeight: 700, cursor: "pointer"
+                  }}
+                >
+                  <Plus size={16} /> Nova Venda Direta
+                </button>
+
+                <button
+                  onClick={handlePrint}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, padding: "10px 16px",
+                    background: "var(--terracota-glow)", color: "var(--terracota-light)",
+                    border: "1px solid var(--border-active)", borderRadius: 10,
+                    fontSize: 13, fontWeight: 700, cursor: "pointer"
+                  }}
+                >
+                  <Printer size={16} /> Relatório PDF
+                </button>
+              </div>
             </div>
 
             {empreendimentos.length === 0 ? (
@@ -889,7 +1076,8 @@ export default function AdminPage() {
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         {leadsEmp.map((lead, i) => {
-                          const estaSolto = !lead.corretorId;
+                          const isInterno = lead.corretorId === "interno";
+                          const estaSolto = !lead.corretorId && !isInterno;
                           const temDossie = !!lead.dossie;
 
                           const isAprovado = lead.status === "qualificado" || lead.status === "credito_aprovado";
@@ -950,7 +1138,12 @@ export default function AdminPage() {
                                         {lead.modelo}
                                       </span>
                                     )}
-                                    {estaSolto ? (
+
+                                    {isInterno ? (
+                                      <span style={{ fontSize: 11, color: "#c084fc", fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "rgba(168,85,247,0.15)", display: "flex", alignItems: "center", gap: 4 }}>
+                                        <Building2 size={12} /> Venda Direta
+                                      </span>
+                                    ) : estaSolto ? (
                                       <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "rgba(239,68,68,0.15)", display: "flex", alignItems: "center", gap: 4 }}>
                                         <Flame size={12} /> Lead Livre
                                       </span>
@@ -981,7 +1174,26 @@ export default function AdminPage() {
                                   {isDecidido && <Lock size={12} />}
                                 </div>
 
-                                {!estaSolto && !isDecidido && (
+                                {/* BOTÃO VINCULAR LOTE (APENAS PARA VENDA DIRETA NÃO VINCULADA) */}
+                                {isInterno && !lead.loteReserva?.numero && !isDecidido && (
+                                  <button
+                                    onClick={() => iniciarReservaMapa(lead)}
+                                    title="Vincular Lote via Mapa"
+                                    style={{
+                                      padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700,
+                                      display: "flex", gap: 6, alignItems: "center",
+                                      cursor: "pointer", transition: "all 0.2s",
+                                      background: "rgba(168,85,247,0.15)",
+                                      border: "1px solid rgba(168,85,247,0.3)",
+                                      color: "#c084fc"
+                                    }}
+                                  >
+                                    <MapIcon size={15} />
+                                    <span className="hidden sm:inline">Vincular Lote</span>
+                                  </button>
+                                )}
+
+                                {!estaSolto && !isInterno && !isDecidido && (
                                   <button
                                     onClick={() => liberarLeadParaRoleta(lead)}
                                     title={`Remover vínculo com ${lead.nomeCorretor || "o corretor"} e liberar para a roleta`}
@@ -1106,10 +1318,27 @@ export default function AdminPage() {
         )}
 
         {/* =========================================================
+            ABA: DASHBOARD FINANCEIRO
+            ========================================================= */}
+        {tab === "financeiro" && (
+          <DashboardFinanceiro
+            leads={todosLeads}
+            empreendimentos={empreendimentos}
+          />
+        )}
+
+        {/* =========================================================
             ABA 3: EQUIPE E PAGAMENTOS
             ========================================================= */}
         {tab === "equipe" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+            {/* NOVO BLOCO DE COMISSÕES */}
+            <GestaoComissoes 
+              leads={todosLeads} 
+              empreendimentos={empreendimentos} 
+              corretores={listaCorretores} 
+            />
 
             <div style={{ background: "rgba(167,139,250,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(167,139,250,0.2)", display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
               <Wallet size={18} color="#a78bfa" style={{ flexShrink: 0 }} />
@@ -1198,6 +1427,16 @@ export default function AdminPage() {
               </div>
             )}
           </div>
+        )}
+
+        {/* =========================================================
+            ABA 5: RECEBÍVEIS (CONTA CORRENTE DO CLIENTE)
+            ========================================================= */}
+        {tab === "recebiveis" as any && (
+          <GestaoRecebiveis 
+            leads={todosLeads} 
+            empreendimentos={empreendimentos} 
+          />
         )}
 
         {/* =========================================================
@@ -1304,6 +1543,61 @@ export default function AdminPage() {
 
       </main>
 
+      {/* MODAL CRIAR VENDA DIRETA */}
+      <AnimatePresence>
+        {modalVendaDireta && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          >
+            <motion.div
+              initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 20, width: "100%", maxWidth: 400, overflow: "hidden" }}
+            >
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
+                  <Building2 size={18} color="#c084fc" /> Venda Direta (House)
+                </h3>
+                <button onClick={() => setModalVendaDireta(false)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+              </div>
+
+              <form onSubmit={handleCriarVendaDireta} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--gray-mid)", marginBottom: 8, textTransform: "uppercase" }}>Nome do Cliente</label>
+                  <input type="text" required className="input-field" value={novaVenda.nome} onChange={e => setNovaVenda({ ...novaVenda, nome: e.target.value })} placeholder="Ex: João da Silva" />
+                </div>
+                
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--gray-mid)", marginBottom: 8, textTransform: "uppercase" }}>WhatsApp</label>
+                  <input type="text" required className="input-field" value={novaVenda.whatsapp} onChange={e => setNovaVenda({ ...novaVenda, whatsapp: e.target.value })} placeholder="(00) 00000-0000" />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--gray-mid)", marginBottom: 8, textTransform: "uppercase" }}>Empreendimento</label>
+                  <select required className="input-field" value={novaVenda.empreendimentoId} onChange={e => setNovaVenda({ ...novaVenda, empreendimentoId: e.target.value })}>
+                    <option value="">Selecione o empreendimento...</option>
+                    {empreendimentos.map(e => <option key={e.slug} value={e.slug}>{e.nome}</option>)}
+                  </select>
+                </div>
+
+                <div style={{ padding: "12px", background: "rgba(168,85,247,0.1)", border: "1px dashed rgba(168,85,247,0.3)", borderRadius: 8, marginTop: 8 }}>
+                  <p style={{ fontSize: 11, color: "#c084fc", lineHeight: 1.5 }}>
+                    Este cliente será criado sem vínculo a nenhum corretor e <strong>não gerará comissão de corretagem</strong>. Você poderá anexar a documentação dele clicando no botão "Dossiê".
+                  </p>
+                </div>
+
+                <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                  <button type="button" onClick={() => setModalVendaDireta(false)} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer" }}>Cancelar</button>
+                  <button type="submit" disabled={uploadingGeral} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "var(--terracota)", border: "none", color: "white", fontWeight: 700, cursor: "pointer" }}>
+                    {uploadingGeral ? "Criando..." : "Criar Venda"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* DOSSIÊ FLUTUANTE — isAdmin=true dá poder total de exclusão */}
       <DossieModal
         isOpen={leadDossieId !== null}
@@ -1319,7 +1613,7 @@ export default function AdminPage() {
         isAdmin={true}
       />
 
-      {/* MODAL DE MAPA INTERATIVO (VISÃO GERAL / READ-ONLY COM DETALHES DE CLIQUE) */}
+      {/* MODAL DE MAPA INTERATIVO (VISÃO GERAL / READ-ONLY) */}
       {mapaVisaoGeral.aberto && mapaVisaoGeral.empreendimento && (
         <div style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,0.9)", backdropFilter: "blur(8px)", display: "flex", flexDirection: "column" }}>
           <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(15,30,22,0.95)" }}>
@@ -1350,6 +1644,107 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* MODAL DE MAPA INTERATIVO (PARA VÍNCULO DE VENDA DIRETA) */}
+      {mapaReserva.aberto && mapaReserva.emp && mapaReserva.lead && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,0.9)", backdropFilter: "blur(8px)", display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(15,30,22,0.95)" }}>
+            <div>
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
+                <MapIcon size={20} color="#c084fc" />
+                Vincular Lote — {mapaReserva.lead.nome}
+              </h2>
+              <p style={{ fontSize: 13, color: "var(--gray-mid)", marginTop: 4 }}>
+                Selecione o lote livre diretamente no mapa para prosseguir.
+              </p>
+            </div>
+            <button onClick={() => setMapaReserva({ aberto: false, lead: null, emp: null })} style={{ padding: 8, background: "rgba(255,255,255,0.1)", borderRadius: 8, border: "none", color: "white", cursor: "pointer" }}>
+              <X size={20} />
+            </button>
+          </div>
+
+          <div style={{ flex: 1, padding: "20px", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
+            {loadingVisaoGeral ? (
+              <div style={{ color: "var(--terracota)", fontWeight: 700, animation: "pulse 2s infinite" }}>Carregando mapa...</div>
+            ) : (
+              <MapaInterativo
+                mapaUrl={mapaReserva.emp.mapaUrl || ""}
+                lotes={lotesVisaoGeral}
+                onLoteClick={(lote) => {
+                  if (lote.status === "vendido" || lote.status === "bloqueado") {
+                    alert("Este lote não está disponível para reserva.");
+                    return;
+                  }
+                  setLoteReservaModal(lote);
+                  if (mapaReserva.emp?.modelos?.length) {
+                    setFormReserva({ modeloId: mapaReserva.emp.modelos[0].id, valor: mapaReserva.emp.modelos[0].valor });
+                  }
+                }}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE FORMULÁRIO DE VÍNCULO (APÓS CLICAR NO MAPA) */}
+      <AnimatePresence>
+        {loteReservaModal && mapaReserva.emp && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, zIndex: 140, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          >
+            <motion.div
+              initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 20, width: "100%", maxWidth: 400, overflow: "hidden" }}
+            >
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
+                  <Building2 size={18} color="#c084fc" /> Configurar Contrato
+                </h3>
+                <button onClick={() => setLoteReservaModal(null)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+              </div>
+
+              <form onSubmit={confirmarReservaLote} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+                
+                <div style={{ padding: "12px 16px", background: "rgba(168,85,247,0.1)", borderRadius: 10, border: "1px solid rgba(168,85,247,0.3)" }}>
+                  <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Lote Selecionado</p>
+                  <p style={{ fontSize: 18, color: "#c084fc", fontWeight: 800 }}>{loteReservaModal.numero || loteReservaModal.id}</p>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--gray-mid)", marginBottom: 8, textTransform: "uppercase" }}>Modelo da Casa</label>
+                  <select required className="input-field" value={formReserva.modeloId} onChange={e => {
+                    const mod = mapaReserva.emp?.modelos.find(m => m.id === e.target.value);
+                    setFormReserva({ modeloId: e.target.value, valor: mod ? mod.valor : 0 });
+                  }}>
+                    {mapaReserva.emp.modelos.map(m => (
+                      <option key={m.id} value={m.id}>{m.nome} — R$ {m.valor.toLocaleString("pt-BR")}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--gray-mid)", marginBottom: 8, textTransform: "uppercase" }}>Valor Fechado na Venda (R$)</label>
+                  <input type="number" required className="input-field" value={formReserva.valor} onChange={e => setFormReserva({ ...formReserva, valor: Number(e.target.value) })} />
+                </div>
+
+                <div style={{ padding: "12px", background: "rgba(74,222,128,0.1)", border: "1px dashed rgba(74,222,128,0.3)", borderRadius: 8, marginTop: 8 }}>
+                  <p style={{ fontSize: 11, color: "#4ade80", lineHeight: 1.5 }}>
+                    Ao confirmar, esta venda será <strong>marcada como aprovada</strong> e transferida imediatamente para a Gestão de Recebíveis.
+                  </p>
+                </div>
+
+                <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                  <button type="button" onClick={() => setLoteReservaModal(null)} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer" }}>Voltar ao Mapa</button>
+                  <button type="submit" disabled={uploadingGeral} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "var(--terracota)", border: "none", color: "white", fontWeight: 700, cursor: "pointer" }}>
+                    {uploadingGeral ? "Gravando..." : "Confirmar Vínculo"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* MODAL DE DETALHES DO LOTE (QUEM ESTÁ NA FILA) */}
       {loteDetalhe && (

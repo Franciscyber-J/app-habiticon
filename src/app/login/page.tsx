@@ -39,27 +39,32 @@ export default function LoginPage() {
           return;
         }
 
-        if (userData.role === "admin")           router.push("/admin");
-        else if (userData.role === "corretor")   router.push("/painel-corretor");
-        else if (userData.role === "correspondente") router.push("/painel-correspondente");
-        else if (userData.role === "coordenador") router.push("/painel-coordenador");
-        else router.push("/");
+        setLoading(false);
+
+        if (userData.role === "admin")                   router.push("/admin");
+        else if (userData.role === "corretor")           router.push("/painel-corretor");
+        else if (userData.role === "correspondente")     router.push("/painel-correspondente");
+        else if (userData.role === "coordenador")        router.push("/painel-coordenador");
+        else                                             router.push("/");
       } else {
+        setLoading(false);
         router.push("/admin");
       }
     } catch (err: any) {
-      // Evita o console.error bruto que aciona a tela de erro do Next.js no ambiente de desenvolvimento
       const errorCode = err?.code || "";
-      
-      // Tratamento elegante do erro do Firebase
-      if (errorCode === "auth/invalid-credential" || errorCode === "auth/wrong-password" || errorCode === "auth/user-not-found") {
+
+      if (
+        errorCode === "auth/invalid-credential" ||
+        errorCode === "auth/wrong-password" ||
+        errorCode === "auth/user-not-found"
+      ) {
         setErro("E-mail ou senha incorretos.");
       } else if (errorCode === "auth/too-many-requests") {
         setErro("Muitas tentativas falhadas. Tente novamente mais tarde.");
       } else {
         setErro("Ocorreu um erro ao tentar acessar. Verifique os dados e tente novamente.");
       }
-      
+
       setLoading(false);
     }
   };

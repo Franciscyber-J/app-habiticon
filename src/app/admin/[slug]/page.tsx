@@ -8,10 +8,10 @@ import { use } from "react";
 import {
   ArrowLeft, Upload, Trash2, Image as ImageIcon,
   DollarSign, FileText, Settings2, Eye, CheckCircle, CheckCircle2,
-  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X, Map, Layers
+  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X, Map, Layers, Wallet
 } from "lucide-react";
 
-type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao" | "mapa";
+type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao" | "mapa" | "comissoes";
 type SaveState = "idle" | "saving" | "saved" | "error";
 interface Params { params: Promise<{ slug: string }> }
 
@@ -33,13 +33,36 @@ function NumInput({ value, onChange, prefix, suffix, step = 1, min = 0, placehol
   const [local, setLocal] = useState(String(value));
   useEffect(() => { setLocal(String(value)); }, [value]);
   const commit = () => { const n = parseFloat(local) || 0; if (n !== value) onChange(n); };
+  
   return (
     <div style={{ position: "relative" }}>
-      {prefix && <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "var(--terracota)", fontWeight: 700, pointerEvents: "none" }}>{prefix}</span>}
-      <input type="number" className="input-field" style={{ paddingLeft: prefix ? 40 : 14, paddingRight: suffix ? 52 : 14, fontSize: 15 }}
-        value={local} step={step} min={min} placeholder={placeholder}
-        onChange={(e) => setLocal(e.target.value)} onBlur={commit} />
-      {suffix && <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "var(--gray-dark)", pointerEvents: "none" }}>{suffix}</span>}
+      {prefix && (
+        <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "var(--terracota)", fontWeight: 700, pointerEvents: "none" }}>
+          {prefix}
+        </span>
+      )}
+      
+      <input 
+        type="number" 
+        className="input-field" 
+        style={{ 
+          paddingLeft: prefix ? 40 : 14, 
+          paddingRight: suffix ? 46 : 14, // Espaço exato para o sufixo (ex: %) sem exagerar
+          fontSize: 15 
+        }}
+        value={local} 
+        step={step} 
+        min={min} 
+        placeholder={placeholder}
+        onChange={(e) => setLocal(e.target.value)} 
+        onBlur={commit} 
+      />
+      
+      {suffix && (
+        <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "var(--gray-dark)", pointerEvents: "none" }}>
+          {suffix}
+        </span>
+      )}
     </div>
   );
 }
@@ -243,7 +266,29 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
       if (f) {
         if (!f.simulador.cub) f.simulador.cub = { bdi:0.18, cubVigente:0 };
         if (!f.simulador.taxaFaixa3Cotista) f.simulador.taxaFaixa3Cotista = 7.66;
-        if (!f.vendaEmOrdem) f.vendaEmOrdem = false; // Novo campo para trava de ordem de lotes
+        if (!f.vendaEmOrdem) f.vendaEmOrdem = false; 
+
+        // INJEÇÃO DA ESTRUTURA DE COMISSÕES PADRÃO SE NÃO EXISTIR
+        if (!f.comissoes) {
+          f.comissoes = {
+            corretor: {
+              percentualTotal: 3,
+              parcelas: [
+                { id: "c1", percentual: 1, gatilho: "72h após assinatura e pagamento da entrada" },
+                { id: "c2", percentual: 1, gatilho: "Na 1ª Medição da PLS da Caixa" },
+                { id: "c3", percentual: 1, gatilho: "Na 2ª Medição da PLS da Caixa" }
+              ]
+            },
+            coordenador: {
+              percentualTotal: 1,
+              parcelas: [
+                { id: "coord1", percentual: 0.5, gatilho: "Após assinatura e pagamento da entrada" },
+                { id: "coord2", percentual: 0.5, gatilho: "Na 1ª Medição da PLS da Caixa" }
+              ]
+            }
+          };
+        }
+
         setEmp(f); setOrig(JSON.parse(JSON.stringify(f)));
       }
       setLoading(false);
@@ -324,19 +369,16 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     await fetch("/api/empreendimentos",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug,field:`vitrine.${tipo}`,value:nova})});
   };
 
-  // Nova função para deletar o mapa SVG
   const removerMapaSVG = async () => {
     if (!emp.mapaUrl) return;
     try {
-        setUploading(true); // Reusando estado de loading visual
-        // Deleta fisicamente no Storage
+        setUploading(true); 
         await fetch("/api/upload", {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ slug, url: emp.mapaUrl, tipo: "mapa_svg" })
         });
         
-        // Remove a URL do banco
         update("mapaUrl", "");
         await fetch("/api/empreendimentos", {
             method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -355,7 +397,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     if (!file) return;
     setUploading(true);
     try {
-        // Se já existe um mapa, apaga o físico antigo antes de subir o novo
         if (emp.mapaUrl) {
             await fetch("/api/upload", {
                 method: "DELETE",
@@ -397,7 +438,8 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     {id:"textos"      as Section, label:"Textos",         icon:FileText,   hint:"Textos e alertas"},
     {id:"mcmv"        as Section, label:"MCMV",           icon:Settings2,  hint:"Faixas e subsídios"},
     {id:"localizacao" as Section, label:"Localização",    icon:MapPin,     hint:"Endereço e mapa"},
-    {id:"mapa"        as Section, label:"Mapa & Lotes",   icon:Map,        hint:"SVG, quadras e lotes"}, // <--- NOVA SEÇÃO AQUI
+    {id:"mapa"        as Section, label:"Mapa & Lotes",   icon:Map,        hint:"SVG, quadras e lotes"}, 
+    {id:"comissoes"   as Section, label:"Comissões",      icon:Wallet,     hint:"Regras de repasse"}, // <--- NOVA SEÇÃO
   ];
 
   const saveCfg = {
@@ -1012,7 +1054,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                 </motion.div>
               )}
 
-              {/* ═══ NOVO MÓDULO: MAPA & LOTES ══════════════════════════════ */}
+              {/* ═══ MÓDULO: MAPA & LOTES ══════════════════════════════ */}
               {section==="mapa"&&(
                 <motion.div key="mapa" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
                   <div>
@@ -1074,6 +1116,131 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                      <Link href={`/admin/${slug}/lotes`} className="btn-primary w-full" style={{ display: "flex", justifyContent: "center", padding: "16px", fontSize: 15 }}>
                         <Layers size={18} /> Abrir Gestor de Lotes e Fila de Clientes
                      </Link>
+                  </Card>
+
+                </motion.div>
+              )}
+
+              {/* ═══ NOVO MÓDULO: REGRAS DE COMISSÃO ══════════════════════════════ */}
+              {section==="comissoes"&&(
+                <motion.div key="comis" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
+                  <div>
+                    <h2 className="text-title" style={{marginBottom:8}}>Regras de Comissão</h2>
+                    <p className="text-body">Defina as percentagens e os gatilhos de pagamento para a equipa neste empreendimento específico. O sistema usará estas regras para gerar a folha de pagamentos automática do Admin.</p>
+                  </div>
+
+                  {/* CORRETOR */}
+                  <Card title="🤝 Comissão do Corretor" subtitle="Regras de repasse para o corretor que fechou a venda.">
+                    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                      <div>
+                        <FieldLabel hint="Percentual total pago sobre o valor da venda do imóvel">Comissão Total (%)</FieldLabel>
+                        <NumInput value={emp.comissoes?.corretor?.percentualTotal || 0} suffix="%" step={0.1} onChange={v=>update("comissoes.corretor.percentualTotal",v)}/>
+                      </div>
+                      
+                      <Hr/>
+                      
+                      <div>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                          <FieldLabel hint="Como o valor total será dividido">Parcelamento e Gatilhos</FieldLabel>
+                          <button onClick={()=>{
+                            const atual = emp.comissoes?.corretor?.parcelas || [];
+                            update("comissoes.corretor.parcelas", [...atual, { id: `c_${Date.now()}`, percentual: 1, gatilho: "" }]);
+                          }} style={{fontSize:12,color:"var(--terracota)",fontWeight:700,background:"transparent",border:"none",cursor:"pointer"}}>
+                            + Adicionar Parcela
+                          </button>
+                        </div>
+                        
+                        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                          {(emp.comissoes?.corretor?.parcelas || []).map((p:any, i:number)=>(
+                            <div key={p.id} style={{display:"flex",gap:12,alignItems:"flex-start",padding:"14px",background:"rgba(0,0,0,0.2)",borderRadius:12,border:"1px solid var(--border-subtle)"}}>
+                              <div style={{width:100,flexShrink:0}}>
+                                <FieldLabel>Porcentagem</FieldLabel>
+                                <NumInput value={p.percentual} suffix="%" step={0.1} onChange={v=>{
+                                  const nova = [...emp.comissoes.corretor.parcelas];
+                                  nova[i].percentual = v;
+                                  update("comissoes.corretor.parcelas", nova);
+                                }}/>
+                              </div>
+                              <div style={{flex:1}}>
+                                <FieldLabel>Gatilho de Pagamento</FieldLabel>
+                                <input type="text" className="input-field" placeholder="Ex: 72h após assinatura..." style={{fontSize:14}} value={p.gatilho} onChange={e=>{
+                                  const nova = [...emp.comissoes.corretor.parcelas];
+                                  nova[i].gatilho = e.target.value;
+                                  update("comissoes.corretor.parcelas", nova);
+                                }}/>
+                              </div>
+                              <button onClick={()=>{
+                                const nova = emp.comissoes.corretor.parcelas.filter((_:any,idx:number)=>idx!==i);
+                                update("comissoes.corretor.parcelas", nova);
+                              }} style={{marginTop:24,padding:10,background:"rgba(239,68,68,0.1)",color:"#ef4444",borderRadius:8,border:"none",cursor:"pointer"}}>
+                                <Trash2 size={16}/>
+                              </button>
+                            </div>
+                          ))}
+                          
+                          {(emp.comissoes?.corretor?.parcelas || []).length === 0 && (
+                             <p style={{fontSize: 13, color: "var(--gray-dark)", textAlign: "center", padding: "16px 0"}}>Nenhuma regra definida. A comissão não será processada.</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* COORDENADOR */}
+                  <Card title="👔 Comissão do Coordenador" subtitle="Repasse para a coordenação da equipa de vendas.">
+                    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                      <div>
+                        <FieldLabel hint="Percentual total pago sobre o valor da venda do imóvel">Comissão Total (%)</FieldLabel>
+                        <NumInput value={emp.comissoes?.coordenador?.percentualTotal || 0} suffix="%" step={0.1} onChange={v=>update("comissoes.coordenador.percentualTotal",v)}/>
+                      </div>
+                      
+                      <Hr/>
+                      
+                      <div>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                          <FieldLabel hint="Como o valor total será dividido">Parcelamento e Gatilhos</FieldLabel>
+                          <button onClick={()=>{
+                            const atual = emp.comissoes?.coordenador?.parcelas || [];
+                            update("comissoes.coordenador.parcelas", [...atual, { id: `coord_${Date.now()}`, percentual: 0.5, gatilho: "" }]);
+                          }} style={{fontSize:12,color:"var(--terracota)",fontWeight:700,background:"transparent",border:"none",cursor:"pointer"}}>
+                            + Adicionar Parcela
+                          </button>
+                        </div>
+                        
+                        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                          {(emp.comissoes?.coordenador?.parcelas || []).map((p:any, i:number)=>(
+                            <div key={p.id} style={{display:"flex",gap:12,alignItems:"flex-start",padding:"14px",background:"rgba(0,0,0,0.2)",borderRadius:12,border:"1px solid var(--border-subtle)"}}>
+                              <div style={{width:100,flexShrink:0}}>
+                                <FieldLabel>Porcentagem</FieldLabel>
+                                <NumInput value={p.percentual} suffix="%" step={0.1} onChange={v=>{
+                                  const nova = [...emp.comissoes.coordenador.parcelas];
+                                  nova[i].percentual = v;
+                                  update("comissoes.coordenador.parcelas", nova);
+                                }}/>
+                              </div>
+                              <div style={{flex:1}}>
+                                <FieldLabel>Gatilho de Pagamento</FieldLabel>
+                                <input type="text" className="input-field" placeholder="Ex: Após assinatura da Caixa..." style={{fontSize:14}} value={p.gatilho} onChange={e=>{
+                                  const nova = [...emp.comissoes.coordenador.parcelas];
+                                  nova[i].gatilho = e.target.value;
+                                  update("comissoes.coordenador.parcelas", nova);
+                                }}/>
+                              </div>
+                              <button onClick={()=>{
+                                const nova = emp.comissoes.coordenador.parcelas.filter((_:any,idx:number)=>idx!==i);
+                                update("comissoes.coordenador.parcelas", nova);
+                              }} style={{marginTop:24,padding:10,background:"rgba(239,68,68,0.1)",color:"#ef4444",borderRadius:8,border:"none",cursor:"pointer"}}>
+                                <Trash2 size={16}/>
+                              </button>
+                            </div>
+                          ))}
+
+                          {(emp.comissoes?.coordenador?.parcelas || []).length === 0 && (
+                             <p style={{fontSize: 13, color: "var(--gray-dark)", textAlign: "center", padding: "16px 0"}}>Nenhuma regra definida para o coordenador.</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </Card>
 
                 </motion.div>
