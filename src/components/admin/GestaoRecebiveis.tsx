@@ -1,24 +1,300 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { db } from "@/lib/firebase";
+import { useState, useMemo, useRef } from "react";
+import { db, storage } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Landmark, ChevronDown, ChevronUp, User, 
   CalendarDays, Plus, Building2, ArrowRightLeft, ShieldAlert,
-  Car
+  Car, FileCheck2, Upload, Send, CheckCircle2, Clock, ExternalLink, X
 } from "lucide-react";
 
 interface GestaoRecebiveisProps {
   leads: any[];
   empreendimentos: any[];
+  onGerarContrato?: (lead: any) => void;
 }
 
 const formatBRL = (val: number) => 
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val || 0);
 
-export function GestaoRecebiveis({ leads, empreendimentos }: GestaoRecebiveisProps) {
+// ─────────────────────────────────────────────────────────
+// COMPONENTE PACOTE DE ASSINATURA
+// ─────────────────────────────────────────────────────────
+
+function PacoteAssinatura({ cliente, empreendimento }: { cliente: any, empreendimento: any }) {
+  const pacote = cliente.pacoteAssinatura || {};
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadando, setUploadando] = useState<string | null>(null);
+  const [seletorMemorial, setSeletorMemorial] = useState(false);
+
+  const documentosPadrao = empreendimento?.documentosPadrao || [];
+
+  const sugestaoMemorial = documentosPadrao.find((d: any) => {
+    const nomeArquivo = (d.nomeOriginal || "").toLowerCase();
+    const modelo = (cliente.modelo || "").toLowerCase();
+    return (
+      (modelo.includes("2q") && nomeArquivo.includes("2q")) ||
+      (modelo.includes("3q") && nomeArquivo.includes("3q")) ||
+      (modelo.includes("2 quart") && (nomeArquivo.includes("2q") || nomeArquivo.includes("2"))) ||
+      (modelo.includes("3 quart") && (nomeArquivo.includes("3q") || nomeArquivo.includes("3"))) ||
+      nomeArquivo.includes("memorial")
+    );
+  });
+
+  const importarMemorial = async (docItem: any) => {
+    try {
+      await updateDoc(doc(db, "leads", cliente.id), {
+        "pacoteAssinatura.memorialDescritivo": {
+          url: docItem.url,
+          nome: docItem.nomeOriginal,
+          data: new Date().toISOString()
+        }
+      });
+      setSeletorMemorial(false);
+    } catch (e) {
+      alert("Erro ao importar memorial.");
+    }
+  };
+
+  const uploadContratoCaixa = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadando("caixa");
+    try {
+      const path = `leads/${cliente.id}/pacote/contrato_caixa_${Date.now()}.pdf`;
+      const storageRef = ref(storage, path);
+      const task = await uploadBytesResumable(storageRef, file);
+      const url = await getDownloadURL(task.ref);
+      await updateDoc(doc(db, "leads", cliente.id), {
+        "pacoteAssinatura.contratoCaixa": {
+          url,
+          nome: file.name,
+          data: new Date().toISOString()
+        }
+      });
+    } catch (e) {
+      alert("Erro ao fazer upload do contrato da Caixa.");
+    } finally {
+      setUploadando(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removerDocumento = async (campo: string) => {
+    if (!confirm("Remover este documento do pacote?")) return;
+    await updateDoc(doc(db, "leads", cliente.id), {
+      [`pacoteAssinatura.${campo}`]: null
+    });
+  };
+
+  const slots = [
+    {
+      id: "contratoHabiticon",
+      label: "Contrato Habiticon",
+      cor: "#fb923c",
+      descricao: "Gerado pelo botão 'Gerar Contrato' e importado automaticamente",
+      dados: pacote.contratoHabiticon,
+      acaoManual: null as (() => void) | null,
+    },
+    {
+      id: "memorialDescritivo",
+      label: "Memorial Descritivo",
+      cor: "#a78bfa",
+      descricao: sugestaoMemorial
+        ? `Sugestão automática: ${sugestaoMemorial.nomeOriginal}`
+        : "Selecione da central de arquivos do empreendimento",
+      dados: pacote.memorialDescritivo,
+      acaoManual: (() => {
+        if (sugestaoMemorial) {
+          importarMemorial(sugestaoMemorial);
+        } else {
+          setSeletorMemorial(true);
+        }
+      }) as (() => void) | null,
+    },
+    {
+      id: "contratoCaixa",
+      label: "Contrato da Caixa",
+      cor: "#38bdf8",
+      descricao: "Upload do PDF gerado pelo correspondente bancário",
+      dados: pacote.contratoCaixa,
+      acaoManual: (() => fileInputRef.current?.click()) as (() => void) | null,
+    },
+  ];
+
+  const totalProntos = slots.filter(s => s.dados).length;
+  const tudoPronto = totalProntos === 3;
+
+  return (
+    <div style={{ borderTop: "1px solid var(--border-subtle)", padding: "20px 24px", background: "rgba(0,0,0,0.15)" }}>
+      
+      <input type="file" ref={fileInputRef} accept=".pdf" onChange={uploadContratoCaixa} style={{ display: "none" }} />
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+        <h5 style={{ fontSize: 14, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
+          <FileCheck2 size={16} color="#a78bfa" />
+          Pacote de Assinatura
+          <span style={{
+            fontSize: 11, padding: "2px 8px", borderRadius: 100, fontWeight: 700,
+            background: tudoPronto ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.05)",
+            color: tudoPronto ? "#4ade80" : "var(--gray-mid)"
+          }}>
+            {totalProntos}/3 prontos
+          </span>
+        </h5>
+
+        {tudoPronto && (
+          <button
+            onClick={() => window.open("https://app.autentique.com.br/", "_blank")}
+            style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "10px 18px",
+              borderRadius: 10, background: "#4ade80", color: "#052e16",
+              border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer",
+              boxShadow: "0 4px 14px rgba(74,222,128,0.3)"
+            }}
+          >
+            <Send size={14} /> Enviar Pacote para Autentique
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {slots.map(slot => (
+          <div
+            key={slot.id}
+            style={{
+              padding: "12px 16px", borderRadius: 12,
+              border: slot.dados ? `1px solid ${slot.cor}40` : "1px solid var(--border-subtle)",
+              background: slot.dados ? `${slot.cor}08` : "rgba(0,0,0,0.2)",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 200 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                background: slot.dados ? `${slot.cor}20` : "rgba(255,255,255,0.05)",
+                display: "flex", alignItems: "center", justifyContent: "center"
+              }}>
+                {slot.dados
+                  ? <CheckCircle2 size={16} color={slot.cor} />
+                  : <Clock size={16} color="var(--gray-dark)" />
+                }
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: slot.dados ? "white" : "var(--gray-mid)" }}>
+                  {slot.label}
+                </p>
+                <p style={{ fontSize: 11, color: slot.dados ? slot.cor : "var(--gray-dark)", marginTop: 2 }}>
+                  {slot.dados ? slot.dados.nome : slot.descricao}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {slot.dados ? (
+                <>
+                  <a
+                    href={slot.dados.url}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{
+                      padding: "6px 12px", borderRadius: 8,
+                      background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)",
+                      color: "var(--gray-light)", fontSize: 11, fontWeight: 700,
+                      textDecoration: "none", display: "flex", alignItems: "center", gap: 4
+                    }}
+                  >
+                    <ExternalLink size={12} /> Ver
+                  </a>
+                  <button
+                    onClick={() => removerDocumento(slot.id)}
+                    style={{
+                      width: 28, height: 28, borderRadius: 6,
+                      background: "rgba(239,68,68,0.1)", border: "none",
+                      color: "#f87171", cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center"
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                </>
+              ) : (
+                slot.acaoManual && (
+                  <button
+                    onClick={slot.acaoManual}
+                    disabled={uploadando === "caixa"}
+                    style={{
+                      padding: "6px 14px", borderRadius: 8,
+                      background: `${slot.cor}15`, border: `1px solid ${slot.cor}40`,
+                      color: slot.cor, fontSize: 11, fontWeight: 700,
+                      cursor: "pointer", display: "flex", alignItems: "center", gap: 6
+                    }}
+                  >
+                    <Upload size={12} />
+                    {slot.id === "contratoCaixa"
+                      ? (uploadando === "caixa" ? "Enviando..." : "Upload PDF")
+                      : (slot.id === "memorialDescritivo" && sugestaoMemorial
+                        ? "Importar Sugestão"
+                        : "Selecionar")
+                    }
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* SELETOR MANUAL DE MEMORIAL */}
+      {seletorMemorial && (
+        <div style={{ marginTop: 12, padding: 16, borderRadius: 12, background: "rgba(167,139,250,0.08)", border: "1px solid rgba(167,139,250,0.2)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa" }}>Selecione o Memorial Descritivo:</p>
+            <button onClick={() => setSeletorMemorial(false)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}>
+              <X size={16} />
+            </button>
+          </div>
+          {documentosPadrao.length === 0 ? (
+            <p style={{ fontSize: 12, color: "var(--gray-dark)" }}>
+              Nenhum arquivo disponível. Faça upload na aba "Arquivos Padrão" do Admin.
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {documentosPadrao.map((d: any, i: number) => (
+                <button
+                  key={i}
+                  onClick={() => importarMemorial(d)}
+                  style={{
+                    padding: "10px 14px", borderRadius: 8,
+                    background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-subtle)",
+                    color: "white", fontSize: 12, fontWeight: 600,
+                    cursor: "pointer", textAlign: "left"
+                  }}
+                >
+                  📄 {d.nomeOriginal}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!tudoPronto && (
+        <p style={{ fontSize: 11, color: "var(--gray-dark)", marginTop: 12, textAlign: "center" }}>
+          O botão de envio para o Autentique aparece quando os 3 documentos estiverem prontos.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// COMPONENTE PRINCIPAL
+// ─────────────────────────────────────────────────────────
+
+export function GestaoRecebiveis({ leads, empreendimentos, onGerarContrato }: GestaoRecebiveisProps) {
   const [expandido, setExpandido] = useState<string | null>(null);
 
   const clientesAtivos = useMemo(() => {
@@ -26,7 +302,6 @@ export function GestaoRecebiveis({ leads, empreendimentos }: GestaoRecebiveisPro
                 .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [leads]);
 
-  // Função ATUALIZADA para aceitar Descrição (Permutas, Sinal, etc)
   const adicionarParcelaEntrada = async (leadId: string, atual: any[]) => {
     const descricao = prompt("O que é este recebimento?\nEx: Sinal em PIX, Mensal, Carro Ônix placa XYZ, Lote Permuta...", "Parcela");
     if (!descricao) return;
@@ -47,7 +322,7 @@ export function GestaoRecebiveis({ leads, empreendimentos }: GestaoRecebiveisPro
       descricao,
       valor,
       vencimento: data,
-      pago: isPermuta ? true : false, // Se for permuta de bem, geralmente o bem já foi entregue
+      pago: isPermuta ? true : false,
       tipo: isPermuta ? "permuta" : "parcela"
     };
 
@@ -128,9 +403,14 @@ export function GestaoRecebiveis({ leads, empreendimentos }: GestaoRecebiveisPro
             const fin = cliente.financeiro || { entrada: [], pls: [] };
             const valorContrato = cliente.loteReserva?.valorVenda || cliente.valorImovel || 0;
 
-            // Totais
             const totalClientePago = fin.entrada.filter((e:any) => e.pago).reduce((acc:number, e:any) => acc + e.valor, 0);
             const totalClientePendente = fin.entrada.filter((e:any) => !e.pago).reduce((acc:number, e:any) => acc + e.valor, 0);
+
+            const prontosPacote = [
+              cliente.pacoteAssinatura?.contratoHabiticon,
+              cliente.pacoteAssinatura?.memorialDescritivo,
+              cliente.pacoteAssinatura?.contratoCaixa
+            ].filter(Boolean).length;
 
             return (
               <div key={cliente.id} style={{ background: "var(--bg-card)", borderRadius: 16, border: "1px solid var(--border-subtle)", overflow: "hidden" }}>
@@ -144,8 +424,27 @@ export function GestaoRecebiveis({ leads, empreendimentos }: GestaoRecebiveisPro
                       {(cliente.nome || "?")[0]}
                     </div>
                     <div>
-                      <h4 style={{ fontSize: 16, fontWeight: 800, color: "white" }}>{cliente.nome}</h4>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <h4 style={{ fontSize: 16, fontWeight: 800, color: "white" }}>{cliente.nome}</h4>
+                        {onGerarContrato && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); onGerarContrato(cliente); }}
+                            style={{ padding: "4px 10px", borderRadius: 6, background: "var(--terracota-glow)", color: "var(--terracota-light)", border: "1px solid var(--border-active)", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                          >
+                            📄 Gerar Contrato
+                          </button>
+                        )}
+                        {prontosPacote > 0 && (
+                          <span style={{
+                            fontSize: 10, padding: "2px 8px", borderRadius: 100, fontWeight: 700,
+                            background: prontosPacote === 3 ? "rgba(74,222,128,0.15)" : "rgba(167,139,250,0.15)",
+                            color: prontosPacote === 3 ? "#4ade80" : "#c084fc"
+                          }}>
+                            📋 {prontosPacote}/3
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                         <span style={{ fontSize: 12, color: "var(--gray-mid)", display: "flex", alignItems: "center", gap: 4 }}>
                           <Building2 size={12} /> {emp?.nome || "Empreendimento"}
                         </span>
@@ -285,6 +584,13 @@ export function GestaoRecebiveis({ leads, empreendimentos }: GestaoRecebiveisPro
                         </div>
 
                       </div>
+
+                      {/* PACOTE DE ASSINATURA */}
+                      <PacoteAssinatura 
+                        cliente={cliente} 
+                        empreendimento={emp}
+                      />
+
                     </motion.div>
                   )}
                 </AnimatePresence>

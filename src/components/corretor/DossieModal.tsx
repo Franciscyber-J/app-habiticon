@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   X, CheckCircle2, FileText, Camera, Loader2, FileCheck2, 
   ExternalLink, FolderOpen, Plus, Users, Trash2, MessageSquareWarning,
-  AlertCircle, Lock, Edit3, Phone
+  AlertCircle, Lock, Edit3, Phone, Send, Clock
 } from "lucide-react";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { doc, updateDoc } from "firebase/firestore";
@@ -67,7 +67,6 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
   const pessoaAtual = dossie[abaAtiva];
   const listaDocumentosPessoa = Object.entries(pessoaAtual?.documentos || {});
   
-  // Calcula o total de ficheiros enviados desta aba para ver se pode ser apagada
   const qtdeArquivosEnviadosAbaAtual = listaDocumentosPessoa.reduce((total: number, [_, doc]: any) => {
     return total + (doc.arquivos ? doc.arquivos.length : 0);
   }, 0);
@@ -148,13 +147,12 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
 
     if (!confirm(`Remover definitivamente a aba de "${dossie[abaAtiva].nome}"?`)) return;
 
-    // Criamos uma cópia e deletamos o ID específico
     const dossieAtualizado = { ...dossie };
     delete dossieAtualizado[abaAtiva];
 
     try {
       await updateDoc(doc(db, "leads", lead.id), { dossie: dossieAtualizado });
-      setAbaAtiva("proponente"); // Volta para o principal
+      setAbaAtiva("proponente");
       mostrarToast("Proponente removido.", "sucesso");
     } catch (error) {
       console.error(error);
@@ -344,6 +342,17 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
   };
 
   // ─────────────────────────────────────────────────────────
+  // DADOS DO PACOTE DE ASSINATURA
+  // ─────────────────────────────────────────────────────────
+  const pacote = lead.pacoteAssinatura || {};
+  const slotsContrato = [
+    { campo: "contratoHabiticon", label: "Contrato Habiticon", cor: "#fb923c" },
+    { campo: "memorialDescritivo", label: "Memorial Descritivo", cor: "#a78bfa" },
+    { campo: "contratoCaixa",      label: "Contrato da Caixa",  cor: "#38bdf8" },
+  ];
+  const totalProntosContrato = slotsContrato.filter(s => pacote[s.campo]).length;
+
+  // ─────────────────────────────────────────────────────────
   // RENDERIZAÇÃO
   // ─────────────────────────────────────────────────────────
   const totalEnviados = listaDocumentosPessoa.filter(([_, doc]: any) => doc.arquivos && doc.arquivos.length > 0).length;
@@ -420,7 +429,6 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
                     <strong style={{ color: "var(--gray-light)" }}>{lead.nome}</strong> • {lead.empreendimentoNome}
                   </p>
                   
-                  {/* NOVO: EXIBIÇÃO DOS NÚMEROS DE CONTACTO NO DOSSIÊ */}
                   <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
                      <a 
                        href={`https://wa.me/55${(lead.whatsapp || "").replace(/\D/g, "")}`} 
@@ -448,7 +456,7 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
               </div>
             </div>
 
-            {/* ── ABAS DE PESSOAS (COM FIX CSS DE OVERFLOW + SPACER E BOTÕES DE EDICAO) ── */}
+            {/* ── ABAS DE PESSOAS ── */}
             <div style={{ position: "relative" }}>
               <div style={{ 
                 display: "flex", gap: 8, paddingTop: 12, paddingLeft: 24, 
@@ -478,8 +486,6 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
                 >
                   <Plus size={14} /> Compositor
                 </button>
-                
-                {/* Spacer invisível para impedir que o último item fique cortado no scroll */}
                 <div style={{ flexShrink: 0, width: 24 }} />
               </div>
             </div>
@@ -493,7 +499,6 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
                     <p style={{ fontSize: 14, fontWeight: 700, color: "#fb923c" }}>Anexos de {pessoaAtual?.nome}</p>
                     
-                    {/* Botões de Ação da Aba Ativa (Se não for a Proponente Principal) */}
                     {abaAtiva !== "proponente" && (
                       <div style={{ display: "flex", gap: 6 }}>
                         <button 
@@ -634,6 +639,63 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
                     </div>
                   );
                 })}
+              </div>
+
+              {/* ── PACOTE DE ASSINATURA (RESTRITO AO ADMIN) ── */}
+              <div style={{ borderRadius: 14, border: isAdmin ? "1px solid rgba(167,139,250,0.25)" : "1px solid var(--border-subtle)", overflow: "hidden" }}>
+                <div style={{ padding: "14px 16px", background: isAdmin ? "rgba(167,139,250,0.08)" : "rgba(0,0,0,0.2)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <FileCheck2 size={16} color={isAdmin ? "#a78bfa" : "var(--gray-dark)"} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: isAdmin ? "#a78bfa" : "var(--gray-dark)" }}>
+                      Pacote de Assinatura
+                    </span>
+                    {!isAdmin && (
+                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 100, background: "rgba(255,255,255,0.05)", color: "var(--gray-dark)", display: "flex", alignItems: "center", gap: 4 }}>
+                        <Lock size={10} /> Restrito à Construtora
+                      </span>
+                    )}
+                  </div>
+                  {isAdmin && (
+                    <span style={{ fontSize: 11, color: "var(--gray-mid)" }}>{totalProntosContrato}/3 prontos</span>
+                  )}
+                </div>
+
+                {isAdmin ? (
+                  <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+                    {slotsContrato.map(item => {
+                      const dados = pacote[item.campo];
+                      return (
+                        <div key={item.campo} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 8, background: dados ? `${item.cor}10` : "rgba(0,0,0,0.15)", border: dados ? `1px solid ${item.cor}30` : "1px solid var(--border-subtle)" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            {dados ? <CheckCircle2 size={14} color={item.cor} /> : <Clock size={14} color="var(--gray-dark)" />}
+                            <div>
+                              <p style={{ fontSize: 12, fontWeight: 700, color: dados ? "white" : "var(--gray-mid)" }}>{item.label}</p>
+                              {dados && <p style={{ fontSize: 10, color: item.cor, marginTop: 1 }}>{dados.nome}</p>}
+                            </div>
+                          </div>
+                          {dados && (
+                            <a href={dados.url} target="_blank" rel="noopener noreferrer" style={{ padding: "4px 10px", borderRadius: 6, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "var(--gray-light)", fontSize: 10, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                              <ExternalLink size={10} /> Abrir
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {totalProntosContrato === 3 && (
+                      <button
+                        onClick={() => window.open("https://app.autentique.com.br/", "_blank")}
+                        style={{ marginTop: 8, padding: "12px", borderRadius: 10, background: "#4ade80", color: "#052e16", border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 4px 14px rgba(74,222,128,0.3)" }}
+                      >
+                        <Send size={14} /> Enviar Pacote para Autentique
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ padding: "20px 16px", textAlign: "center" }}>
+                    <p style={{ fontSize: 12, color: "var(--gray-dark)" }}>Os contratos são gerenciados internamente pela construtora.</p>
+                  </div>
+                )}
               </div>
 
               {/* Botão Extra */}
