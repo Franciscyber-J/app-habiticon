@@ -1,96 +1,73 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
-import { collection, getDocs, doc, setDoc, updateDoc } from "firebase/firestore";
-import { promises as fs } from "fs";
-import path from "path";
+import { adminDb } from "@/lib/firebase-admin";
 
-// Evita o cache agressivo do Next.js para garantir dados sempre frescos
 export const dynamic = "force-dynamic";
 
 // ─────────────────────────────────────────────────────────
-// GET /api/empreendimentos — Busca do Firebase + Auto-Migração
+// GET /api/empreendimentos — Busca todos do Firebase
 // ─────────────────────────────────────────────────────────
 export async function GET() {
   try {
-    const empRef = collection(db, "empreendimentos");
-    const snapshot = await getDocs(empRef);
-    
-    let empreendimentos = snapshot.docs.map(doc => doc.data());
-    
-    // Se o banco do Firebase estiver vazio, ele lê o seu arquivo JSON original
-    // e planta tudo perfeitamente dentro do Firebase de forma automática.
-    if (empreendimentos.length === 0) {
-       console.log("Banco vazio! Migrando dados do JSON para o Firebase...");
-       
-       const DATA_FILE = path.join(process.cwd(), "src/data/empreendimentos.json");
-       const raw = await fs.readFile(DATA_FILE, "utf-8");
-       const jsonOriginal = JSON.parse(raw);
-
-       for (const emp of jsonOriginal) {
-         if (emp.slug) {
-           await setDoc(doc(db, "empreendimentos", emp.slug), emp);
-         }
-       }
-       
-       empreendimentos = jsonOriginal;
-       console.log("Migração para o Firebase concluída com sucesso!");
-    }
-
+    const snapshot = await adminDb.collection("empreendimentos").get();
+    const empreendimentos = snapshot.docs.map(doc => doc.data());
     return NextResponse.json(empreendimentos);
   } catch (error) {
-    console.error("Erro ao buscar empreendimentos no Firebase:", error);
+    console.error("Erro ao buscar empreendimentos:", error);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }
 
 // ─────────────────────────────────────────────────────────
-// PUT /api/empreendimentos — Salva lista inteira
+// PUT /api/empreendimentos — Salva lista inteira via batch
 // ─────────────────────────────────────────────────────────
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
-    
+
     if (!Array.isArray(body)) {
       return NextResponse.json({ error: "Esperado array" }, { status: 400 });
     }
 
+    const batch = adminDb.batch();
+
     for (const emp of body) {
       if (emp.slug) {
-        // Sanitiza undefined values antes de enviar ao Firebase
+        // Remove undefined values que o Firebase não aceita
         const empLimpo = JSON.parse(JSON.stringify(emp));
-        await setDoc(doc(db, "empreendimentos", emp.slug), empLimpo);
+        const ref = adminDb.collection("empreendimentos").doc(emp.slug);
+        batch.set(ref, empLimpo);
       }
     }
 
+    await batch.commit();
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Erro ao fazer PUT no Firebase:", error);
+    console.error("Erro ao fazer PUT:", error);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }
 
 // ─────────────────────────────────────────────────────────
-// PATCH /api/empreendimentos — Atualização cirúrgica
+// PATCH /api/empreendimentos — Atualização cirúrgica de campo
 // ─────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
   try {
     const { slug, field, value } = await req.json();
-    
+
     if (!slug || !field) {
       return NextResponse.json({ error: "Slug e Field são obrigatórios" }, { status: 400 });
     }
 
-    const docRef = doc(db, "empreendimentos", slug);
-    
-    // Suporte nativo do Firebase para dot notation (ex: vitrine.ambientes.sala)
+    // Remove undefined values
     const valueLimpo = JSON.parse(JSON.stringify({ v: value })).v;
-    await updateDoc(docRef, {
+
+    await adminDb.collection("empreendimentos").doc(slug).update({
       [field]: valueLimpo
     });
-    
+
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Erro ao fazer PATCH no Firebase:", error);
+    console.error("Erro ao fazer PATCH:", error);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }
