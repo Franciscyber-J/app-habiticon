@@ -56,7 +56,9 @@ export async function PUT(req: NextRequest) {
 
     for (const emp of body) {
       if (emp.slug) {
-        await setDoc(doc(db, "empreendimentos", emp.slug), emp);
+        // Sanitiza undefined values antes de enviar ao Firebase
+        const empLimpo = JSON.parse(JSON.stringify(emp));
+        await setDoc(doc(db, "empreendimentos", emp.slug), empLimpo);
       }
     }
 
@@ -81,10 +83,11 @@ export async function PATCH(req: NextRequest) {
     const docRef = doc(db, "empreendimentos", slug);
     
     // Suporte nativo do Firebase para dot notation (ex: vitrine.ambientes.sala)
+    const valueLimpo = JSON.parse(JSON.stringify({ v: value })).v;
     await updateDoc(docRef, {
-      [field]: value
+      [field]: valueLimpo
     });
-
+    
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Erro ao fazer PATCH no Firebase:", error);
