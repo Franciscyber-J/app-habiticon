@@ -12,7 +12,7 @@ import {
   Building2, Settings, Users, MapPin,
   ToggleLeft, ToggleRight, Plus, ExternalLink,
   ArrowLeft, ChevronRight, Phone, MessageCircle,
-  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info, Printer, Wallet, UserCircle, Map as MapIcon, X, Menu
+  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info, Printer, Wallet, UserCircle, Map as MapIcon, X, Menu, ShieldCheck, ToggleLeft as EyeOff, ToggleRight as EyeOn
 } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { DocumentosConstrutorModal } from "@/components/admin/DocumentosConstrutorModal";
@@ -22,7 +22,7 @@ import { GestaoComissoes } from "@/components/admin/GestaoComissoes";
 import { GestaoRecebiveis } from "@/components/admin/GestaoRecebiveis";
 import { GeradorContratoModal } from "@/components/admin/GeradorContratoModal";
 
-// ── IMPORTAÇÕES NOVAS (FRAGMENTAÇÃO DO LAYOUT) ──
+// ── IMPORTAÇÕES DA FRAGMENTAÇÃO DO LAYOUT ──
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AbaEmpreendimentos } from "@/components/admin/AbaEmpreendimentos";
 
@@ -55,6 +55,7 @@ interface Lead {
   dossie?: any;
   documentosConstrutora?: any;
   propostaUrl?: string;
+  correspondentesBloqueados?: string[]; // ← CAMPO DE CONTROLE DE ACESSO
 }
 
 interface DocumentoPadrao {
@@ -76,7 +77,7 @@ interface Empreendimento {
 }
 
 // ─────────────────────────────────────────────────────────
-// COMPONENTES AUXILIARES (Mantidos conforme original)
+// COMPONENTES AUXILIARES
 // ─────────────────────────────────────────────────────────
 
 function CopyLinkButton({ link }: { link: string }) {
@@ -153,7 +154,7 @@ function CardConviteEquipe({ titulo, cargo, path }: { titulo: string, cargo: str
 }
 
 // ─────────────────────────────────────────────────────────
-// COMPONENTE PRINCIPAL (ORQUESTRAÇÃO E ESTADOS)
+// COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -163,11 +164,11 @@ export default function AdminPage() {
   const [todosLeads, setTodosLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // ── ESTADOS DE NAVEGAÇÃO DA SIDEBAR ──
   const [tab, setTab] = useState<"empreendimentos" | "leads" | "financeiro" | "equipe" | "recebiveis" | "arquivos">("empreendimentos");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [listaCorretores, setListaCorretores] = useState<any[]>([]);
+  const [listaCorrespondentes, setListaCorrespondentes] = useState<any[]>([]); // ← NOVO
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
 
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
@@ -181,7 +182,7 @@ export default function AdminPage() {
 
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // Estados do Mapa de Lotes 
+  // Estados do Mapa de Lotes
   const [mapaVisaoGeral, setMapaVisaoGeral] = useState<{ aberto: boolean, empreendimento: Empreendimento | null }>({ aberto: false, empreendimento: null });
   const [mapaReserva, setMapaReserva] = useState<{ aberto: boolean, lead: Lead | null, emp: Empreendimento | null }>({ aberto: false, lead: null, emp: null });
   const [lotesVisaoGeral, setLotesVisaoGeral] = useState<any[]>([]);
@@ -191,10 +192,14 @@ export default function AdminPage() {
   const [loteReservaModal, setLoteReservaModal] = useState<any | null>(null);
   const [formReserva, setFormReserva] = useState({ modeloId: "", valor: 0 });
 
-  // ESTADOS DA VENDA DIRETA
+  // Estado da Venda Direta
   const [modalVendaDireta, setModalVendaDireta] = useState(false);
   const [novaVenda, setNovaVenda] = useState({ nome: "", whatsapp: "", empreendimentoId: "" });
   const [leadParaContrato, setLeadParaContrato] = useState<any | null>(null);
+
+  // ← ESTADO DO MODAL DE ACESSO DE CORRESPONDENTES
+  const [modalAcessoLead, setModalAcessoLead] = useState<Lead | null>(null);
+  const [salvandoAcesso, setSalvandoAcesso] = useState(false);
 
   const router = useRouter();
 
@@ -245,6 +250,7 @@ export default function AdminPage() {
     return () => { cleanup.then(unsub => { if (unsub) unsub(); }); };
   }, [carregarDados, authVerificado]);
 
+  // ── CARREGA CORRETORES ──
   useEffect(() => {
     if (!authVerificado) return;
     const qCorretores = query(collection(db, "usuarios"), where("status", "==", "ativo"), where("role", "==", "corretor"));
@@ -255,8 +261,19 @@ export default function AdminPage() {
     return () => unsub();
   }, [authVerificado]);
 
+  // ← CARREGA CORRESPONDENTES
+  useEffect(() => {
+    if (!authVerificado) return;
+    const qCorrespondentes = query(collection(db, "usuarios"), where("status", "==", "ativo"), where("role", "==", "correspondente"));
+    const unsub = onSnapshot(qCorrespondentes, (snapshot) => {
+      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any)).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+      setListaCorrespondentes(data);
+    }, (error) => console.error("Erro ao carregar correspondentes:", error));
+    return () => unsub();
+  }, [authVerificado]);
+
   // ─────────────────────────────────────────────────────────
-  // FUNÇÕES DE AÇÃO 
+  // FUNÇÕES DE AÇÃO
   // ─────────────────────────────────────────────────────────
 
   const criarEmpreendimento = useCallback(async () => {
@@ -444,6 +461,32 @@ export default function AdminPage() {
     } catch (err) { alert("Erro ao registrar cliente."); } finally { setUploadingGeral(false); }
   };
 
+  // ← FUNÇÃO DE TOGGLE DE ACESSO POR CORRESPONDENTE
+  const toggleAcessoCorrespondente = async (correspondentId: string) => {
+    if (!modalAcessoLead) return;
+    setSalvandoAcesso(true);
+    try {
+      const bloqueadosAtuais: string[] = modalAcessoLead.correspondentesBloqueados || [];
+      const jaBloqueado = bloqueadosAtuais.includes(correspondentId);
+      
+      const novosBloqueados = jaBloqueado
+        ? bloqueadosAtuais.filter(id => id !== correspondentId) // desbloquear
+        : [...bloqueadosAtuais, correspondentId];               // bloquear
+
+      await updateDoc(doc(db, "leads", modalAcessoLead.id), {
+        correspondentesBloqueados: novosBloqueados
+      });
+
+      // Atualiza estado local do modal para refletir imediatamente
+      setModalAcessoLead(prev => prev ? { ...prev, correspondentesBloqueados: novosBloqueados } : null);
+    } catch (error) {
+      console.error("Erro ao alterar acesso:", error);
+      alert("Erro ao salvar. Tente novamente.");
+    } finally {
+      setSalvandoAcesso(false);
+    }
+  };
+
   const leadsFiltrados = useMemo(() => {
     if (filtroCorretor === "todos") return todosLeads;
     if (filtroCorretor === "roleta") return todosLeads.filter(l => !l.corretorId);
@@ -504,6 +547,7 @@ export default function AdminPage() {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-base)" }}>
         <div style={{ color: "var(--terracota)", fontWeight: 700, animation: "pulse 2s infinite" }}>Verificando acessos...</div>
+        <style dangerouslySetInnerHTML={{__html: `@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }`}} />
       </div>
     );
   }
@@ -513,7 +557,7 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen flex" style={{ background: "var(--bg-base)" }}>
       
-      {/* SIDEBAR REAPROVEITADA */}
+      {/* SIDEBAR */}
       <AdminSidebar 
         tab={tab} 
         setTab={setTab} 
@@ -525,20 +569,10 @@ export default function AdminPage() {
 
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         
-        {/* CABEÇALHO MOBILE BLINDADO DENTRO DO CONTEÚDO */}
+        {/* HEADER MOBILE */}
         <div className="lg:hidden">
-          <header style={{
-            display: "flex", alignItems: "center", gap: 12,
-            padding: "12px 16px", background: "rgba(15,30,22,0.98)",
-            borderBottom: "1px solid var(--border-subtle)",
-            position: "sticky", top: 0, zIndex: 30,
-          }}>
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
-              width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-subtle)",
-              cursor: "pointer", color: "var(--gray-light)",
-            }}>
+          <header style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "rgba(15,30,22,0.98)", borderBottom: "1px solid var(--border-subtle)", position: "sticky", top: 0, zIndex: 30 }}>
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-subtle)", cursor: "pointer", color: "var(--gray-light)" }}>
               {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
             </button>
             <Image src="/logo.png" alt="Habiticon" width={140} height={40} style={{ height: 36, width: "auto" }} priority />
@@ -574,9 +608,9 @@ export default function AdminPage() {
           <AnimatePresence mode="wait">
             <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
               
+              {/* ABA: EMPREENDIMENTOS */}
               {tab === "empreendimentos" && (
                 <>
-                  {/* LINKS DE CONVITE (Apenas nesta aba) */}
                   <div style={{ marginBottom: 40 }}>
                     <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--gray-light)", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
                       <Users size={18} color="var(--terracota)" /> Links de Convite de Equipe
@@ -587,8 +621,6 @@ export default function AdminPage() {
                       <CardConviteEquipe titulo="Coordenador de Vendas" cargo="coordenadores" path="/cadastro-coordenador" />
                     </div>
                   </div>
-
-                  {/* ABA FRAGMENTADA INJETADA */}
                   <AbaEmpreendimentos 
                     empreendimentos={empreendimentos}
                     todosLeads={todosLeads}
@@ -672,6 +704,8 @@ export default function AdminPage() {
                                 const isReprovado = lead.status === "nao_qualificado" || lead.status === "credito_reprovado";
                                 const isDecidido = isAprovado || isReprovado;
                                 const statusAjustado = (lead.status === "credito_aprovado" ? "qualificado" : lead.status === "credito_reprovado" ? "nao_qualificado" : lead.status) ?? "em_atendimento";
+                                // ← Conta quantos correspondentes estão bloqueados neste lead
+                                const qtdeBloqueados = (lead.correspondentesBloqueados || []).length;
 
                                 return (
                                   <motion.div key={lead.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ delay: i * 0.03 }} style={{ padding: "16px 20px", background: "var(--bg-card)", border: estaSolto ? "1px solid rgba(239,68,68,0.5)" : `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? "var(--border-subtle)"}`, borderRadius: 14, display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between", alignItems: "center", position: "relative", overflow: "hidden" }}>
@@ -707,6 +741,31 @@ export default function AdminPage() {
                                         {STATUS_LEAD[statusAjustado as LeadStatus]?.label ?? "Em atendimento"}
                                         {isDecidido && <Lock size={12} />}
                                       </div>
+
+                                      {/* ← BOTÃO DE ACESSO DE CORRESPONDENTES */}
+                                      {listaCorrespondentes.length > 0 && (
+                                        <button
+                                          onClick={() => {
+                                            // Sincroniza o lead mais recente do state antes de abrir o modal
+                                            const leadAtualizado = todosLeads.find(l => l.id === lead.id) || lead;
+                                            setModalAcessoLead(leadAtualizado);
+                                          }}
+                                          title="Gerir acesso dos correspondentes"
+                                          style={{
+                                            padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                                            display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
+                                            background: qtdeBloqueados > 0 ? "rgba(239,68,68,0.1)" : "rgba(56,189,248,0.1)",
+                                            border: qtdeBloqueados > 0 ? "1px solid rgba(239,68,68,0.3)" : "1px solid rgba(56,189,248,0.3)",
+                                            color: qtdeBloqueados > 0 ? "#f87171" : "#38bdf8"
+                                          }}
+                                        >
+                                          <ShieldCheck size={14} />
+                                          <span className="hidden sm:inline">
+                                            {qtdeBloqueados > 0 ? `${qtdeBloqueados} bloqueado${qtdeBloqueados > 1 ? "s" : ""}` : "Acesso"}
+                                          </span>
+                                        </button>
+                                      )}
+
                                       {isInterno && !lead.loteReserva?.numero && !isDecidido && (
                                         <button onClick={() => iniciarReservaMapa(lead)} title="Vincular Lote via Mapa" style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, alignItems: "center", cursor: "pointer", transition: "all 0.2s", background: "rgba(168,85,247,0.15)", border: "1px solid rgba(168,85,247,0.3)", color: "#c084fc" }}>
                                           <MapIcon size={15} /> <span className="hidden sm:inline">Vincular Lote</span>
@@ -786,14 +845,8 @@ export default function AdminPage() {
                           </div>
                           <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 16 }}>
                             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                <span style={{ fontSize: 11, color: "var(--gray-dark)", textTransform: "uppercase", fontWeight: 700 }}>E-mail</span>
-                                <span style={{ fontSize: 12, color: "var(--gray-light)", fontWeight: 600 }}>{corretor.email}</span>
-                              </div>
-                              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                <span style={{ fontSize: 11, color: "var(--gray-dark)", textTransform: "uppercase", fontWeight: 700 }}>WhatsApp</span>
-                                <span style={{ fontSize: 12, color: "var(--gray-light)", fontWeight: 600 }}>{corretor.telefone || "-"}</span>
-                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 11, color: "var(--gray-dark)", textTransform: "uppercase", fontWeight: 700 }}>E-mail</span><span style={{ fontSize: 12, color: "var(--gray-light)", fontWeight: 600 }}>{corretor.email}</span></div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 11, color: "var(--gray-dark)", textTransform: "uppercase", fontWeight: 700 }}>WhatsApp</span><span style={{ fontSize: 12, color: "var(--gray-light)", fontWeight: 600 }}>{corretor.telefone || "-"}</span></div>
                             </div>
                             <div style={{ height: 1, background: "var(--border-subtle)" }} />
                             <div>
@@ -818,7 +871,7 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {/* ABA: RECEBÍVEIS E CONTRATOS */}
+              {/* ABA: RECEBÍVEIS */}
               {tab === "recebiveis" && <GestaoRecebiveis leads={todosLeads} empreendimentos={empreendimentos} onGerarContrato={setLeadParaContrato} />}
 
               {/* ABA: ARQUIVOS PADRÃO */}
@@ -879,6 +932,8 @@ export default function AdminPage() {
       </div>
 
       {/* ── MODAIS ── */}
+
+      {/* MODAL VENDA DIRETA */}
       <AnimatePresence>
         {modalVendaDireta && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
@@ -898,13 +953,117 @@ export default function AdminPage() {
                   </select>
                 </div>
                 <div style={{ padding: "12px", background: "rgba(168,85,247,0.1)", border: "1px dashed rgba(168,85,247,0.3)", borderRadius: 8, marginTop: 8 }}>
-                  <p style={{ fontSize: 11, color: "#c084fc", lineHeight: 1.5 }}>Este cliente será criado sem vínculo a nenhum corretor e <strong>não gerará comissão de corretagem</strong>. Você poderá anexar a documentação dele clicando no botão "Dossiê".</p>
+                  <p style={{ fontSize: 11, color: "#c084fc", lineHeight: 1.5 }}>Este cliente será criado sem vínculo a nenhum corretor e <strong>não gerará comissão de corretagem</strong>.</p>
                 </div>
                 <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
                   <button type="button" onClick={() => setModalVendaDireta(false)} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer" }}>Cancelar</button>
                   <button type="submit" disabled={uploadingGeral} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "var(--terracota)", border: "none", color: "white", fontWeight: 700, cursor: "pointer" }}>{uploadingGeral ? "Criando..." : "Criar Venda"}</button>
                 </div>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ← MODAL DE CONTROLE DE ACESSO DOS CORRESPONDENTES */}
+      <AnimatePresence>
+        {modalAcessoLead && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+            onClick={(e) => { if (e.target === e.currentTarget) setModalAcessoLead(null); }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 20, width: "100%", maxWidth: 480, overflow: "hidden", maxHeight: "90vh", display: "flex", flexDirection: "column" }}
+            >
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", background: "rgba(0,0,0,0.2)" }}>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
+                    <ShieldCheck size={18} color="#38bdf8" /> Acesso de Correspondentes
+                  </h3>
+                  <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>
+                    Lead: <strong style={{ color: "var(--gray-light)" }}>{modalAcessoLead.nome}</strong>
+                  </p>
+                </div>
+                <button onClick={() => setModalAcessoLead(null)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+              </div>
+
+              <div style={{ padding: "16px 24px", background: "rgba(56,189,248,0.06)", borderBottom: "1px solid var(--border-subtle)", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <Info size={15} color="#38bdf8" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 12, color: "var(--gray-light)", lineHeight: 1.6 }}>
+                  Correspondentes com acesso <strong style={{ color: "#4ade80" }}>ligado</strong> veem este lead normalmente. Com acesso <strong style={{ color: "#f87171" }}>desligado</strong>, o lead simplesmente não aparece para eles — sem nenhum aviso ou mensagem de bloqueio.
+                </p>
+              </div>
+
+              <div style={{ overflowY: "auto", flex: 1, padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+                {listaCorrespondentes.length === 0 ? (
+                  <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                    <p style={{ fontSize: 13, color: "var(--gray-dark)" }}>Nenhum correspondente cadastrado ainda.</p>
+                  </div>
+                ) : (
+                  listaCorrespondentes.map((correspondente) => {
+                    const bloqueados = modalAcessoLead.correspondentesBloqueados || [];
+                    const estaBloqueado = bloqueados.includes(correspondente.id);
+                    const temAcesso = !estaBloqueado;
+
+                    return (
+                      <div
+                        key={correspondente.id}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: "14px 16px", borderRadius: 12,
+                          background: temAcesso ? "rgba(74,222,128,0.05)" : "rgba(239,68,68,0.05)",
+                          border: temAcesso ? "1px solid rgba(74,222,128,0.2)" : "1px solid rgba(239,68,68,0.2)",
+                          transition: "all 0.2s"
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <div style={{
+                            width: 38, height: 38, borderRadius: 10,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontWeight: 800, fontSize: 15,
+                            background: temAcesso ? "rgba(74,222,128,0.15)" : "rgba(239,68,68,0.15)",
+                            color: temAcesso ? "#4ade80" : "#f87171",
+                            border: temAcesso ? "1px solid rgba(74,222,128,0.3)" : "1px solid rgba(239,68,68,0.3)"
+                          }}>
+                            {(correspondente.nome || "?")[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <p style={{ fontSize: 14, fontWeight: 700, color: "white" }}>{correspondente.nome}</p>
+                            <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 2 }}>{correspondente.email}</p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => toggleAcessoCorrespondente(correspondente.id)}
+                          disabled={salvandoAcesso}
+                          style={{
+                            padding: "8px 16px", borderRadius: 10, cursor: salvandoAcesso ? "not-allowed" : "pointer",
+                            fontWeight: 800, fontSize: 12, border: "none", transition: "all 0.2s",
+                            background: temAcesso ? "rgba(74,222,128,0.2)" : "rgba(239,68,68,0.2)",
+                            color: temAcesso ? "#4ade80" : "#f87171",
+                            opacity: salvandoAcesso ? 0.5 : 1,
+                            display: "flex", alignItems: "center", gap: 6
+                          }}
+                        >
+                          {temAcesso ? (
+                            <><ToggleRight size={16} /> LIGADO</>
+                          ) : (
+                            <><ToggleLeft size={16} /> DESLIGADO</>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={() => setModalAcessoLead(null)} style={{ padding: "10px 20px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
+                  Fechar
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}
@@ -951,7 +1110,7 @@ export default function AdminPage() {
                   </select>
                 </div>
                 <div><label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--gray-mid)", marginBottom: 8, textTransform: "uppercase" }}>Valor Fechado na Venda (R$)</label><input type="number" required className="input-field" value={formReserva.valor} onChange={e => setFormReserva({ ...formReserva, valor: Number(e.target.value) })} /></div>
-                <div style={{ padding: "12px", background: "rgba(74,222,128,0.1)", border: "1px dashed rgba(74,222,128,0.3)", borderRadius: 8, marginTop: 8 }}><p style={{ fontSize: 11, color: "#4ade80", lineHeight: 1.5 }}>Ao confirmar, esta venda será <strong>marcada como aprovada</strong> e transferida imediatamente para a Gestão de Recebíveis.</p></div>
+                <div style={{ padding: "12px", background: "rgba(74,222,128,0.1)", border: "1px dashed rgba(74,222,128,0.3)", borderRadius: 8, marginTop: 8 }}><p style={{ fontSize: 11, color: "#4ade80", lineHeight: 1.5 }}>Ao confirmar, esta venda será <strong>marcada como aprovada</strong> e transferida para a Gestão de Recebíveis.</p></div>
                 <div style={{ display: "flex", gap: 12, marginTop: 8 }}><button type="button" onClick={() => setLoteReservaModal(null)} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer" }}>Voltar ao Mapa</button><button type="submit" disabled={uploadingGeral} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "var(--terracota)", border: "none", color: "white", fontWeight: 700, cursor: "pointer" }}>{uploadingGeral ? "Gravando..." : "Confirmar Vínculo"}</button></div>
               </form>
             </motion.div>
@@ -984,6 +1143,8 @@ export default function AdminPage() {
       )}
 
       {leadParaContrato && <GeradorContratoModal lead={leadParaContrato} onClose={() => setLeadParaContrato(null)} />}
+
+      <style dangerouslySetInnerHTML={{__html: `@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } } @keyframes Printer { } `}} />
     </div>
   );
 }

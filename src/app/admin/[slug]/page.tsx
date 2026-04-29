@@ -8,7 +8,7 @@ import { use } from "react";
 import {
   ArrowLeft, Upload, Trash2, Image as ImageIcon,
   DollarSign, FileText, Settings2, Eye, CheckCircle, CheckCircle2,
-  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X, Map, Layers, Wallet
+  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X, Map, Layers, Wallet, Plus
 } from "lucide-react";
 
 type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao" | "mapa" | "comissoes";
@@ -47,7 +47,7 @@ function NumInput({ value, onChange, prefix, suffix, step = 1, min = 0, placehol
         className="input-field" 
         style={{ 
           paddingLeft: prefix ? 40 : 14, 
-          paddingRight: suffix ? 46 : 14, // Espaço exato para o sufixo (ex: %) sem exagerar
+          paddingRight: suffix ? 46 : 14,
           fontSize: 15 
         }}
         value={local} 
@@ -313,6 +313,39 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     });
   }, []);
 
+  // ── NOVO: Adicionar modelo ──
+  const adicionarModelo = useCallback(() => {
+    setEmp((prev: any) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const novoId = `modelo-${Date.now()}`;
+      next.modelos.push({
+        id: novoId,
+        nome: `Modelo ${next.modelos.length + 1}`,
+        quartos: 2,
+        area: 60,
+        valor: 200000,
+        valorLote: next.modelos[0]?.valorLote || 48000,
+        imagem: "",
+        planta: ""
+      });
+      return next;
+    });
+  }, []);
+
+  // ── NOVO: Excluir modelo ──
+  const excluirModelo = useCallback((modeloId: string) => {
+    setEmp((prev: any) => {
+      if ((prev?.modelos?.length || 0) <= 1) {
+        alert("É necessário ter pelo menos um modelo no empreendimento.");
+        return prev;
+      }
+      if (!confirm("Excluir este modelo? Esta ação não pode ser desfeita.")) return prev;
+      const next = JSON.parse(JSON.stringify(prev));
+      next.modelos = next.modelos.filter((m: any) => m.id !== modeloId);
+      return next;
+    });
+  }, []);
+
   const fazerLogout = useCallback(async () => {
     if (!confirm("Sair do painel administrativo?")) return;
     await fetch("/api/auth", { method: "DELETE" });
@@ -378,7 +411,6 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ slug, url: emp.mapaUrl, tipo: "mapa_svg" })
         });
-        
         update("mapaUrl", "");
         await fetch("/api/empreendimentos", {
             method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -404,13 +436,11 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                 body: JSON.stringify({ slug, url: emp.mapaUrl, tipo: "mapa_svg" })
             }).catch(e => console.error("Ignorando erro ao apagar mapa antigo:", e));
         }
-
         const fd = new FormData();
         fd.append("file", file); fd.append("slug", slug);
         fd.append("tipo", "mapa_svg"); fd.append("titulo", "mapa_empreendimento");
         const res = await fetch("/api/upload", { method: "POST", body: fd });
         const data = await res.json();
-        
         if (data.url) {
             update("mapaUrl", data.url);
             await fetch("/api/empreendimentos", {
@@ -439,7 +469,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     {id:"mcmv"        as Section, label:"MCMV",           icon:Settings2,  hint:"Faixas e subsídios"},
     {id:"localizacao" as Section, label:"Localização",    icon:MapPin,     hint:"Endereço e mapa"},
     {id:"mapa"        as Section, label:"Mapa & Lotes",   icon:Map,        hint:"SVG, quadras e lotes"}, 
-    {id:"comissoes"   as Section, label:"Comissões",      icon:Wallet,     hint:"Regras de repasse"}, // <--- NOVA SEÇÃO
+    {id:"comissoes"   as Section, label:"Comissões",      icon:Wallet,     hint:"Regras de repasse"},
   ];
 
   const saveCfg = {
@@ -670,25 +700,78 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                 <motion.div key="v" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
                   <div><h2 className="text-title" style={{marginBottom:8}}>Valores & Simulador</h2><p className="text-body">Valores de venda, lotes e parâmetros de financiamento.</p></div>
 
+                  {/* ── LISTA DE MODELOS COM CRUD ── */}
                   {emp.modelos.map((m:any,idx:number)=>(
-                    <Card key={m.id} title={`🏠 ${m.nome} · ${m.area}m²`} subtitle="Valor de venda e configurações">
-                      <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                        <Two>
-                          <div><FieldLabel hint="Preço final ao comprador">Valor do Imóvel (R$)</FieldLabel><NumInput value={m.valor} prefix="R$" onChange={v=>update(`modelos.${idx}.valor`,v)}/></div>
-                          <div><FieldLabel hint="Único para todos os modelos">Valor do Lote (R$)</FieldLabel><NumInput value={m.valorLote||48000} prefix="R$" onChange={v=>emp.modelos.forEach((_:any,i:number)=>update(`modelos.${i}.valorLote`,v))}/></div>
-                        </Two>
-                        <Two>
-                          <div><FieldLabel>Área (m²)</FieldLabel><NumInput value={m.area} suffix="m²" onChange={v=>update(`modelos.${idx}.area`,v)}/></div>
-                          <div><FieldLabel>Quartos</FieldLabel><NumInput value={m.quartos} min={1} onChange={v=>update(`modelos.${idx}.quartos`,v)}/></div>
-                        </Two>
-                        {idx===0&&emp.modelos.length>1&&(
-                          <div style={{display:"flex",gap:8,padding:"10px 12px",borderRadius:8,background:"rgba(175,111,83,0.07)",border:"1px solid rgba(175,111,83,0.2)"}}>
-                            <Info size={13} color="var(--terracota)" style={{flexShrink:0,marginTop:1}}/><p style={{fontSize:11,color:"var(--gray-mid)",lineHeight:1.5}}>Lote único — alterar aqui atualiza todos os modelos.</p>
+                    <div key={m.id} style={{ position: "relative" }}>
+
+                      {/* BOTÃO EXCLUIR MODELO (só aparece se houver mais de 1) */}
+                      {emp.modelos.length > 1 && (
+                        <button
+                          onClick={() => excluirModelo(m.id)}
+                          style={{
+                            position: "absolute", top: 16, right: 16, zIndex: 2,
+                            display: "flex", alignItems: "center", gap: 6,
+                            padding: "6px 12px", borderRadius: 8, cursor: "pointer",
+                            background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)",
+                            color: "#f87171", fontSize: 11, fontWeight: 700
+                          }}
+                        >
+                          <Trash2 size={13} /> Excluir Modelo
+                        </button>
+                      )}
+
+                      <Card title={`🏠 ${m.nome} · ${m.area}m²`} subtitle="Valor de venda e configurações">
+                        <div style={{display:"flex",flexDirection:"column",gap:20}}>
+
+                          {/* NOME DO MODELO — editável */}
+                          <div>
+                            <FieldLabel hint="Nome exibido no simulador e nas propostas">Nome do Modelo</FieldLabel>
+                            <input
+                              type="text"
+                              className="input-field"
+                              style={{ fontSize: 15 }}
+                              value={m.nome}
+                              onChange={e => update(`modelos.${idx}.nome`, e.target.value)}
+                              placeholder="Ex: Casa 2 Quartos"
+                            />
                           </div>
-                        )}
-                      </div>
-                    </Card>
+
+                          <Two>
+                            <div><FieldLabel hint="Preço final ao comprador">Valor do Imóvel (R$)</FieldLabel><NumInput value={m.valor} prefix="R$" onChange={v=>update(`modelos.${idx}.valor`,v)}/></div>
+                            <div><FieldLabel hint="Único para todos os modelos">Valor do Lote (R$)</FieldLabel><NumInput value={m.valorLote||48000} prefix="R$" onChange={v=>emp.modelos.forEach((_:any,i:number)=>update(`modelos.${i}.valorLote`,v))}/></div>
+                          </Two>
+                          <Two>
+                            <div><FieldLabel>Área (m²)</FieldLabel><NumInput value={m.area} suffix="m²" onChange={v=>update(`modelos.${idx}.area`,v)}/></div>
+                            <div><FieldLabel>Quartos</FieldLabel><NumInput value={m.quartos} min={1} onChange={v=>update(`modelos.${idx}.quartos`,v)}/></div>
+                          </Two>
+                          {idx===0&&emp.modelos.length>1&&(
+                            <div style={{display:"flex",gap:8,padding:"10px 12px",borderRadius:8,background:"rgba(175,111,83,0.07)",border:"1px solid rgba(175,111,83,0.2)"}}>
+                              <Info size={13} color="var(--terracota)" style={{flexShrink:0,marginTop:1}}/><p style={{fontSize:11,color:"var(--gray-mid)",lineHeight:1.5}}>Lote único — alterar aqui atualiza todos os modelos.</p>
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    </div>
                   ))}
+
+                  {/* BOTÃO ADICIONAR NOVO MODELO */}
+                  <button
+                    onClick={adicionarModelo}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 12,
+                      padding: "22px 24px", borderRadius: 16,
+                      border: "2px dashed var(--border-subtle)", background: "transparent",
+                      transition: "all 150ms ease", cursor: "pointer", width: "100%"
+                    }}
+                  >
+                    <div style={{ width: 36, height: 36, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--terracota-glow)", border: "1px solid var(--border-active)" }}>
+                      <Plus size={18} color="var(--terracota)" />
+                    </div>
+                    <div style={{ textAlign: "left" }}>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: "var(--terracota)" }}>Adicionar Novo Modelo</p>
+                      <p style={{ fontSize: 12, color: "var(--gray-dark)", marginTop: 2 }}>Cria um modelo em branco para configuração</p>
+                    </div>
+                  </button>
 
                   <Card title="⚙️ Parâmetros do Simulador" subtitle="Prazo, entradas e taxas">
                     <div style={{display:"flex",flexDirection:"column",gap:20}}>

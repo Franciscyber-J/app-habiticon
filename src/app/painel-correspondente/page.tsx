@@ -32,6 +32,7 @@ interface LeadData {
   area?: number;
   dossie?: any;
   documentosConstrutora?: any;
+  correspondentesBloqueados?: string[]; // ← NOVO CAMPO DE CONTROLE
   simulacao?: {
     valorImovel: number;
     valorAvaliacao?: number;
@@ -79,7 +80,8 @@ export default function PainelCorrespondente() {
   const [userName, setUserName] = useState("");
   const [termoBusca, setTermoBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
-  const [abaAtiva, setAbaAtiva] = useState<"auditoria" | "arquivos">("auditoria"); // Controle de abas
+  const [abaAtiva, setAbaAtiva] = useState<"auditoria" | "arquivos">("auditoria");
+  const [meuUid, setMeuUid] = useState<string>(""); // ← UID do correspondente logado
 
   // Modais
   const [leadAnaliseId, setLeadAnaliseId]   = useState<string | null>(null);
@@ -94,6 +96,7 @@ export default function PainelCorrespondente() {
       if (!user) { window.location.href = "/login"; return; }
 
       setUserName(user.displayName || "Correspondente");
+      setMeuUid(user.uid); // ← Armazena o UID do correspondente
 
       const userDoc = await getDoc(doc(db, "usuarios", user.uid));
       if (userDoc.exists()) {
@@ -108,6 +111,11 @@ export default function PainelCorrespondente() {
       const unsubLeads = onSnapshot(qLeads, (snap) => {
         const leads = snap.docs
           .map(d => ({ id: d.id, ...d.data() } as LeadData))
+          // ← FILTRO SILENCIOSO: remove leads onde este correspondente está bloqueado
+          .filter(lead => {
+            const bloqueados = lead.correspondentesBloqueados || [];
+            return !bloqueados.includes(user.uid);
+          })
           .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setLeadsParaAnalise(leads);
       });
