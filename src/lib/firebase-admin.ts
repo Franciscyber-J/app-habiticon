@@ -1,18 +1,11 @@
 import admin from "firebase-admin";
 
 if (!admin.apps.length) {
-  const rawKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY ?? "";
-  
-  const privateKey = rawKey
-    .replace(/\\n/g, "\n")   // \n literal → quebra real
-    .replace(/^"|"$/g, "");  // remove aspas externas se houver
+  const base64 = process.env.FIREBASE_ADMIN_CREDENTIALS ?? "";
+  const json = JSON.parse(Buffer.from(base64, "base64").toString("utf-8"));
 
   admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-      privateKey,
-    }),
+    credential: admin.credential.cert(json),
   });
 }
 
