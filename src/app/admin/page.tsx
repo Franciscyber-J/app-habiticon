@@ -276,10 +276,32 @@ export default function AdminPage() {
   // FUNÇÕES DE AÇÃO
   // ─────────────────────────────────────────────────────────
 
-  const criarEmpreendimento = useCallback(async () => {
-    const slug = `novo-empreendimento-${Date.now()}`;
+  const gerarSlug = useCallback((nome: string): string => {
+    return nome
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-");
+  }, []);
+
+  const gerarSlugUnico = useCallback(async (base: string): Promise<string> => {
+    const snap = await getDoc(doc(db, "empreendimentos", base));
+    if (!snap.exists()) return base;
+    let i = 2;
+    while (true) {
+      const candidato = `${base}-${i}`;
+      const s = await getDoc(doc(db, "empreendimentos", candidato));
+      if (!s.exists()) return candidato;
+      i++;
+    }
+  }, []);
+
+  const criarEmpreendimento = useCallback(async (nome: string) => {
+    const slug = await gerarSlugUnico(gerarSlug(nome));
     const novo = {
-      slug, nome: "Novo Empreendimento", cidade: "Cidade", estado: "GO",
+      slug, nome, cidade: "Cidade", estado: "GO",
       descricao: "", status: "ativo", coordenadas: { lat: 0, lng: 0 },
       modelos: [{ id: "modelo-1", nome: "Modelo 1", quartos: 2, area: 60, valor: 200000, valorLote: 40000, imagem: "", planta: "" }],
       simulador: { entradaMin: 10000, entradaMax: 100000, prazoMeses: 360, taxaFaixa12: 7, taxaFaixa3: 8.16, taxaFaixa3Cotista: 7.66, taxaMercado: 12, igpmMensal: 0.8, mesesObra: 5, cotaMaximaCaixa: 0.8, percentualObraPorMes: [20, 40, 55, 75, 100], cub: { bdi: 0.18, cubVigente: 0 } },
@@ -291,20 +313,20 @@ export default function AdminPage() {
     await setDoc(doc(db, "empreendimentos", slug), novo);
     setEmpreendimentos(prev => [...prev, novo]);
     router.push(`/admin/${slug}`);
-  }, [router]);
+  }, [router, gerarSlug, gerarSlugUnico]);
 
   const excluirEmpreendimento = useCallback(async (slug: string, nome: string) => {
     if (!confirm(`Excluir "${nome}"?\n\nEsta ação é permanente.`)) return;
     try { await deleteDoc(doc(db, "empreendimentos", slug)); setEmpreendimentos(prev => prev.filter(e => e.slug !== slug)); } catch (error) { console.error(error); }
   }, []);
 
-  const clonarEmpreendimento = useCallback(async (emp: Empreendimento) => {
-    const novoSlug = `clone-${emp.slug}-${Date.now()}`;
-    const clone = { ...JSON.parse(JSON.stringify(emp)), slug: novoSlug, nome: `Clone — ${emp.nome}` };
+  const clonarEmpreendimento = useCallback(async (emp: Empreendimento, nomeClone: string) => {
+    const novoSlug = await gerarSlugUnico(gerarSlug(nomeClone));
+    const clone = { ...JSON.parse(JSON.stringify(emp)), slug: novoSlug, nome: nomeClone };
     await setDoc(doc(db, "empreendimentos", novoSlug), clone);
     setEmpreendimentos(prev => [...prev, clone]);
     router.push(`/admin/${novoSlug}`);
-  }, [router]);
+  }, [router, gerarSlug, gerarSlugUnico]);
 
   const fazerLogout = useCallback(async () => {
     if (!confirm("Sair do painel administrativo?")) return;
@@ -430,18 +452,18 @@ export default function AdminPage() {
     if (formReserva.valor <= 0) return alert("Indique o valor fechado.");
     setUploadingGeral(true);
     try {
-        await updateDoc(doc(db, "leads", mapaReserva.lead.id), {
-            modelo: modeloSelecionado.nome, valorImovel: formReserva.valor,
-            loteReserva: { numero: loteReservaModal.numero || loteReservaModal.id, quadraId: loteReservaModal.quadraId, loteId: loteReservaModal.id, valorVenda: formReserva.valor },
-            status: "qualificado"
-        });
-        const loteRef = doc(db, "empreendimentos", mapaReserva.emp.slug, "quadras", loteReservaModal.quadraId, "lotes", loteReservaModal.id);
-        await updateDoc(loteRef, {
-            status: "vendido",
-            fila: arrayUnion({ leadId: mapaReserva.lead.id, nomeCliente: mapaReserva.lead.nome, nomeCorretor: "Venda Direta (House)", modeloCasa: modeloSelecionado.nome, valorVenda: formReserva.valor, timestamp: new Date().toISOString() })
-        });
-        alert("Lote vinculado e Venda aprovada com sucesso! O cliente já consta na aba de Recebíveis.");
-        setLoteReservaModal(null); setMapaReserva({ aberto: false, lead: null, emp: null });
+      await updateDoc(doc(db, "leads", mapaReserva.lead.id), {
+        modelo: modeloSelecionado.nome, valorImovel: formReserva.valor,
+        loteReserva: { numero: loteReservaModal.numero || loteReservaModal.id, quadraId: loteReservaModal.quadraId, loteId: loteReservaModal.id, valorVenda: formReserva.valor },
+        status: "qualificado"
+      });
+      const loteRef = doc(db, "empreendimentos", mapaReserva.emp.slug, "quadras", loteReservaModal.quadraId, "lotes", loteReservaModal.id);
+      await updateDoc(loteRef, {
+        status: "vendido",
+        fila: arrayUnion({ leadId: mapaReserva.lead.id, nomeCliente: mapaReserva.lead.nome, nomeCorretor: "Venda Direta (House)", modeloCasa: modeloSelecionado.nome, valorVenda: formReserva.valor, timestamp: new Date().toISOString() })
+      });
+      alert("Lote vinculado e Venda aprovada com sucesso! O cliente já consta na aba de Recebíveis.");
+      setLoteReservaModal(null); setMapaReserva({ aberto: false, lead: null, emp: null });
     } catch (error) { alert("Erro ao gravar vínculo."); } finally { setUploadingGeral(false); }
   };
 
