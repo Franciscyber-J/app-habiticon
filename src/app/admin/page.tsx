@@ -550,7 +550,7 @@ export default function AdminPage() {
           <tbody>
             {leadsFiltrados.map((lead, idx) => (
               <tr key={lead.id} style={{ background: idx % 2 === 0 ? "white" : "#fafafa", borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: "8px" }}>{new Date(lead.timestamp).toLocaleDateString("pt-BR")}</td>
+                <td style={{ padding: "8px" }}>{new Date(lead.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às")}</td>
                 <td style={{ padding: "8px", fontWeight: "bold" }}>{lead.nome}</td>
                 <td style={{ padding: "8px" }}>{lead.whatsapp} {lead.whatsapp2 ? ` / ${lead.whatsapp2}` : ""}</td>
                 <td style={{ padding: "8px" }}>{lead.empreendimentoNome || "-"}</td>

@@ -5,9 +5,13 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
-  simular, formatBRLDecimal, formatBRL, taxaAnualParaMensal,
+  formatBRLDecimal, formatBRL,
   calcularCapacidadeRenda, PRAZO_PADRAO_MESES, COMPROMETIMENTO_MAX_RENDA,
 } from "@/lib/calculos";
+import { 
+  SBPE_COMPROMETIMENTO_SAC, 
+  SBPE_COMPROMETIMENTO_PRICE 
+} from "@/lib/calculos_sbpe";
 import { useAnimatedNumber } from "@/hooks/useAnimatedNumber";
 import { TrendingDown, Equal, CheckCircle2, AlertTriangle, XCircle, Info } from "lucide-react";
 
@@ -24,10 +28,11 @@ function AnimatedBRL({ value }: { value: number }) {
 }
 
 interface ComparadorProps {
-  valorFinanciado: number;
+  resultadoSimulacao: any; // O objeto exato gerado pelo motor principal
   taxaAnual: number;
   prazoMeses: number;
-  rendaFamiliar?: number; // renda informada no passo 1
+  rendaFamiliar?: number;
+  isSBPE?: boolean;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -61,44 +66,65 @@ function InfoLine({ label, value, valueColor, last = false }: {
   );
 }
 
-export function ComparadorSacPrice({ valorFinanciado, taxaAnual, prazoMeses, rendaFamiliar = 0 }: ComparadorProps) {
+// Cálculo específico de comprometimento para SBPE
+function calcularCapacidadeRendaSBPE(parcelaPRICE: number, parcelaSAC1a: number, rendaFamiliar: number) {
+  const rendaMinimaPrice = parcelaPRICE / SBPE_COMPROMETIMENTO_PRICE;
+  const rendaMinimaSAC = parcelaSAC1a / SBPE_COMPROMETIMENTO_SAC;
+  
+  let status: "aprovado" | "margem" | "insuficiente" | "nao_informada" = "nao_informada";
+  let comprometimentoAtual = 0;
+
+  if (rendaFamiliar > 0) {
+    comprometimentoAtual = parcelaSAC1a / rendaFamiliar;
+    if (rendaFamiliar >= rendaMinimaSAC) status = "aprovado";
+    else if (rendaFamiliar >= rendaMinimaPrice) status = "margem";
+    else status = "insuficiente";
+  }
+
+  return { rendaMinimaPrice, rendaMinimaSAC, status, comprometimentoAtual, parcelaPRICE, parcelaSAC1a };
+}
+
+export function ComparadorSacPrice({ resultadoSimulacao, taxaAnual, prazoMeses, rendaFamiliar = 0, isSBPE = false }: ComparadorProps) {
   const prazoCalculo = Math.min(prazoMeses, PRAZO_PADRAO_MESES);
 
-  const resultado = useMemo(
-    () => simular({ valorImovel: valorFinanciado, entrada: 0, prazoMeses: prazoCalculo, taxaAnual, subsidio: 0 }),
-    [valorFinanciado, taxaAnual, prazoCalculo]
-  );
+  const capacidade = useMemo(() => {
+    if (!resultadoSimulacao) return null;
+    if (isSBPE) {
+      return calcularCapacidadeRendaSBPE(resultadoSimulacao.parcelaPricePrimeira, resultadoSimulacao.parcelaSACPrimeira, rendaFamiliar);
+    }
+    return calcularCapacidadeRenda(resultadoSimulacao.parcelaPricePrimeira, resultadoSimulacao.parcelaSACPrimeira, rendaFamiliar);
+  }, [resultadoSimulacao, rendaFamiliar, isSBPE]);
 
-  const capacidade = useMemo(
-    () => calcularCapacidadeRenda(resultado.parcelaPricePrimeira, resultado.parcelaSACPrimeira, rendaFamiliar),
-    [resultado, rendaFamiliar]
-  );
-
-  // Dados para o gráfico
+  // Consome os dados DIRETAMENTE da tabela matemática real gerada, sem recalcular
   const dadosGrafico = useMemo(() => {
-    const taxaMensal = taxaAnualParaMensal(taxaAnual);
-    const amortizacao = valorFinanciado / prazoCalculo;
+    if (!resultadoSimulacao || !resultadoSimulacao.tabelaSAC || !resultadoSimulacao.tabelaPRICE) return [];
+    
     const dados = [];
     const step = Math.max(1, Math.floor(prazoCalculo / 12));
+    
     for (let i = 0; i < prazoCalculo; i += step) {
-      const saldoSAC = Math.max(0, valorFinanciado - amortizacao * i);
-      const parcelaSAC = amortizacao + saldoSAC * taxaMensal;
-      dados.push({ mes: i + 1, SAC: Math.round(parcelaSAC), PRICE: Math.round(resultado.parcelaPricePrimeira) });
+      dados.push({ 
+        mes: i + 1, 
+        SAC: Math.round(resultadoSimulacao.tabelaSAC[i]?.parcela || 0), 
+        PRICE: Math.round(resultadoSimulacao.tabelaPRICE[i]?.parcela || 0) 
+      });
     }
     return dados;
-  }, [valorFinanciado, taxaAnual, prazoCalculo, resultado]);
+  }, [resultadoSimulacao, prazoCalculo]);
+
+  if (!resultadoSimulacao || !capacidade) return null;
 
   const prazoAnos = Math.round(prazoCalculo / 12);
   const comprometimentoPct = capacidade.comprometimentoAtual * 100;
+  const maxComprometimento = isSBPE ? SBPE_COMPROMETIMENTO_SAC : COMPROMETIMENTO_MAX_RENDA;
 
-  // Cores do motor de renda
   const statusConfig = {
     aprovado: { color: "#4ade80", icon: CheckCircle2, label: "Renda aprovada" },
     margem:   { color: "#facc15", icon: AlertTriangle, label: "No limite — PRICE ok, SAC exige mais" },
     insuficiente: { color: "#f87171", icon: XCircle, label: "Renda insuficiente" },
     nao_informada: { color: "var(--gray-mid)", icon: Info, label: "Informe a renda no passo 1" },
   };
-  const st = statusConfig[capacidade.status];
+  const st = statusConfig[capacidade.status as keyof typeof statusConfig];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
@@ -120,11 +146,12 @@ export function ComparadorSacPrice({ valorFinanciado, taxaAnual, prazoMeses, ren
             </span>
           </div>
           <div style={{ fontSize: 26, fontWeight: 800, color: "var(--gray-light)", marginBottom: 4 }}>
-            <AnimatedBRL value={resultado.parcelaSACPrimeira} />
+            <AnimatedBRL value={resultadoSimulacao.parcelaSACPrimeira} />
           </div>
           <p style={{ fontSize: 11, color: "var(--gray-mid)", marginBottom: 16 }}>1ª parcela (a maior)</p>
           <div style={{ borderTop: "1px solid rgba(34,197,94,0.15)", paddingTop: 14 }}>
-            <InfoLine label="Última parcela" value={formatBRLDecimal(resultado.parcelaSACUltima)} valueColor="#4ade80" />
+            <InfoLine label="Valor Financiado" value={formatBRL(resultadoSimulacao.finLiberadoSAC)} valueColor="white" />
+            <InfoLine label="Última parcela" value={formatBRLDecimal(resultadoSimulacao.parcelaSACUltima)} valueColor="#4ade80" />
             <InfoLine label={`${prazoCalculo} parcelas`} value={`${prazoAnos} anos`} last />
           </div>
         </div>
@@ -143,10 +170,11 @@ export function ComparadorSacPrice({ valorFinanciado, taxaAnual, prazoMeses, ren
             </span>
           </div>
           <div style={{ fontSize: 26, fontWeight: 800, color: "var(--gray-light)", marginBottom: 4 }}>
-            <AnimatedBRL value={resultado.parcelaPricePrimeira} />
+            <AnimatedBRL value={resultadoSimulacao.parcelaPricePrimeira} />
           </div>
           <p style={{ fontSize: 11, color: "var(--gray-mid)", marginBottom: 16 }}>Parcela fixa (todas iguais)</p>
           <div style={{ borderTop: "1px solid rgba(175,111,83,0.15)", paddingTop: 14 }}>
+            <InfoLine label="Valor Financiado" value={formatBRL(resultadoSimulacao.finLiberadoPRICE)} valueColor="white" />
             <InfoLine label="Invariável" value="Até o fim" valueColor="var(--terracota)" />
             <InfoLine label={`${prazoCalculo} parcelas`} value={`${prazoAnos} anos`} last />
           </div>
@@ -160,14 +188,13 @@ export function ComparadorSacPrice({ valorFinanciado, taxaAnual, prazoMeses, ren
         background: `${st.color}10`,
         border: `1px solid ${st.color}30`,
       }}>
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
           <st.icon size={16} color={st.color} style={{ flexShrink: 0 }} />
           <div>
             <p style={{ fontSize: 13, fontWeight: 700, color: st.color }}>{st.label}</p>
             {rendaFamiliar > 0 && (
               <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 2 }}>
-                Renda informada: {formatBRL(rendaFamiliar)} · {comprometimentoPct.toFixed(1)}% comprometido (máx. {(COMPROMETIMENTO_MAX_RENDA * 100).toFixed(0)}%)
+                Renda informada: {formatBRL(rendaFamiliar)} · {comprometimentoPct.toFixed(1)}% comprometido (máx. {(maxComprometimento * 100).toFixed(0)}%)
               </p>
             )}
           </div>
@@ -179,7 +206,7 @@ export function ComparadorSacPrice({ valorFinanciado, taxaAnual, prazoMeses, ren
             <div style={{ height: 6, borderRadius: 4, background: "rgba(255,255,255,0.1)", overflow: "hidden" }}>
               <div style={{
                 height: "100%",
-                width: `${Math.min(comprometimentoPct / (COMPROMETIMENTO_MAX_RENDA * 100) * 100, 100)}%`,
+                width: `${Math.min((comprometimentoPct / (maxComprometimento * 100)) * 100, 100)}%`,
                 background: st.color,
                 borderRadius: 4,
                 transition: "width 600ms ease",
@@ -188,23 +215,22 @@ export function ComparadorSacPrice({ valorFinanciado, taxaAnual, prazoMeses, ren
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
               <span style={{ fontSize: 10, color: "var(--gray-dark)" }}>0%</span>
               <span style={{ fontSize: 10, color: st.color }}>{comprometimentoPct.toFixed(1)}%</span>
-              <span style={{ fontSize: 10, color: "var(--gray-dark)" }}>30% (máx)</span>
+              <span style={{ fontSize: 10, color: "var(--gray-dark)" }}>{(maxComprometimento * 100).toFixed(0)}% (máx)</span>
             </div>
           </div>
         )}
 
-        {/* Tabela de renda mínima */}
         <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(0,0,0,0.2)" }}>
           <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--gray-dark)", marginBottom: 10 }}>
-            Renda mínima recomendada (regra 30%)
+            Renda mínima recomendada (regra {(maxComprometimento * 100).toFixed(0)}%)
           </p>
           <InfoLine
-            label="Para PRICE (parcela fixa)"
+            label={`Para PRICE (Trava ${(isSBPE ? SBPE_COMPROMETIMENTO_PRICE : COMPROMETIMENTO_MAX_RENDA)*100}%)`}
             value={formatBRL(capacidade.rendaMinimaPrice)}
             valueColor={rendaFamiliar >= capacidade.rendaMinimaPrice ? "#4ade80" : "#f87171"}
           />
           <InfoLine
-            label="Para SAC (1ª parcela, pior caso)"
+            label={`Para SAC (Trava ${(isSBPE ? SBPE_COMPROMETIMENTO_SAC : COMPROMETIMENTO_MAX_RENDA)*100}%)`}
             value={formatBRL(capacidade.rendaMinimaSAC)}
             valueColor={rendaFamiliar >= capacidade.rendaMinimaSAC ? "#4ade80" : rendaFamiliar >= capacidade.rendaMinimaPrice ? "#facc15" : "#f87171"}
             last
@@ -216,9 +242,8 @@ export function ComparadorSacPrice({ valorFinanciado, taxaAnual, prazoMeses, ren
         </p>
       </div>
 
-      {/* ── Nota do prazo e taxa ── */}
       <p style={{ fontSize: 11, color: "var(--gray-dark)", textAlign: "center" }}>
-        {prazoCalculo} parcelas · {prazoAnos} anos · Taxa {taxaAnual}% a.a. nominal · Máximo MCMV: 420 meses
+        {prazoCalculo} parcelas · {prazoAnos} anos · Taxa {taxaAnual}% a.a. nominal · Máximo {isSBPE ? "SBPE: 360" : "MCMV: 420"} meses
       </p>
 
       {/* ── Gráfico ── */}

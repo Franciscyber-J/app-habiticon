@@ -3,18 +3,18 @@
 // Versão 2.0 — Corrigido por engenharia reversa com 4 simulados reais da Caixa
 //
 // CONFIRMADO via simulados reais (16/04/2026):
-//   ✅ Taxa mensal  = taxa nominal anual / 12  (NÃO é taxa efetiva)
-//   ✅ SAC          = amortização constante PV/n
-//   ✅ PRICE PMT    = PV * i*(1+i)^n / ((1+i)^n - 1)
-//   ✅ DFI          = valorImovel * 0.000071018  (FIX: era sobre laudo, não imóvel)
-//   ✅ MIP          = saldoDevedor_após_amort * 0.000108  (FIX: era sobre saldo inicial)
-//   ✅ Taxa ADM     = R$ 25,00/mês
-//   ✅ Cotista      = diferença de 0,50% a.a. (Faixa 3: 7,66% vs 8,16%)
+//   ✅ Taxa mensal  = taxa nominal anual / 12  (NÃO é taxa efetiva)
+//   ✅ SAC          = amortização constante PV/n
+//   ✅ PRICE PMT    = PV * i*(1+i)^n / ((1+i)^n - 1)
+//   ✅ DFI          = valorImovel * 0.000071018  (FIX: era sobre laudo, não imóvel)
+//   ✅ MIP          = saldoDevedor_após_amort * 0.000108  (FIX: era sobre saldo inicial)
+//   ✅ Taxa ADM     = R$ 25,00/mês
+//   ✅ Cotista      = diferença de 0,50% a.a. (Faixa 3: 7,66% vs 8,16%)
 //
 // MIP É AGE-DEPENDENT — confirmado salto de +33,4% no aniversário do tomador:
-//   - 35 anos: 0.0001079% a.m.  →  0.000108 a.m. (fator arredondado)
-//   - 36 anos: 0.0001439% a.m.  →  0.000144 a.m.
-//   - Implementado via tabela MIP_FATOR_POR_IDADE
+//   - 35 anos: 0.0001079% a.m.  →  0.000108 a.m. (fator arredondado)
+//   - 36 anos: 0.0001439% a.m.  →  0.000144 a.m.
+//   - Implementado via tabela MIP_FATOR_POR_IDADE
 // ===================================================
 
 export interface SimulacaoInput {
@@ -163,7 +163,7 @@ export function gerarTabelaPRICE(
   const tabela: Parcela[] = [];
   if (valorFinanciado <= 0) return tabela;
 
-  // DFI sobre LAUDO EFETIVO = max(valorImovel, fin/0.80)
+  // DFI sobre LAUDO EFETIVO = max(valorImovel, valorFinanciado / COTA_MAXIMA_CAIXA)
   const laudoEfetivo = Math.max(valorImovel, valorFinanciado / COTA_MAXIMA_CAIXA);
   const dfi = laudoEfetivo * CAIXA_FATOR_DFI;
 
@@ -371,56 +371,6 @@ export function calcularCapacidadeRenda(
 // ===================================================
 export interface EntradaEmbutidaInfo {
   valorContratual: number;
-  valorAvaliadoCaixa: number;
-  entradaCaixa: number;
-  entradaRealComprador: number;
-  entradaEmbutida: number;
-  cotaCaixa: number;
-}
-
-// ===================================================
-// PATCH — calcularEntradaEmbutida corrigida
-// Substitui a função e interface existentes em calculos.ts
-//
-// ANTES (errado):
-//   valorFinanciadoCaixa = contrato - entrada = 230.000
-//   valorAvaliadoCaixa   = 230.000 / 0.80    = 287.500  ← laudo inventado
-//   entradaEmbutida      = 287.500 × 20% - 10k = 47.500  ← errado
-//
-// DEPOIS (correto):
-//   laudoCUB já vem calculado do calcularLaudoCUB()
-//   cotaCaixa       = laudoCUB × 80%          = 233.601,85
-//   saldoAFinanciar = contrato - entrada       = 230.000
-//   entradaEmbutida = saldoAFinanciar - (contrato × 80%) = 38.000
-// ===================================================
-
-export interface EntradaEmbutidaInfo {
-  valorContratual: number;
-  valorAvaliadoCaixa: number;  // laudo CUB real (lote + construção + BDI)
-  cotaCaixa: number;            // 80% do laudo CUB
-  entradaRealComprador: number;
-  entradaEmbutida: number;      // saldoAFinanciar - (contrato × 80%)
-  saldoAFinanciar: number;      // contrato - entradaRealComprador (o que o banco libera)
-}
-
-// ===================================================
-// PATCH — calcularEntradaEmbutida corrigida
-// Substitui a função e interface existentes em calculos.ts
-//
-// ANTES (errado):
-//   valorFinanciadoCaixa = contrato - entrada = 230.000
-//   valorAvaliadoCaixa   = 230.000 / 0.80    = 287.500  ← laudo inventado
-//   entradaEmbutida      = 287.500 × 20% - 10k = 47.500  ← errado
-//
-// DEPOIS (correto):
-//   laudoCUB já vem calculado do calcularLaudoCUB()
-//   cotaCaixa       = laudoCUB × 80%          = 233.601,85
-//   saldoAFinanciar = contrato - entrada       = 230.000
-//   entradaEmbutida = saldoAFinanciar - (contrato × 80%) = 38.000
-// ===================================================
-
-export interface EntradaEmbutidaInfo {
-  valorContratual: number;
   valorAvaliadoCaixa: number;  // laudo CUB real (lote + construção + BDI)
   cotaCaixa: number;            // 80% do laudo CUB
   entradaCaixa: number;         // mantido por compatibilidade (= cotaCaixa × 20%)
@@ -449,8 +399,6 @@ export function calcularEntradaEmbutida(
   const cotaCaixa = laudoEfetivo * cotaMaxima;
 
   // Entrada embutida = quanto a mais o banco financia vs os 80% simples do contrato
-  // Sem estratégia: banco financia valorContratual × 80%
-  // Com estratégia: banco financia saldoAFinanciar (pode ser > 80% do contrato)
   const baseSeEstrategia = valorContratual * cotaMaxima; // 80% simples do contrato
   const entradaEmbutida = Math.max(0, saldoAFinanciar - baseSeEstrategia);
 
@@ -466,8 +414,14 @@ export function calcularEntradaEmbutida(
 }
 
 // ===================================================
-// JUROS DE OBRA (PCI)
+// JUROS DE OBRA (PCI) — AGORA 100% DINÂMICO
 // ===================================================
+export interface EtapaObra {
+  id?: string;
+  descricao: string;
+  percentual: number;
+}
+
 export interface JurosObra {
   mes: number;
   percentualLiberado: number;
@@ -480,42 +434,43 @@ export function calcularJurosObra(
   valorFinanciado: number,
   taxaAnual: number,
   valorLote = 48000,
-  // Percentuais cumulativos por mês (ex: [18,44,63,85,95,100])
-  // O mês 0 = assinatura (80% do lote) é sempre inserido automaticamente
-  percentuaisCustom?: number[]
+  etapasPersonalizadas?: EtapaObra[]
 ): JurosObra[] {
   const taxaMensal     = taxaAnualParaMensal(taxaAnual);
-  const libertaInicial = valorLote * 0.80;
-  const construirSaldo = valorFinanciado - libertaInicial;
+  const libertaInicial = valorLote * 0.80; // Regra da Caixa
+  const construirSaldo = Math.max(0, valorFinanciado - libertaInicial);
 
-  // Descrições automáticas baseadas no número de medições
-  const descricoesPadrao = [
-    "Fundações e Infraestrutura",
-    "Supraestrutura e Alvenaria",
-    "Cobertura e Revestimentos",
-    "Pisos, Instalações e Acabamentos",
-    "Pinturas e Louças",
-    "Habite-se — Retenção Final (5%)",
+  const etapasPadrao: EtapaObra[] = [
+    { descricao: "Fundações e Infraestrutura", percentual: 20 },
+    { descricao: "Supraestrutura e Alvenaria", percentual: 20 },
+    { descricao: "Cobertura e Revestimentos", percentual: 20 },
+    { descricao: "Pisos, Instalações e Acabamentos", percentual: 20 },
+    { descricao: "Pinturas e Louças", percentual: 15 },
+    { descricao: "Habite-se — Retenção Final", percentual: 5 },
   ];
 
-  // Percentuais padrão caso não haja custom (retrocompatível)
-  const pctsCumulativos = percentuaisCustom && percentuaisCustom.length > 0
-    ? percentuaisCustom
-    : [25, 50, 75, 100];
+  const etapas = (etapasPersonalizadas && etapasPersonalizadas.length > 0)
+    ? etapasPersonalizadas
+    : etapasPadrao;
 
-  // Mês 0 = assinatura (80% do lote) + medições seguintes
-  const etapas = [
+  // Monta o cronograma acumulado
+  const cronograma = [
     {
       pctDoConstruir: 0,
       desc: `Assinatura: 80% do Lote (${formatBRL(libertaInicial)})`,
-    },
-    ...pctsCumulativos.map((pctAcum, i) => ({
-      pctDoConstruir: pctAcum / 100,
-      desc: descricoesPadrao[i] ?? `Medição ${i + 1}`,
-    })),
+    }
   ];
 
-  return etapas.map((etapa, i) => {
+  let acumulado = 0;
+  for (const e of etapas) {
+    acumulado += Number(e.percentual) || 0;
+    cronograma.push({
+      pctDoConstruir: acumulado / 100,
+      desc: e.descricao
+    });
+  }
+
+  return cronograma.map((etapa, i) => {
     const valorAcumulado = libertaInicial + construirSaldo * etapa.pctDoConstruir;
     return {
       mes: i + 1,
@@ -572,14 +527,7 @@ export function calcularSubsidio(
 }
 
 // ===================================================
-// MOTOR CUB SINDUSCON — Base de Laudo para Construção
-// ===================================================
-// A Caixa usa o CUB SINDUSCON como base do laudo técnico para financiamentos
-// de construção. A estratégia de entrada embutida funciona assim:
-//   laudoCUB = valorLote + (areaMQ × cubVigente × (1 + bdi))
-//   maxFinanciamento = laudoCUB × 80%
-// Se maxFinanciamento ≥ valorVenda × 80%, a entrada pode ser totalmente embutida.
-// BDI máximo aceito: 18% (eleva o laudo legitimamente sem distorcer o CUB).
+// MOTOR CUB SINDUSCON — Base de Laudo para Construção (MCMV)
 // ===================================================
 
 export type LimitadorEntrada = "renda_30" | "cota_80" | "cub" | "entrada_min";
@@ -611,8 +559,7 @@ export interface LaudoCUBResult {
 }
 
 /**
- * Calcula o laudo técnico baseado no CUB SINDUSCON
- * laudoCUB = valorLote + (areaMQ × cubVigente × (1 + bdi))
+ * Calcula o laudo técnico baseado no CUB SINDUSCON + Itens Complementares
  */
 export function calcularLaudoCUB(
   valorLote: number,
@@ -620,16 +567,20 @@ export function calcularLaudoCUB(
   cubVigente: number,
   bdi = 0.18,
   valorVenda = 0,
-  cotaMaxima = COTA_MAXIMA_CAIXA
+  cotaMaxima = COTA_MAXIMA_CAIXA,
+  itensComplementaresTotal = 0 // NOVO: Aceita as obras fora do CUB
 ): LaudoCUBResult {
-  const valorConstrucao = areaMQ * cubVigente * (1 + bdi);
+  // Transforma o valor extra em "CUB Equivalente" para embutir na base oficial
+  const cubEquivalente = cubVigente + (itensComplementaresTotal / areaMQ);
+  
+  const valorConstrucao = areaMQ * cubEquivalente * (1 + bdi);
   const laudoTotal = valorLote + valorConstrucao;
   const maxFinanciamento = laudoTotal * cotaMaxima;
   const coberturaVenda = valorVenda > 0
     ? maxFinanciamento >= valorVenda * cotaMaxima
     : false;
 
-  return { laudoTotal, valorLote, valorConstrucao, areaMQ, cubVigente, bdi, maxFinanciamento, coberturaVenda };
+  return { laudoTotal, valorLote, valorConstrucao, areaMQ, cubVigente: cubEquivalente, bdi, maxFinanciamento, coberturaVenda };
 }
 
 export function calcularMaxFinCUB(
@@ -637,33 +588,14 @@ export function calcularMaxFinCUB(
   areaMQ: number,
   cubVigente: number,
   bdi = 0.18,
-  cotaMaxima = COTA_MAXIMA_CAIXA
+  cotaMaxima = COTA_MAXIMA_CAIXA,
+  itensComplementaresTotal = 0
 ): number {
-  return calcularLaudoCUB(valorLote, areaMQ, cubVigente, bdi).laudoTotal * cotaMaxima;
+  return calcularLaudoCUB(valorLote, areaMQ, cubVigente, bdi, 0, cotaMaxima, itensComplementaresTotal).laudoTotal * cotaMaxima;
 }
 
 /**
  * Motor unificado de entrada mínima — ENTRADA EMBUTIDA como motor chefe.
- *
- * A Caixa avalia pelo laudo CUB SINDUSCON, NÃO pelo preço de venda.
- * O financiamento é 80% do LAUDO. Se laudoCUB > valorVenda, a Caixa
- * financia mais de 80% do contrato → a entrada do comprador cai abaixo
- * dos 20% tradicionais. Isso é a "entrada embutida".
- *
- * Dois motores competem — o mais restritivo (maior entrada) prevalece:
- *
- * Motor A (CHEFE) — CUB:
- * laudoCUB = lote + área × cub × (1+bdi)
- * maxFinCUB = min(laudoCUB, tetoMCMV) × 80%
- * entradaMinCUB = max(entradaMinConfig, valorVenda − maxFinCUB)
- * → Quando CUB=0: fallback para 80% do contrato (comportamento padrão)
- *
- * Motor B — Renda 30%:
- * maxFinRenda = motor de parcela (Infinity se sem renda)
- * entradaMinRenda = max(entradaMinConfig, valorVenda − maxFinRenda)
- *
- * NÃO existe "regra dos 80% do contrato" como terceiro limitador separado.
- * Esse papel pertence ao Motor A (via tetoMCMV já embutido no laudoCUB).
  */
 export function calcularEntradaMinima(
   valorVenda: number,
@@ -674,8 +606,6 @@ export function calcularEntradaMinima(
   tetoMCMV = 0                // teto MCMV (0 = sem limite extra além do laudo)
 ): EntradaMinimaResult {
   // ── Motor A: CUB (CHEFE) ────────────────────────────────────────
-  // Quando CUB não está configurado (maxFinCUB = 0), usa 80% do contrato
-  // como fallback — mesmo comportamento de antes, sem quebrar nada.
   const maxFinCota80Fallback = valorVenda * cotaMaxima;
   const maxFinCUBEfetivo = maxFinCUB > 0 ? maxFinCUB : maxFinCota80Fallback;
 
@@ -710,9 +640,8 @@ export function calcularEntradaMinima(
     // CUB é o limitador
     if (maxFinCUB > 0) {
       limitador = "cub";
-      detalhe = `O laudo CUB cobre até R$ ${maxFinCUBFinal.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} (${(maxFinCUBFinal / valorVenda * 100).toFixed(1)}% do imóvel). Aumente o CUB vigente para reduzir a entrada.`;
+      detalhe = `O laudo CUB cobre até R$ ${maxFinCUBFinal.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} (${(maxFinCUBFinal / valorVenda * 100).toFixed(1)}% do imóvel). Aumente o CUB vigente ou insira complementares para reduzir a entrada.`;
     } else {
-      // CUB não configurado — é o fallback do 80% do contrato
       limitador = "cota_80";
       detalhe = `Configure o CUB SINDUSCON no painel admin para ativar a estratégia de entrada embutida. Atualmente usando 80% do contrato base.`;
     }
@@ -730,7 +659,6 @@ export function calcularEntradaMinima(
     maxFinRenda:       maxFinRendaEfetivo,
     maxFinCota80:      maxFinCota80Fallback,
     maxFinCUB:         maxFinCUBFinal,
-    // extras para o card de diagnóstico no frontend
     ganhoEntradaEmbutida,
     cubCobre,
     pctFinanciadoSobreVenda: maxFinEfetivo / valorVenda,
@@ -757,13 +685,6 @@ export function formatBRLDecimal(valor: number): string {
 // ===================================================
 // MOTOR DE FAIXA EFETIVA
 // ===================================================
-// Determina a faixa REAL de enquadramento considerando
-// DUAS dimensões:
-//   1. Faixa pelo laudo CUB (R2) — qual faixa o imóvel exige
-//   2. Faixa pela renda (R3)     — qual faixa o cliente está
-// A faixa efetiva é a mais restritiva (maior id).
-// Se incompatíveis → cliente BLOQUEADO para este modelo.
-// ===================================================
 
 export interface FaixaEfetiva {
   faixaEfetiva: FaixaMCMV | null;
@@ -778,14 +699,6 @@ export interface FaixaEfetiva {
   taxaEfetivaCotista: number;          // taxa cotista da faixa efetiva
 }
 
-/**
- * Determina a faixa de enquadramento efetiva.
- *
- * @param laudoCUB  - Valor do laudo (lote + construção CUB). null = CUB não configurado.
- * @param renda     - Renda bruta familiar do cliente (0 = não informada).
- * @param faixas    - Lista de faixas do empreendimento (com tetoImovel por faixa).
- * @param subsidioCalculado - Subsídio calculado pelo calcularSubsidio() para a faixa de renda.
- */
 export function determinarFaixaEfetiva(
   laudoCUB: number | null,
   renda: number,
@@ -805,15 +718,12 @@ export function determinarFaixaEfetiva(
     : null;
 
   // ── Faixa pelo LAUDO (CUB) ─────────────────────────
-  // Se CUB não configurado (laudoCUB = null), não há restrição por laudo
   let faixaPeloLaudo: FaixaMCMV | null = null;
   if (laudoCUB !== null && laudoCUB > 0) {
-    // Encontra a faixa mais baixa cujo tetoImovel comporta o laudo
     const faixasComTeto = faixas.filter(f => f.tetoImovel != null);
     if (faixasComTeto.length > 0) {
       faixaPeloLaudo = faixasComTeto.find(f => laudoCUB <= (f.tetoImovel ?? Infinity)) ?? null;
       if (!faixaPeloLaudo) {
-        // Laudo acima de todos os tetos configurados
         return {
           ...semFaixa,
           bloqueio: `O laudo CUB de R$ ${Math.round(laudoCUB).toLocaleString("pt-BR")} ultrapassa o teto de todas as faixas disponíveis.`,
@@ -835,7 +745,6 @@ export function determinarFaixaEfetiva(
 
   // ── Verifica compatibilidade renda × faixa efetiva ─
   if (laudoForcouFaixaSuperior) {
-    // O laudo exige faixa superior à que a renda permite
     const rendaMinNecessaria = faixaEfetiva.rendaMin;
     return {
       faixaEfetiva,
@@ -852,7 +761,6 @@ export function determinarFaixaEfetiva(
   }
 
   // ── Aprovado — calcula subsídio real ───────────────
-  // Subsídio só existe na Faixa 2
   const subsidioEfetivo = faixaEfetiva.id === 2 ? subsidioCalculado : 0;
 
   return {

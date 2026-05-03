@@ -9,13 +9,13 @@ import { Shield, Info } from "lucide-react";
 interface ObrasChartProps {
   valorFinanciado: number;
   taxaAnual: number;
-  percentuaisPorMes?: number[];
+  etapasObra?: { descricao: string; percentual: number }[]; // <- Atualizado para o formato novo
   titulo?: string;
   descricao?: string;
   valorLote: number;
   parcelaSAC: number;
   parcelaPRICE: number;
-  sacAprovado?: boolean;  // false = SAC excede 30% da renda → ocultar
+  sacAprovado?: boolean;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -48,7 +48,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 export function ObrasEscadaChart({
   valorFinanciado,
   taxaAnual,
-  percentuaisPorMes,
+  etapasObra,
   titulo = "Evolução dos Juros de Obra",
   descricao = "Você só paga pelo que a Caixa já vistoriou e liberou na sua obra.",
   valorLote,
@@ -56,13 +56,10 @@ export function ObrasEscadaChart({
   parcelaPRICE,
   sacAprovado = true,
 }: ObrasChartProps) {
-  const [mesSelecionado, setMesSelecionado] = useState<number>(0); // começa com Mês 1 selecionado
+  const [mesSelecionado, setMesSelecionado] = useState<number>(0);
 
-  // Passa os percentuais do JSON (ex: [18,44,63,85,95,100]) para a função de cálculo
-  const percentuaisValidos = percentuaisPorMes && percentuaisPorMes.length > 0
-    ? percentuaisPorMes
-    : undefined;
-  const jurosObra = calcularJurosObra(valorFinanciado, taxaAnual, valorLote, percentuaisValidos);
+  // Calcula os juros com base no array de etapas gerado no Painel Admin
+  const jurosObra = calcularJurosObra(valorFinanciado, taxaAnual, valorLote, etapasObra);
 
   const dados = jurosObra.map((j) => ({
     mes: j.mes,
@@ -74,9 +71,9 @@ export function ObrasEscadaChart({
 
   const mesSel = dados[mesSelecionado];
 
-  // Cores progressivas: verde (baixo) → terracota (alto)
-  // 7 cores — 1 assinatura + até 6 medições mensais
-  const cores = ["#4ade80", "#86efac", "#a3e635", "#fbbf24", "#fb923c", "#f97316", "#ef4444"];
+  // Paleta expandida para aguentar muitas medições se a construtora quiser 10, 12 meses...
+  const coresBase = ["#4ade80", "#86efac", "#a3e635", "#facc15", "#fbbf24", "#fb923c", "#f97316", "#ef4444", "#dc2626", "#991b1b"];
+  const cores = dados.map((_, i) => coresBase[Math.min(i, coresBase.length - 1)]);
 
   const totalJuros = dados.reduce((acc, d) => acc + d.juros, 0);
 
@@ -181,7 +178,6 @@ export function ObrasEscadaChart({
         <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 14 }}>
           Linha do tempo da obra
         </p>
-        {/* Scroll horizontal em mobile, grid em desktop */}
         <div style={{ overflowX: "auto", marginInline: -4, paddingInline: 4, paddingBottom: 4 }}>
           <div style={{ display: "flex", gap: 8, minWidth: "max-content" }}>
             {dados.map((d, i) => (
@@ -231,7 +227,6 @@ export function ObrasEscadaChart({
             Após o Habite-se, o financiamento bancário substitui os juros. Escolha sua modalidade:
           </p>
           {sacAprovado ? (
-            /* SAC + PRICE lado a lado */
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
               <div style={{ padding: "14px 16px", borderRadius: 12, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>
                 <p style={{ fontSize: 10, fontWeight: 700, color: "#4ade80", textTransform: "uppercase", marginBottom: 4 }}>Tabela SAC (1ª Parcela)</p>
@@ -245,7 +240,6 @@ export function ObrasEscadaChart({
               </div>
             </div>
           ) : (
-            /* Apenas PRICE — SAC bloqueado pela regra dos 30% */
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div style={{ padding: "16px 18px", borderRadius: 12, background: "rgba(175,111,83,0.08)", border: "1px solid rgba(175,111,83,0.2)" }}>
                 <p style={{ fontSize: 10, fontWeight: 700, color: "var(--terracota)", textTransform: "uppercase", marginBottom: 4 }}>
@@ -265,7 +259,6 @@ export function ObrasEscadaChart({
         </div>
       </div>
 
-      {/* Nota de execução profissional */}
       <div style={{ padding: "16px 20px", borderRadius: 14, background: "rgba(33,57,43,0.3)", border: "1px solid var(--border-subtle)", display: "flex", gap: 12 }}>
         <Info size={16} color="var(--gray-dark)" style={{ flexShrink: 0, marginTop: 2 }} />
         <p style={{ fontSize: 11, color: "var(--gray-mid)", lineHeight: 1.6 }}>

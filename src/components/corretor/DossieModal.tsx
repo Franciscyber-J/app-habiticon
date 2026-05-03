@@ -412,9 +412,10 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
               )}
             </AnimatePresence>
 
+            {/* Apenas retirei o capture="environment" */}
             <input 
               type="file" ref={inputRef} onChange={handleFileChange} multiple 
-              style={{ display: "none" }} accept=".pdf, image/*" capture="environment" 
+              style={{ display: "none" }} accept=".pdf, image/*" 
             />
 
             {/* ── HEADER DO MODAL ── */}

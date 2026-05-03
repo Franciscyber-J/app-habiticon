@@ -639,7 +639,7 @@ export default function PainelCorretor() {
                                   <span className="hidden sm:inline" style={{ color: "var(--border-subtle)" }}>•</span>
                                   <span style={{ whiteSpace: "nowrap" }}>{lead.modelo}</span>
                                   <span className="hidden sm:inline" style={{ color: "var(--border-subtle)" }}>•</span>
-                                  <span style={{ whiteSpace: "nowrap" }}>{lead.timestamp ? new Date(lead.timestamp).toLocaleDateString("pt-BR") : "Data desconhecida"}</span>
+                                  <span style={{ whiteSpace: "nowrap" }}>{lead.timestamp ? new Date(lead.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às") : "Data desconhecida"}</span>
                                 </div>
                               </div>
                             </div>

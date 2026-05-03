@@ -18,6 +18,8 @@ import { SubsidioGauge } from "@/components/subsidio/SubsidioGauge";
 import { ObrasEscadaChart } from "@/components/obra/ObrasEscadaChart";
 import { PDFGenerator } from "@/components/proposta/PDFGenerator";
 import { GaleriaVitrine } from "@/components/vitrine/GaleriaVitrine";
+
+// Cálculos MCMV (Original)
 import {
   simular,
   formatBRL,
@@ -30,6 +32,14 @@ import {
   type EntradaMinimaResult,
   type FaixaEfetiva,
 } from "@/lib/calculos";
+
+// Cálculos SBPE (Novo)
+import {
+  simularSBPE,
+  calcularEntradaEmbutidaSBPE,
+  SBPE_COTA_MAXIMA_SAC,
+  SBPE_COTA_MAXIMA_PRICE
+} from "@/lib/calculos_sbpe";
 
 // ─────────────────────────────────────────────────────────
 // TIPOS
@@ -55,7 +65,7 @@ interface FaixaMCMV {
   subsidioMin: number;
   taxa: number;
   taxaCotista?: number;
-  tetoImovel?: number;  // teto do valor do imóvel (laudo) para esta faixa
+  tetoImovel?: number;
   cor: string;
 }
 
@@ -79,10 +89,16 @@ interface Empreendimento {
     igpmMensal: number;
     mesesObra: number;
     percentualObraPorMes: number[];
+    etapasObra?: { id?: string; descricao: string; percentual: number }[]; // <--- FALTAVA DECLARAR ISSO AQUI
     cub?: {
       bdi: number;
-      cubVigente: number; // R$/m² — atualizar mensalmente no admin com o CUB SINDUSCON-GO
+      cubVigente: number;
+      itensComplementares?: { id: string; descricao: string; valor: number }[];
     };
+    taxaSBPE?: number;
+    cubSBPE?: number;
+    bdiSBPE?: number;
+    itensComplementaresSBPE?: { id: string; descricao: string; valor: number }[];
   };
   mcmv: {
     faixas: FaixaMCMV[];
@@ -100,11 +116,12 @@ interface Empreendimento {
     descricaoObra: string;
     alertaF3: string;
     alertaF12: string;
+    alertaSBPE?: string;
   };
 }
 
 // ─────────────────────────────────────────────────────────
-// CONFIG DOS MÓDULOS
+// CONFIG DOS MÓDULOS E TRAVAS
 // ─────────────────────────────────────────────────────────
 
 const MODULOS = [
@@ -115,21 +132,17 @@ const MODULOS = [
   { id: "vitrine",   label: "5. Vitrine",          shortLabel: "Vitrine",  icon: ImageIcon,  hint: "Fotos, plantas e localização" },
 ];
 
-// ─────────────────────────────────────────────────────────
-// CONFIG DO ALERTA DE TRAVA — por tipo de limitador
-// ─────────────────────────────────────────────────────────
-
 const TRAVA_CONFIG: Record<LimitadorEntrada, {
   cor: string; bgAlpha: string; borderAlpha: string;
   icone: React.ElementType; emoji: string; titulo: string;
 }> = {
   renda_30: {
     cor: "#ef4444", bgAlpha: "rgba(239,68,68,0.1)", borderAlpha: "rgba(239,68,68,0.28)",
-    icone: AlertTriangle, emoji: "📊", titulo: "Trava de Renda — Regra dos 30%",
+    icone: AlertTriangle, emoji: "📊", titulo: "Trava de Renda — Comprometimento Máximo",
   },
   cota_80: {
     cor: "#f97316", bgAlpha: "rgba(249,115,22,0.1)", borderAlpha: "rgba(249,115,22,0.28)",
-    icone: Info, emoji: "🏦", titulo: "Teto MCMV — Máximo 80% do Imóvel",
+    icone: Info, emoji: "🏦", titulo: "Teto de Financiamento da Linha",
   },
   cub: {
     cor: "#a855f7", bgAlpha: "rgba(168,85,247,0.1)", borderAlpha: "rgba(168,85,247,0.28)",
@@ -141,10 +154,6 @@ const TRAVA_CONFIG: Record<LimitadorEntrada, {
   },
 };
 
-// ─────────────────────────────────────────────────────────
-// COMPONENTE PRINCIPAL
-// ─────────────────────────────────────────────────────────
-
 export default function EmpreendimentoApp({ 
   emp, 
   corretorIdUrl = "", 
@@ -155,10 +164,9 @@ export default function EmpreendimentoApp({
   origemUrl?: string;
 }) {
   const [moduloAtivo,       setModuloAtivo]       = useState("renda");
-  const [empFresh, setEmpFresh] = useState(emp); // dados frescos da API
+  const [empFresh, setEmpFresh] = useState(emp);
   const [linkCopiado, setLinkCopiado] = useState(false); 
 
-  // Ao montar, buscar dados atualizados da API (resolve cache SSG)
   useEffect(() => {
     fetch("/api/empreendimentos")
       .then(r => r.json())
@@ -169,7 +177,6 @@ export default function EmpreendimentoApp({
       .catch(() => {});
   }, [emp.slug]);
 
-  // ATUALIZADO: Todos os estados iniciais agora refletem a variável empFresh que se atualiza
   const [modeloSelecionado, setModeloSelecionado] = useState(empFresh.modelos[0]?.id || "");
   const [entrada,           setEntrada]           = useState(empFresh.simulador.entradaMin);
   const [subsidio,          setSubsidio]          = useState(0);
@@ -181,20 +188,15 @@ export default function EmpreendimentoApp({
   const [sidebarOpen,       setSidebarOpen]       = useState(false);
   const [usarSubsidio,      setUsarSubsidio]      = useState(true);
 
-  // Lote único do empreendimento — sempre o do primeiro modelo (regra: lote igual para todos)
   const valorLoteEmpreendimento = empFresh.modelos[0]?.valorLote ?? 48000;
-
   const modelo = empFresh.modelos.find((m) => m.id === modeloSelecionado) || empFresh.modelos[0];
 
-  // ── Teto efetivo por modelo ──────────────────────────────────────────
-  const tetoEfetivo = useMemo(() => {
-    if (!modelo) return empFresh.mcmv.tetoImovel;
-    const cubCfg = empFresh.simulador.cub;
-    if (!cubCfg || !cubCfg.cubVigente) return empFresh.mcmv.tetoImovel;
-    const laudoCalc = valorLoteEmpreendimento + modelo.area * cubCfg.cubVigente * (1 + cubCfg.bdi);
-    const faixaPeloLaudo = empFresh.mcmv.faixas.find((f: any) => laudoCalc <= (f.tetoImovel ?? Infinity));
-    return faixaPeloLaudo?.tetoImovel ?? empFresh.mcmv.tetoImovel;
-  }, [modelo, empFresh.simulador.cub, empFresh.mcmv.faixas, empFresh.mcmv.tetoImovel, valorLoteEmpreendimento]);
+  const tetoRendaMCMV = useMemo(() => Math.max(...empFresh.mcmv.faixas.map((f: any) => f.rendaMax), 13000), [empFresh.mcmv.faixas]);
+  const tetoImovelMCMV = empFresh.mcmv.tetoImovel || 600000;
+  
+  const isSBPE = useMemo(() => {
+    return (rendaFamiliar > tetoRendaMCMV) || ((modelo?.valor || 0) > tetoImovelMCMV);
+  }, [rendaFamiliar, tetoRendaMCMV, modelo, tetoImovelMCMV]);
 
   const handleSubsidioChange = useCallback((
     sub: number, taxa: number, rendaDigitada: boolean, rendaVal = 0, faixaId?: number
@@ -206,12 +208,100 @@ export default function EmpreendimentoApp({
     setFaixaIdPelaRenda(faixaId ?? null);
   }, []);
 
+  // ── HELPER: AVALIAÇÃO SBPE (CUB + COMPLEMENTARES) ──
+  const getLaudoSBPE = useCallback((mod: Modelo) => {
+    const cubCfg = empFresh.simulador.cubSBPE || 0;
+    if (cubCfg <= 0) return 0;
+    const bdiCfg = empFresh.simulador.bdiSBPE ?? 0.18;
+    const itens = empFresh.simulador.itensComplementaresSBPE || [];
+    const totalItens = itens.reduce((acc: number, item: any) => acc + (Number(item.valor) || 0), 0);
+    const cubEquivalente = cubCfg + (totalItens / mod.area);
+    return calcularLaudoCUB(valorLoteEmpreendimento, mod.area, cubEquivalente, bdiCfg).laudoTotal;
+  }, [empFresh.simulador.cubSBPE, empFresh.simulador.bdiSBPE, empFresh.simulador.itensComplementaresSBPE, valorLoteEmpreendimento]);
+
+  // ── HELPER: AVALIAÇÃO MCMV (CUB + COMPLEMENTARES) ──
+  const getLaudoMCMV = useCallback((mod: Modelo) => {
+    const cubCfg = empFresh.simulador.cub;
+    if (!cubCfg || !cubCfg.cubVigente) return 0;
+    const itens = cubCfg.itensComplementares || [];
+    const totalItens = itens.reduce((acc: number, item: any) => acc + (Number(item.valor) || 0), 0);
+    return calcularLaudoCUB(valorLoteEmpreendimento, mod.area, cubCfg.cubVigente, cubCfg.bdi, 0, COTA_MAXIMA_CAIXA, totalItens).laudoTotal;
+  }, [empFresh.simulador.cub, valorLoteEmpreendimento]);
+
+  // ── Teto efetivo por modelo (MCMV) ──────────────────────────────────────────
+  const tetoEfetivo = useMemo(() => {
+    if (!modelo || isSBPE) return empFresh.mcmv.tetoImovel;
+    const laudoCalc = getLaudoMCMV(modelo);
+    if (laudoCalc === 0) return empFresh.mcmv.tetoImovel;
+    const faixaPeloLaudo = empFresh.mcmv.faixas.find((f: any) => laudoCalc <= (f.tetoImovel ?? Infinity));
+    return faixaPeloLaudo?.tetoImovel ?? empFresh.mcmv.tetoImovel;
+  }, [modelo, empFresh.mcmv.faixas, empFresh.mcmv.tetoImovel, isSBPE, getLaudoMCMV]);
+
   // ─────────────────────────────────────────────────────
-  // MOTOR ENTRADA EMBUTIDA E RENDA
+  // MOTOR ENTRADA EMBUTIDA E RENDA (SBPE vs MCMV)
   // ─────────────────────────────────────────────────────
   const motorEntrada = useMemo((): EntradaMinimaResult | null => {
     if (!modelo) return null;
 
+    if (isSBPE) {
+      const taxaSBPE = empFresh.simulador.taxaSBPE || 11.38;
+      const laudoCalculado = getLaudoSBPE(modelo);
+
+      const info = calcularEntradaEmbutidaSBPE(
+        modelo.valor,
+        0,
+        SBPE_COTA_MAXIMA_SAC,
+        laudoCalculado
+      );
+
+      const sim = simularSBPE({
+        valorImovel: modelo.valor,
+        entrada: 0,
+        prazoMeses: empFresh.simulador.prazoMeses,
+        taxaAnual: taxaSBPE,
+        rendaFamiliar: rendaFamiliar,
+        laudoCalculado: laudoCalculado
+      });
+
+      const maxFinRenda = sim.finLiberadoSAC;
+      const maxFinCUB = info.cotaCaixa;
+      
+      const maxFinEfetivo = Math.min(maxFinCUB, maxFinRenda);
+      const entradaFinal = Math.max(empFresh.simulador.entradaMin, modelo.valor - maxFinEfetivo);
+
+      let limitador: LimitadorEntrada = "cota_80";
+      let detalhe = "Teto SBPE — Máximo 80% (SAC)";
+
+      if (entradaFinal <= empFresh.simulador.entradaMin + 1) {
+        limitador = "entrada_min";
+        detalhe = `Entrada mínima de R$ ${empFresh.simulador.entradaMin.toLocaleString("pt-BR")} aplicada.`;
+      } else if (maxFinRenda >= maxFinCUB) {
+        limitador = laudoCalculado > 0 ? "cub" : "cota_80";
+        detalhe = laudoCalculado > 0 ? `Laudo Alto Padrão liberou máximo de R$ ${maxFinCUB.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}.` : "Teto SBPE (80%) limitou o financiamento.";
+      } else {
+        limitador = "renda_30";
+        detalhe = `A renda limita o financiamento SBPE a R$ ${maxFinRenda.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} (Trava de 30% na SAC).`;
+      }
+
+      const financiamentoPadraoSemCUB = modelo.valor * SBPE_COTA_MAXIMA_SAC;
+      const ganhoReal = Math.max(0, maxFinEfetivo - financiamentoPadraoSemCUB);
+
+      return {
+        entradaMinima: entradaFinal,
+        maxFinanciamento: maxFinEfetivo,
+        laudoFinal: info.valorAvaliadoCaixa,
+        limitador,
+        detalhe,
+        maxFinRenda: maxFinRenda,
+        maxFinCota80: financiamentoPadraoSemCUB,
+        maxFinCUB: maxFinCUB,
+        ganhoEntradaEmbutida: ganhoReal, 
+        cubCobre: maxFinEfetivo >= (modelo.valor - empFresh.simulador.entradaMin),
+        pctFinanciadoSobreVenda: maxFinEfetivo / modelo.valor
+      };
+    }
+
+    // --- MCMV ---
     const subsidioEfetivo = usarSubsidio ? subsidio : 0;
     const valorVenda = modelo.valor - subsidioEfetivo;
 
@@ -231,6 +321,8 @@ export default function EmpreendimentoApp({
     }
 
     const cubCfg = empFresh.simulador.cub;
+    const totalItensMCMV = cubCfg?.itensComplementares?.reduce((acc, item) => acc + (Number(item.valor) || 0), 0) || 0;
+    
     const maxFinCUB =
       cubCfg && cubCfg.cubVigente > 0
         ? calcularMaxFinCUB(
@@ -238,6 +330,8 @@ export default function EmpreendimentoApp({
             modelo.area,
             cubCfg.cubVigente,
             cubCfg.bdi,
+            COTA_MAXIMA_CAIXA,
+            totalItensMCMV
           )
         : 0;
 
@@ -250,43 +344,28 @@ export default function EmpreendimentoApp({
       tetoEfetivo,
     );
   }, [
-    modelo,
-    rendaFamiliar,
-    empFresh.simulador.entradaMin,
-    empFresh.simulador.prazoMeses,
-    empFresh.simulador.cub,
-    taxaAtual,
-    subsidio,
-    usarSubsidio,
-    tetoEfetivo,
-    valorLoteEmpreendimento,
+    modelo, rendaFamiliar, empFresh.simulador.entradaMin, empFresh.simulador.prazoMeses, 
+    empFresh.simulador.cub, empFresh.simulador.taxaSBPE, 
+    taxaAtual, subsidio, usarSubsidio, tetoEfetivo, valorLoteEmpreendimento, isSBPE, getLaudoSBPE, getLaudoMCMV
   ]);
 
   const laudoCUBAtual = useMemo(() => {
     if (!modelo) return 0;
-    const cubCfg = empFresh.simulador.cub;
-    if (!cubCfg || !cubCfg.cubVigente) return 0;
-    return calcularLaudoCUB(
-      valorLoteEmpreendimento,
-      modelo.area,
-      cubCfg.cubVigente,
-      cubCfg.bdi
-    ).laudoTotal;
-  }, [modelo, empFresh.simulador.cub, valorLoteEmpreendimento]);
+    if (isSBPE) return getLaudoSBPE(modelo);
+    return getLaudoMCMV(modelo);
+  }, [modelo, isSBPE, getLaudoSBPE, getLaudoMCMV]);
 
   const minEntradaPermitida = motorEntrada?.entradaMinima ?? empFresh.simulador.entradaMin;
 
   const faixaEfetiva = useMemo((): FaixaEfetiva | null => {
-    if (!modelo || rendaFamiliar <= 0) return null;
-    const cubCfg = empFresh.simulador.cub;
-    const laudoTotal = cubCfg && cubCfg.cubVigente > 0
-      ? calcularLaudoCUB(valorLoteEmpreendimento, modelo.area, cubCfg.cubVigente, cubCfg.bdi).laudoTotal
-      : null;
+    if (!modelo || rendaFamiliar <= 0 || isSBPE) return null; 
+    const laudoTotal = getLaudoMCMV(modelo);
     const subsidioBase = usarSubsidio ? subsidio : 0;
-    return determinarFaixaEfetiva(laudoTotal, rendaFamiliar, empFresh.mcmv.faixas, subsidioBase);
-  }, [modelo, rendaFamiliar, empFresh.simulador.cub, empFresh.mcmv.faixas, valorLoteEmpreendimento, subsidio, usarSubsidio]);
+    return determinarFaixaEfetiva(laudoTotal > 0 ? laudoTotal : null, rendaFamiliar, empFresh.mcmv.faixas, subsidioBase);
+  }, [modelo, rendaFamiliar, empFresh.mcmv.faixas, subsidio, usarSubsidio, isSBPE, getLaudoMCMV]);
 
   useEffect(() => {
+    if (isSBPE) return; 
     if (!faixaEfetiva?.faixaEfetiva) return;
     const taxaCorreta = faixaEfetiva.taxaEfetiva;
     if (Math.abs(taxaCorreta - taxaAtual) > 0.001) {
@@ -295,7 +374,7 @@ export default function EmpreendimentoApp({
     if (faixaEfetiva.laudoForcouFaixaSuperior && faixaEfetiva.faixaEfetiva.id > 2) {
       setUsarSubsidio(false);
     }
-  }, [faixaEfetiva]);
+  }, [faixaEfetiva, isSBPE, taxaAtual]);
 
   const prevMinEntrada = useRef(minEntradaPermitida);
   useEffect(() => {
@@ -308,10 +387,22 @@ export default function EmpreendimentoApp({
   }, [minEntradaPermitida, entrada]);
 
   // ─────────────────────────────────────────────────────
-  // SIMULAÇÃO PRINCIPAL
+  // SIMULAÇÃO PRINCIPAL (Alterna entre MCMV e SBPE)
   // ─────────────────────────────────────────────────────
   const resultadoSimulacao = useMemo(() => {
     if (!modelo) return null;
+    
+    if (isSBPE) {
+      return simularSBPE({
+        valorImovel: modelo.valor,
+        entrada,
+        prazoMeses: empFresh.simulador.prazoMeses,
+        taxaAnual: empFresh.simulador.taxaSBPE || 11.38,
+        rendaFamiliar,
+        laudoCalculado: getLaudoSBPE(modelo)
+      });
+    }
+
     return simular({
       valorImovel: modelo.valor,
       entrada,
@@ -322,7 +413,7 @@ export default function EmpreendimentoApp({
       rendaFamiliar,
       tetoImovel: tetoEfetivo,
     });
-  }, [modelo, entrada, empFresh.simulador.prazoMeses, taxaAtual, subsidio, usarSubsidio, rendaFamiliar, tetoEfetivo]);
+  }, [modelo, entrada, empFresh.simulador.prazoMeses, taxaAtual, subsidio, usarSubsidio, rendaFamiliar, tetoEfetivo, empFresh.simulador.taxaSBPE, isSBPE, getLaudoSBPE]);
 
   // ─────────────────────────────────────────────────────
   // DADOS DA PROPOSTA PDF E API
@@ -334,24 +425,18 @@ export default function EmpreendimentoApp({
     const i  = taxaAtual / 100 / 12;
     const amort = pv / empFresh.simulador.prazoMeses;
     const saldoAposAmort = pv - amort;
-    const sacPrimeiraSobrePrice =
-      amort
-      + pv * i
-      + saldoAposAmort * 0.000108
-      + modelo.valor * 0.000071018
-      + 25;
+    
+    const sacPrimeiraSobrePrice = isSBPE 
+      ? (resultadoSimulacao.parcelaSACPrimeira || 0)
+      : (amort + pv * i + saldoAposAmort * 0.000108 + modelo.valor * 0.000071018 + 25);
 
     const sacAprovadoPDF = rendaFamiliar > 0
       ? sacPrimeiraSobrePrice <= rendaFamiliar * 0.30
       : true; 
 
-    let valorLaudo = modelo.valor;
-    const cubCfg = empFresh.simulador.cub;
-    if (cubCfg && cubCfg.cubVigente > 0) {
-       valorLaudo = calcularLaudoCUB(valorLoteEmpreendimento, modelo.area, cubCfg.cubVigente, cubCfg.bdi).laudoTotal;
-    } else {
-       valorLaudo = resultadoSimulacao.laudoPRICE || modelo.valor;
-    }
+    const valorLaudo = isSBPE 
+      ? (getLaudoSBPE(modelo) || resultadoSimulacao.laudoPRICE || modelo.valor)
+      : (resultadoSimulacao.laudoPRICE || modelo.valor);
 
     return {
       empreendimento: empFresh.nome,
@@ -365,8 +450,8 @@ export default function EmpreendimentoApp({
       entrada,
       ato: entrada * atoPercent,
       valorFinanciado: resultadoSimulacao.finLiberadoPRICE,
-      subsidio: usarSubsidio ? subsidio : 0,
-      taxa: taxaAtual,
+      subsidio: usarSubsidio && !isSBPE ? subsidio : 0,
+      taxa: isSBPE ? (empFresh.simulador.taxaSBPE || 11.38) : taxaAtual,
       prazoMeses: empFresh.simulador.prazoMeses,
       parcelaSACPrimeira: sacPrimeiraSobrePrice,
       parcelaSACUltima: resultadoSimulacao.parcelaSACUltima,
@@ -377,7 +462,7 @@ export default function EmpreendimentoApp({
       corretorId: corretorIdUrl, 
       origem: origemUrl,
     };
-  }, [modelo, resultadoSimulacao, empFresh, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent, rendaFamiliar, valorLoteEmpreendimento, corretorIdUrl, origemUrl]);
+  }, [modelo, resultadoSimulacao, empFresh, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent, rendaFamiliar, corretorIdUrl, origemUrl, isSBPE, getLaudoSBPE]);
 
   const getModuloStatus = (modId: string) => {
     if (modId === "renda")     return rendaPreenchida ? "done" : "active";
@@ -411,9 +496,6 @@ export default function EmpreendimentoApp({
     }
   };
 
-  // ─────────────────────────────────────────────────────
-  // ALERTA DE TRAVA — componente inline inteligente
-  // ─────────────────────────────────────────────────────
   const AlertaTrava = () => {
     if (!motorEntrada) return null;
     if (minEntradaPermitida <= empFresh.simulador.entradaMin) return null;
@@ -448,7 +530,7 @@ export default function EmpreendimentoApp({
               💡 A renda de {formatBRL(rendaFamiliar)} está confortável — suportaria até{" "}
               {formatBRL(motorEntrada.maxFinRenda)} de financiamento (
               {((motorEntrada.maxFinRenda / (rendaFamiliar * 12)) * 100).toFixed(0)}×
-              renda anual). O limitador foi o teto de 80% do valor do imóvel.
+              renda anual). O limitador foi o teto da cota de financiamento.
             </p>
           )}
 
@@ -458,8 +540,8 @@ export default function EmpreendimentoApp({
               marginTop: 8, paddingTop: 8,
               borderTop: "1px solid rgba(255,255,255,0.08)",
             }}>
-              📐 Laudo CUB cobre {formatBRL(motorEntrada.maxFinCUB)} (80% do laudo).
-              Para cobrir 100% atualize o CUB vigente no painel admin ou revise o BDI.
+              📐 Laudo CUB cobre {formatBRL(motorEntrada.maxFinCUB)} ({isSBPE ? '80%' : '80%'} do laudo).
+              Para cobrir 100% atualize o CUB e itens complementares no painel admin ou revise o BDI.
             </p>
           )}
         </div>
@@ -467,9 +549,6 @@ export default function EmpreendimentoApp({
     );
   };
 
-  // ─────────────────────────────────────────────────────
-  // SIDEBAR
-  // ─────────────────────────────────────────────────────
   const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", minWidth: 0 }}>
       <div style={{ padding: "16px 12px 14px", borderBottom: "1px solid var(--border-subtle)" }}>
@@ -533,7 +612,6 @@ export default function EmpreendimentoApp({
         </div>
       </nav>
 
-      {/* INDICADOR DE CORRETOR LOGADO (RASTREAMENTO ATIVO) */}
       {(corretorIdUrl || origemUrl !== 'organico') && (
         <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border-subtle)", background: "rgba(0,0,0,0.15)" }}>
            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -550,8 +628,11 @@ export default function EmpreendimentoApp({
             <p style={{ fontSize: 11, color: "var(--gray-mid)", marginBottom: 4 }}>Modelo ativo</p>
             <p style={{ fontWeight: 700, fontSize: 13, color: "var(--terracota)" }}>{modelo.nome}</p>
             <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 2 }}>{modelo.area}m² · {formatBRL(modelo.valor)}</p>
-            {subsidio > 0 && usarSubsidio && (
+            {subsidio > 0 && usarSubsidio && !isSBPE && (
               <p style={{ fontSize: 11, color: "#4ade80", marginTop: 4 }}>Subsídio: {formatBRL(subsidio)}</p>
+            )}
+            {isSBPE && (
+              <p style={{ fontSize: 11, color: "#60a5fa", marginTop: 4 }}>Linha SBPE Ativa</p>
             )}
           </div>
         )}
@@ -559,18 +640,13 @@ export default function EmpreendimentoApp({
     </div>
   );
 
-  // ─────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex" style={{ background: "var(--bg-base)" }}>
 
-      {/* Sidebar desktop */}
       <aside className="hidden lg:flex flex-col sticky top-0 h-screen" style={{ width: 200, minWidth: 200, background: "rgba(15,30,22,0.98)", backdropFilter: "blur(20px)", borderRight: "1px solid var(--border-subtle)", overflow: "hidden" }}>
         <SidebarContent />
       </aside>
 
-      {/* Sidebar mobile */}
       <AnimatePresence>
         {sidebarOpen && (
           <>
@@ -590,14 +666,12 @@ export default function EmpreendimentoApp({
 
       <div className="flex-1 flex flex-col min-w-0">
 
-        {/* Header mobile */}
         <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between" style={{ padding: "12px 20px", background: "rgba(15,30,22,0.97)", backdropFilter: "blur(20px)", borderBottom: "1px solid var(--border-subtle)" }}>
           <button onClick={() => setSidebarOpen(true)} className="btn-ghost" style={{ padding: "8px" }}><Menu size={20} /></button>
           <Image src="/logo.png" alt="Habiticon" width={280} height={80} style={{ height: 44, width: "auto" }} />
           <div className="badge badge-info" style={{ fontSize: 11 }}>{MODULOS.find((m) => m.id === moduloAtivo)?.shortLabel}</div>
         </header>
 
-        {/* Breadcrumb desktop */}
         <div className="hidden lg:flex items-center gap-3" style={{ padding: "16px 40px", borderBottom: "1px solid var(--border-subtle)" }}>
           <Image src="/logo.png" alt="Habiticon" width={280} height={80} style={{ height: 56, width: "auto" }} loading="eager" priority />
           <div style={{ width: 1, height: 20, background: "var(--border-subtle)" }} />
@@ -614,19 +688,16 @@ export default function EmpreendimentoApp({
           })()}
         </div>
 
-        {/* CONTEÚDO PRINCIPAL */}
         <main style={{ flex: 1, padding: "clamp(20px,4vw,40px) clamp(16px,4vw,40px) 60px", overflowY: "auto" }}>
           <div style={{ maxWidth: 900, margin: "0 auto" }}>
             <AnimatePresence mode="wait">
 
-              {/* ══════════════════════════════════════════
-                  MÓDULO 1 — RENDA & SUBSÍDIO
-              ══════════════════════════════════════════ */}
+              {/* RENDA */}
               {moduloAtivo === "renda" && (
                 <motion.div key="renda" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} style={{ display: "flex", flexDirection: "column", gap: 40 }}>
                   <div>
                     <h2 className="text-title" style={{ marginBottom: 10 }}>Renda & Subsídio MCMV</h2>
-                    <p className="text-body">Comece informando a renda bruta familiar. O sistema identifica o enquadramento no programa MCMV e calcula o subsídio e a taxa de juros automaticamente.</p>
+                    <p className="text-body">Comece informando a renda bruta familiar. O sistema identifica o enquadramento no programa MCMV ou a transição para SBPE.</p>
                   </div>
                   <div className="glass-card-nohover" style={{ padding: 48 }}>
                     <SubsidioGauge
@@ -647,23 +718,27 @@ export default function EmpreendimentoApp({
                 </motion.div>
               )}
 
-              {/* ══════════════════════════════════════════
-                  MÓDULO 2 — SIMULADOR
-              ══════════════════════════════════════════ */}
+              {/* SIMULADOR */}
               {moduloAtivo === "simulador" && (
                 <motion.div key="simulador" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} style={{ display: "flex", flexDirection: "column", gap: 40 }}>
-                  <div>
-                    <h2 className="text-title" style={{ marginBottom: 10 }}>Motor de Vendas 50/50</h2>
-                    <p className="text-body">
-                      Selecione o modelo e ajuste a entrada.
-                      {subsidio > 0
-                        ? ` O subsídio e a taxa de ${taxaAtual}% já estão mapeados.`
-                        : " Configure a renda no passo anterior para calcular o subsídio."}
-                    </p>
+                  
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                    <h2 className="text-title" style={{ marginBottom: 0 }}>Motor de Vendas 50/50</h2>
+                    {isSBPE ? (
+                      <span style={{ background: "#3b82f6", color: "white", padding: "4px 8px", borderRadius: 6, fontSize: 11, fontWeight: 800, letterSpacing: "0.05em" }}>LINHA SBPE</span>
+                    ) : (
+                      <span style={{ background: "#16a34a", color: "white", padding: "4px 8px", borderRadius: 6, fontSize: 11, fontWeight: 800, letterSpacing: "0.05em" }}>LINHA MCMV</span>
+                    )}
                   </div>
+                  <p className="text-body" style={{ marginTop: -30 }}>
+                    Selecione o modelo e ajuste a entrada.
+                    {isSBPE 
+                       ? " Cliente enquadrado no SBPE por ultrapassar os limites do MCMV."
+                       : (subsidio > 0 ? ` O subsídio e a taxa de ${taxaAtual}% já estão mapeados.` : " Configure a renda no passo anterior para calcular o subsídio.")}
+                  </p>
 
                   {/* Toggle subsídio */}
-                  {subsidio > 0 && (
+                  {subsidio > 0 && !isSBPE && (
                     <motion.div
                       initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                       style={{
@@ -673,7 +748,6 @@ export default function EmpreendimentoApp({
                         overflow: "hidden",
                       }}
                     >
-                      {/* Linha superior — título + toggle */}
                       <div style={{
                         display: "flex", alignItems: "center",
                         justifyContent: "space-between", gap: 20,
@@ -703,7 +777,6 @@ export default function EmpreendimentoApp({
                         </button>
                       </div>
 
-                      {/* Linha inferior — status */}
                       <div style={{
                         padding: "12px 24px",
                         borderTop: `1px solid ${usarSubsidio ? "rgba(74,222,128,0.15)" : "rgba(251,146,60,0.15)"}`,
@@ -729,8 +802,8 @@ export default function EmpreendimentoApp({
                     </motion.div>
                   )}
 
-                  {/* ★ CARD DE BLOQUEIO — laudo CUB força faixa incompatível com renda */}
-                  {faixaEfetiva && !faixaEfetiva.aprovado && faixaEfetiva.bloqueio && (
+                  {/* ★ CARD DE BLOQUEIO MCMV */}
+                  {!isSBPE && faixaEfetiva && !faixaEfetiva.aprovado && faixaEfetiva.bloqueio && (
                     <motion.div
                       initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
                       style={{ padding: "20px 22px", borderRadius: 14, background: "rgba(239,68,68,0.08)", border: "2px solid rgba(239,68,68,0.3)", display: "flex", gap: 14, alignItems: "flex-start" }}
@@ -752,8 +825,8 @@ export default function EmpreendimentoApp({
                     </motion.div>
                   )}
 
-                  {/* ★ CARD INFORMATIVO — laudo forçou faixa superior mas renda compatível */}
-                  {faixaEfetiva?.aprovado && faixaEfetiva.laudoForcouFaixaSuperior && (
+                  {/* ★ CARD INFORMATIVO MCMV */}
+                  {!isSBPE && faixaEfetiva?.aprovado && faixaEfetiva.laudoForcouFaixaSuperior && (
                     <motion.div
                       initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                       style={{ padding: "14px 18px", borderRadius: 12, background: "rgba(251,146,60,0.08)", border: "1px solid rgba(251,146,60,0.25)", display: "flex", gap: 12, alignItems: "flex-start" }}
@@ -766,7 +839,19 @@ export default function EmpreendimentoApp({
                     </motion.div>
                   )}
 
-                  {/* Seletor de modelo */}
+                  {/* Alerta Opcional Personalizado SBPE */}
+                  {isSBPE && empFresh.textos.alertaSBPE && (
+                    <motion.div
+                      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                      style={{ padding: "14px 18px", borderRadius: 12, background: "rgba(59, 130, 246, 0.08)", border: "1px solid rgba(59, 130, 246, 0.25)", display: "flex", gap: 12, alignItems: "flex-start" }}
+                    >
+                      <Info size={15} color="#60a5fa" style={{ flexShrink: 0, marginTop: 1 }} />
+                      <p style={{ fontSize: 12, color: "#93c5fd", lineHeight: 1.6 }}>
+                        {empFresh.textos.alertaSBPE}
+                      </p>
+                    </motion.div>
+                  )}
+
                   <div className="glass-card-nohover">
                     <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 20 }}>
                       Escolha o Modelo
@@ -774,35 +859,60 @@ export default function EmpreendimentoApp({
                     <ModelSelector modelos={empFresh.modelos} selected={modeloSelecionado} onSelect={setModeloSelecionado} />
                   </div>
 
-                  {/* Entrada slider + alerta trava */}
                   {modelo && (
                     <div className="glass-card-nohover">
                       <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 20 }}>
                         Defina a Entrada Total
                       </h3>
 
-                      {/* ★ ALERTA INTELIGENTE — mostra o limitador correto */}
                       <AlertaTrava />
 
                       {/* ★ CARD DIAGNÓSTICO — entrada embutida CUB */}
-                      {motorEntrada && empFresh.simulador.cub && empFresh.simulador.cub.cubVigente > 0 && (() => {
-                        const { cubCobre, ganhoEntradaEmbutida, pctFinanciadoSobreVenda, maxFinCUB, entradaMinima } = motorEntrada;
+                      {motorEntrada && ((!isSBPE && empFresh.simulador.cub && empFresh.simulador.cub.cubVigente > 0) || (isSBPE && empFresh.simulador.cubSBPE !== undefined && empFresh.simulador.cubSBPE > 0)) && (() => {
+                        const { cubCobre, ganhoEntradaEmbutida, pctFinanciadoSobreVenda, maxFinCUB, entradaMinima, maxFinRenda, maxFinCota80 } = motorEntrada;
                         const pct = (pctFinanciadoSobreVenda * 100).toFixed(1);
-                        const cor = cubCobre ? "#4ade80" : ganhoEntradaEmbutida > 0 ? "#facc15" : "#f87171";
-                        const status = cubCobre ? "✅ Entrada embutida: FUNCIONA" : ganhoEntradaEmbutida > 0 ? "⚡ Parcialmente coberta" : "⚠️ CUB insuficiente";
+                        
+                        // Nova Lógica Inteligente para Cores e Status
+                        const laudoPotencialCobre = maxFinCUB >= (modelo.valor - empFresh.simulador.entradaMin);
+                        const aRendaEsmagou = maxFinRenda < maxFinCUB && maxFinRenda < maxFinCota80;
+                        
+                        let cor = "#f87171"; // Vermelho
+                        let status = "⚠️ Laudo insuficiente";
+                        
+                        if (ganhoEntradaEmbutida > 0) {
+                          cor = cubCobre ? "#4ade80" : "#facc15"; // Verde ou Amarelo
+                          status = cubCobre ? "✅ Entrada embutida: FUNCIONA" : "⚡ Parcialmente coberta";
+                        } else if (aRendaEsmagou && laudoPotencialCobre) {
+                          cor = "#ef4444"; // Vermelho
+                          status = "⛔ A Renda bloqueou a Estratégia";
+                        } else if (aRendaEsmagou && !laudoPotencialCobre) {
+                          cor = "#ef4444"; // Vermelho
+                          status = "⛔ Renda e Laudo insuficientes";
+                        }
+
+                        const bdi = isSBPE ? (empFresh.simulador.bdiSBPE || 0.18) : (empFresh.simulador.cub?.bdi ?? 0.18);
+                        const cotaMax = isSBPE ? SBPE_COTA_MAXIMA_SAC : COTA_MAXIMA_CAIXA;
+
                         return (
                           <div style={{ marginBottom: 20, padding: "16px 18px", borderRadius: 10, background: `${cor}10`, border: `1px solid ${cor}30` }}>
                             <p style={{ fontSize: 13, fontWeight: 700, color: cor, marginBottom: 10 }}>{status}</p>
+                            
+                            {aRendaEsmagou && ganhoEntradaEmbutida === 0 && (
+                              <p style={{ fontSize: 11, color: "var(--gray-mid)", marginBottom: 14, lineHeight: 1.5 }}>
+                                O laudo de avaliação permitia até <strong>{formatBRL(maxFinCUB)}</strong> de financiamento, mas a renda do cliente limitou a liberação.
+                              </p>
+                            )}
+
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: 10 }}>
                               <div>
-                                <p style={{ fontSize: 10, color: "var(--gray-dark)", marginBottom: 4 }}>Laudo CUB cobre</p>
+                                <p style={{ fontSize: 10, color: "var(--gray-dark)", marginBottom: 4 }}>Laudo cobre</p>
                                 <p style={{ fontSize: 16, fontWeight: 800, color: cor }}>{pct}%</p>
                                 <p style={{ fontSize: 10, color: "var(--gray-dark)" }}>do imóvel</p>
                               </div>
                               <div>
-                                <p style={{ fontSize: 10, color: "var(--gray-dark)", marginBottom: 4 }}>Ganho do CUB</p>
+                                <p style={{ fontSize: 10, color: "var(--gray-dark)", marginBottom: 4 }}>Ganho da estratégia</p>
                                 <p style={{ fontSize: 16, fontWeight: 800, color: ganhoEntradaEmbutida > 0 ? "#4ade80" : "var(--gray-mid)" }}>{formatBRL(ganhoEntradaEmbutida)}</p>
-                                <p style={{ fontSize: 10, color: "var(--gray-dark)" }}>vs 80% contrato</p>
+                                <p style={{ fontSize: 10, color: "var(--gray-dark)" }}>vs limite padrão</p>
                               </div>
                               <div>
                                 <p style={{ fontSize: 10, color: "var(--gray-dark)", marginBottom: 4 }}>Entrada mín real</p>
@@ -810,10 +920,10 @@ export default function EmpreendimentoApp({
                                 <p style={{ fontSize: 10, color: "var(--gray-dark)" }}>pelo laudo</p>
                               </div>
                             </div>
-                            {!cubCobre && (
+                            {!laudoPotencialCobre && (
                               <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                                📐 Para embutir 100% da entrada (mín R$10k), o CUB precisaria ser ≥ R${
-                                  Math.ceil(((modelo.valor - empFresh.simulador.entradaMin) / COTA_MAXIMA_CAIXA - valorLoteEmpreendimento) / (modelo.area * (1 + (empFresh.simulador.cub?.bdi ?? 0.18)))).toLocaleString("pt-BR")
+                                📐 Para embutir 100% da entrada (mín R$10k), o CUB equivalente precisaria ser ≥ R${
+                                  Math.ceil(((modelo.valor - empFresh.simulador.entradaMin) / cotaMax - valorLoteEmpreendimento) / (modelo.area * (1 + bdi))).toLocaleString("pt-BR")
                                 }/m²
                               </p>
                             )}
@@ -840,7 +950,7 @@ export default function EmpreendimentoApp({
                         <ResultCards
                           valorImovel={modelo.valor}
                           entrada={entrada}
-                          subsidio={usarSubsidio ? subsidio : 0}
+                          subsidio={usarSubsidio && !isSBPE ? subsidio : 0}
                           atoPercent={atoPercent}
                           onAtoPercentChange={setAtoPercent}
                           laudoCUB={laudoCUBAtual}
@@ -854,10 +964,11 @@ export default function EmpreendimentoApp({
                         </h3>
                         {resultadoSimulacao.finLiberadoPRICE > 0 ? (
                           <ComparadorSacPrice
-                            valorFinanciado={resultadoSimulacao.finLiberadoPRICE}
-                            taxaAnual={taxaAtual}
+                            resultadoSimulacao={resultadoSimulacao}
+                            taxaAnual={isSBPE ? (empFresh.simulador.taxaSBPE || 11.38) : taxaAtual}
                             prazoMeses={empFresh.simulador.prazoMeses}
                             rendaFamiliar={rendaFamiliar}
+                            isSBPE={isSBPE}
                           />
                         ) : (
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 160, borderRadius: 16, border: "1px dashed var(--border-subtle)", background: "rgba(0,0,0,0.15)" }}>
@@ -873,10 +984,10 @@ export default function EmpreendimentoApp({
                     <Info size={15} color="var(--gray-dark)" style={{ flexShrink: 0, marginTop: 1 }} />
                     <p style={{ fontSize: 12, color: "var(--gray-dark)", lineHeight: 1.6 }}>
                       Simulação para {empFresh.cidade}-{empFresh.estado} com taxa nominal de{" "}
-                      <strong style={{ color: "var(--gray-mid)" }}>{taxaAtual}% a.a.</strong> e prazo de{" "}
+                      <strong style={{ color: "var(--gray-mid)" }}>{isSBPE ? (empFresh.simulador.taxaSBPE || 11.38) : taxaAtual}% a.a.</strong> e prazo de{" "}
                       {empFresh.simulador.prazoMeses} meses.{" "}
                       <strong>Os seguros obrigatórios (DFI/MIP) e taxas administrativas já estão embutidos no cálculo das parcelas.</strong>{" "}
-                      O Laudo de Avaliação exibido é uma estimativa inteligente para viabilizar o financiamento no teto do MCMV.
+                      O Laudo de Avaliação exibido é uma estimativa inteligente para viabilizar o financiamento.
                       Sujeito à análise de crédito da Caixa Econômica Federal.
                     </p>
                   </div>
@@ -893,7 +1004,7 @@ export default function EmpreendimentoApp({
               )}
 
               {/* ══════════════════════════════════════════
-                  MÓDULO 3 — OBRA PCI
+                 MÓDULO 3 — OBRA PCI
               ══════════════════════════════════════════ */}
               {moduloAtivo === "obra" && (
                 <motion.div key="obra" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} style={{ display: "flex", flexDirection: "column", gap: 28 }}>
@@ -905,8 +1016,8 @@ export default function EmpreendimentoApp({
                     <div className="glass-card-nohover">
                       <ObrasEscadaChart
                         valorFinanciado={resultadoSimulacao.finLiberadoPRICE}
-                        taxaAnual={taxaAtual}
-                        percentuaisPorMes={empFresh.simulador.percentualObraPorMes}
+                        taxaAnual={isSBPE ? (empFresh.simulador.taxaSBPE || 11.38) : taxaAtual}
+                        etapasObra={empFresh.simulador.etapasObra} // <- A variável NOVA E DINÂMICA
                         titulo={empFresh.textos.tituloObra}
                         descricao={empFresh.textos.descricaoObra}
                         valorLote={valorLoteEmpreendimento}
@@ -930,7 +1041,7 @@ export default function EmpreendimentoApp({
               )}
 
               {/* ══════════════════════════════════════════
-                  MÓDULO 4 — PROPOSTA PDF
+                 MÓDULO 4 — PROPOSTA PDF
               ══════════════════════════════════════════ */}
               {moduloAtivo === "proposta" && (
                 <motion.div key="proposta" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} style={{ display: "flex", flexDirection: "column", gap: 28, maxWidth: 600 }}>
@@ -954,16 +1065,16 @@ export default function EmpreendimentoApp({
                             ["Entrada Real Exigida",                 formatBRL(entrada)],
                             ["  ↳ Ato mínimo no contrato",           formatBRL(entrada * atoPercent)],
                             ["  ↳ Restante a parcelar",              formatBRL(entrada - entrada * atoPercent)],
-                            ...(subsidio > 0 && usarSubsidio
+                            ...(subsidio > 0 && usarSubsidio && !isSBPE
                               ? [["Subsídio MCMV aplicado", formatBRL(subsidio)]]
                               : []),
-                            ["Financiamento Aprovado (80% do Laudo)",formatBRL(resultadoSimulacao?.finLiberadoPRICE || 0)],
-                            ["Taxa de juros anual",                  `${taxaAtual}% a.a.`],
+                            [isSBPE ? "Financiamento Aprovado (SBPE)" : "Financiamento Aprovado (80% do Laudo)", formatBRL(resultadoSimulacao?.finLiberadoPRICE || 0)],
+                            ["Taxa de juros anual",                  `${isSBPE ? (empFresh.simulador.taxaSBPE || 11.38) : taxaAtual}% a.a.`],
                             ["Prazo selecionado",                    `${empFresh.simulador.prazoMeses} meses (${empFresh.simulador.prazoMeses / 12} anos)`],
                             ...(propostaData?.sacAprovadoPDF !== false ? [
                               ["Parcela SAC (1ª)", formatBRL(propostaData?.parcelaSACPrimeira || 0)],
                             ] : [
-                              ["Parcela SAC (1ª)", "⛔ Não aprovado (excede 30% da renda)"],
+                              ["Parcela SAC (1ª)", "⛔ Não aprovado (excede limite de renda)"],
                             ]),
                             ["Parcela PRICE (Fixa)",                 formatBRL(resultadoSimulacao?.parcelaPricePrimeira || 0)],
                           ].map(([k, v]) => (
@@ -971,7 +1082,7 @@ export default function EmpreendimentoApp({
                               <span style={{ fontSize: 13, color: k.startsWith("  ") ? "var(--gray-dark)" : k.includes("Laudo") ? "var(--terracota)" : "var(--gray-mid)" }}>
                                 {k.trim()}
                               </span>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: k.includes("MCMV") || k.includes("Parcela") || k.includes("Aprovado") ? "var(--terracota-light)" : "var(--gray-light)" }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: k.includes("MCMV") || k.includes("SBPE") || k.includes("Parcela") || k.includes("Aprovado") ? "var(--terracota-light)" : "var(--gray-light)" }}>
                                 {v}
                               </span>
                             </div>
@@ -990,7 +1101,7 @@ export default function EmpreendimentoApp({
               )}
 
               {/* ══════════════════════════════════════════
-                  MÓDULO 5 — VITRINE
+                 MÓDULO 5 — VITRINE
               ══════════════════════════════════════════ */}
               {moduloAtivo === "vitrine" && (
                 <motion.div key="vitrine" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} style={{ display: "flex", flexDirection: "column", gap: 28 }}>

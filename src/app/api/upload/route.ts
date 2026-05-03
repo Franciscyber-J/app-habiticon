@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, storage } from "@/lib/firebase";
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { adminDb, adminStorage } from "@/lib/firebase-admin";
+import crypto from "crypto";
+
+// Força a leitura do bucket direto da variável de ambiente
+const BUCKET_NAME = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
 // ─────────────────────────────────────────────────────────
-// POST /api/upload — Faz upload para o Storage e atualiza Firestore
+// POST /api/upload — Faz upload via Admin SDK (Bypass Rules)
 // ─────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
+    if (!BUCKET_NAME) {
+      console.error("ERRO CRÍTICO: Variável NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ausente no .env.local");
+      return NextResponse.json({ error: "Configuração de Storage ausente no servidor." }, { status: 500 });
+    }
+
     const formData = await req.formData();
     const file   = formData.get("file")   as File;
     const slug   = formData.get("slug")   as string;
@@ -18,32 +25,42 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Arquivo e slug são obrigatórios" }, { status: 400 });
     }
 
-    // Transforma o arquivo num buffer para o Firebase
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // Gera nome único sem precisar de bibliotecas externas (Math.random)
     const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
     const randomHash = Math.random().toString(36).substring(2, 10);
     const uniqueFilename = `${tipo}-${Date.now()}-${randomHash}-${cleanName}`;
     
-    // Caminho da pasta dentro do Storage
     const storagePath = `${slug}/${tipo}/${uniqueFilename}`;
-    const storageRef = ref(storage, storagePath);
+    
+    // 1. Instância do Bucket via Admin SDK EXPLICITAMENTE NOMEADA
+    const bucket = adminStorage.bucket(BUCKET_NAME);
+    const fileRef = bucket.file(storagePath);
 
-    // Faz o Upload
-    await uploadBytesResumable(storageRef, buffer, { contentType: file.type });
+    // 2. Gerar um Token de Download (Para a imagem gerar a URL pública padrão Firebase)
+    const downloadToken = crypto.randomUUID();
 
-    // Pega a URL pública permanente
-    const url = await getDownloadURL(storageRef);
+    // 3. Fazer o Upload forçando as credenciais Admin
+    await fileRef.save(buffer, {
+      metadata: {
+        contentType: file.type,
+        metadata: {
+          firebaseStorageDownloadTokens: downloadToken,
+        },
+      },
+    });
+
+    // 4. Montar a URL permanente idêntica ao Firebase Client
+    const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
 
     // ====================================================================
-    // Lógica Original: Atualizar o Banco de Dados (agora Firestore)
+    // Atualizar o Banco de Dados (Firestore via Admin SDK)
     // ====================================================================
-    const empRef = doc(db, "empreendimentos", slug);
-    const empSnap = await getDoc(empRef);
+    const empRef = adminDb.collection("empreendimentos").doc(slug);
+    const empSnap = await empRef.get();
 
-    if (empSnap.exists()) {
-      const empData = empSnap.data();
+    if (empSnap.exists) {
+      const empData = empSnap.data() as any;
 
       if (tipo === "imagens" || tipo === "plantas") {
         if (!empData.vitrine) empData.vitrine = {};
@@ -59,12 +76,13 @@ export async function POST(req: NextRequest) {
         empData.vitrine.ambientes[ambId].fotos.push({ url, titulo });
       }
 
-      await setDoc(empRef, empData);
+      // Salva usando merge para não apagar outros dados
+      await empRef.set(empData, { merge: true });
     }
 
     return NextResponse.json({ success: true, url, titulo });
   } catch (error) {
-    console.error("Erro no upload:", error);
+    console.error("Erro no upload Admin:", error);
     return NextResponse.json({ error: "Erro interno ao processar upload." }, { status: 500 });
   }
 }
@@ -74,26 +92,40 @@ export async function POST(req: NextRequest) {
 // ─────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
   try {
+    if (!BUCKET_NAME) {
+      return NextResponse.json({ error: "Configuração de Storage ausente no servidor." }, { status: 500 });
+    }
+
     const { slug, url, tipo } = await req.json();
 
     if (!url || !slug) {
       return NextResponse.json({ error: "URL e slug são obrigatórios." }, { status: 400 });
     }
 
-    // 1. Deleta do Firebase Storage
+    // Instância do Bucket EXPLICITAMENTE NOMEADA
+    const bucket = adminStorage.bucket(BUCKET_NAME);
+
+    // 1. Extrair o Caminho do Arquivo (FilePath) da URL gerada pelo Firebase
     try {
-      const fileRef = ref(storage, url);
-      await deleteObject(fileRef);
+      const decodedUrl = decodeURIComponent(url);
+      const oIndex = decodedUrl.indexOf('/o/');
+      const altIndex = decodedUrl.indexOf('?alt=media');
+      
+      if (oIndex !== -1 && altIndex !== -1) {
+        const filePath = decodedUrl.substring(oIndex + 3, altIndex);
+        // Exclui usando o privilégio supremo do Admin
+        await bucket.file(filePath).delete();
+      }
     } catch (storageErr) {
       console.warn("Aviso: Falha ao deletar arquivo físico no storage, prosseguindo com limpeza no banco.", storageErr);
     }
 
-    // 2. Remove do Banco de Dados (Firestore)
-    const empRef = doc(db, "empreendimentos", slug);
-    const empSnap = await getDoc(empRef);
+    // 2. Remove do Banco de Dados (Firestore via Admin)
+    const empRef = adminDb.collection("empreendimentos").doc(slug);
+    const empSnap = await empRef.get();
 
-    if (empSnap.exists()) {
-      const empData = empSnap.data();
+    if (empSnap.exists) {
+      const empData = empSnap.data() as any;
 
       if (tipo === "imagens" || tipo === "plantas") {
         if (empData.vitrine && empData.vitrine[tipo]) {
@@ -106,7 +138,7 @@ export async function DELETE(req: NextRequest) {
         }
       }
 
-      await setDoc(empRef, empData);
+      await empRef.set(empData, { merge: true });
     }
 
     return NextResponse.json({ success: true });

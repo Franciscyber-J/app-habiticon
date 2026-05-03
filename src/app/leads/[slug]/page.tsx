@@ -226,7 +226,7 @@ export default function LeadsPublicosPage({ params }: { params: Promise<{ slug: 
                         {lead.timestamp && (
                           <span style={{ fontSize: 11, color: "var(--gray-dark)", display: "flex", alignItems: "center", gap: 3 }}>
                             <Calendar size={11} />
-                            {new Date(lead.timestamp).toLocaleDateString("pt-BR")}
+                            {new Date(lead.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às")}
                           </span>
                         )}
                       </div>

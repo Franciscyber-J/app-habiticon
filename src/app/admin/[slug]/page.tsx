@@ -8,8 +8,9 @@ import { use } from "react";
 import {
   ArrowLeft, Upload, Trash2, Image as ImageIcon,
   DollarSign, FileText, Settings2, Eye, CheckCircle, CheckCircle2,
-  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X, Map, Layers, Wallet, Plus
+  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X, Map, Layers, Wallet, Plus, AlertTriangle
 } from "lucide-react";
+import { ConfiguracoesSBPE } from "@/components/admin/ConfiguracoesSBPE";
 
 type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao" | "mapa" | "comissoes";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -267,6 +268,39 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
         if (!f.simulador.cub) f.simulador.cub = { bdi:0.18, cubVigente:0 };
         if (!f.simulador.taxaFaixa3Cotista) f.simulador.taxaFaixa3Cotista = 7.66;
         if (!f.vendaEmOrdem) f.vendaEmOrdem = false; 
+        if (!f.simulador.taxaSBPE) f.simulador.taxaSBPE = 11.38;
+        if (!f.simulador.cubSBPE) f.simulador.cubSBPE = 0;
+        if (!f.simulador.bdiSBPE) f.simulador.bdiSBPE = 0.18;
+
+        // INJEÇÃO DOS ITENS COMPLEMENTARES PRÉ-CONFIGURADOS SE ESTIVEREM VAZIOS
+        if (!f.simulador.cub.itensComplementares || f.simulador.cub.itensComplementares.length === 0) {
+          f.simulador.cub.itensComplementares = [
+            { id: "ic1", descricao: "Muros Divisa do Imovel (2,5m altura)", valor: 0 },
+            { id: "ic2", descricao: "Calçadas", valor: 0 },
+            { id: "ic3", descricao: "Rampa de Acesso", valor: 0 },
+            { id: "ic4", descricao: "Muro de Arrimo", valor: 0 }
+          ];
+        }
+        if (!f.simulador.itensComplementaresSBPE || f.simulador.itensComplementaresSBPE.length === 0) {
+          f.simulador.itensComplementaresSBPE = [
+            { id: "ic1_sbpe", descricao: "Muros Divisa do Imovel (2,5m altura)", valor: 0 },
+            { id: "ic2_sbpe", descricao: "Calçadas", valor: 0 },
+            { id: "ic3_sbpe", descricao: "Rampa de Acesso", valor: 0 },
+            { id: "ic4_sbpe", descricao: "Muro de Arrimo", valor: 0 }
+          ];
+        }
+
+        // NOVO: INJEÇÃO DO CRONOGRAMA DA OBRA (PCI) SE NÃO EXISTIR
+        if (!f.simulador.etapasObra || f.simulador.etapasObra.length === 0) {
+          f.simulador.etapasObra = [
+            { id: "e1", descricao: "Fundações e Infraestrutura", percentual: 20 },
+            { id: "e2", descricao: "Supraestrutura e Alvenaria", percentual: 20 },
+            { id: "e3", descricao: "Cobertura e Revestimentos", percentual: 20 },
+            { id: "e4", descricao: "Pisos, Instalações e Acabamentos", percentual: 20 },
+            { id: "e5", descricao: "Pinturas e Louças", percentual: 15 },
+            { id: "e6", descricao: "Habite-se — Retenção Final", percentual: 5 }
+          ];
+        }
 
         // INJEÇÃO DA ESTRUTURA DE COMISSÕES PADRÃO SE NÃO EXISTIR
         if (!f.comissoes) {
@@ -354,6 +388,14 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
 
   const salvar = useCallback(async () => {
     if (!emp) return;
+    
+    // Trava de segurança para não deixar salvar se o cronograma estiver quebrado
+    const totalObra = (emp.simulador.etapasObra || []).reduce((acc: number, e: any) => acc + (Number(e.percentual) || 0), 0);
+    if (totalObra !== 100) {
+      alert(`O Cronograma de Obra (PCI) soma ${totalObra}%. Ajuste os percentuais para totalizar exatamente 100% antes de salvar.`);
+      return;
+    }
+
     setSaveState("saving");
     try {
       const listaAtual = await fetch("/api/empreendimentos").then(r => r.json()) as any[];
@@ -451,12 +493,26 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
     } finally { setUploading(false); if (mapRef.current) mapRef.current.value = ""; }
   };
 
+  // CÁLCULO DIAGNÓSTICO DO CUB MCMV (COM COMPLEMENTARES)
   const diagCUB = emp?.simulador?.cub?.cubVigente > 0 ? emp.modelos.map((m:any) => {
     const {cubVigente,bdi} = emp.simulador.cub;
+    const itensMCMV = emp.simulador.cub.itensComplementares || [];
+    const totalItens = itensMCMV.reduce((acc: number, item: any) => acc + (Number(item.valor) || 0), 0);
+    const cubEquivalente = cubVigente + (totalItens / m.area);
+    
     const lote = emp.modelos[0]?.valorLote||48000;
-    const laudo = lote + m.area*cubVigente*(1+bdi);
-    const maxFin = laudo*0.80;
-    return { nome:m.nome, laudo, maxFin, entradaMin:Math.max(10000,m.valor-maxFin), funciona:maxFin>=m.valor-10000, cubMin:((m.valor-10000)/0.80-lote)/(m.area*(1+bdi)) };
+    const laudo = lote + m.area * cubEquivalente * (1+bdi);
+    const maxFin = laudo * 0.80; // MCMV sempre permite 80%
+
+    return { 
+       nome: m.nome, 
+       laudo, 
+       maxFin, 
+       entradaMin: Math.max(10000, m.valor - maxFin), 
+       funciona: maxFin >= m.valor - 10000, 
+       cubEquivalente,
+       totalItens
+    };
   }) : null;
 
   if (loading) return <div className="min-h-screen flex-center" style={{background:"var(--bg-base)"}}><p className="text-muted">Carregando...</p></div>;
@@ -563,9 +619,9 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
               </motion.p>
             )}
           </AnimatePresence>
-          <button onClick={salvar} disabled={saveState === "saving" || (!isDirty && saveState === "idle")} style={{
+          <button onClick={salvar} disabled={saveState === "saving"} style={{
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            padding: "11px 16px", borderRadius: 10, border: "none", cursor: isDirty ? "pointer" : "default",
+            padding: "11px 16px", borderRadius: 10, border: "none", cursor: "pointer",
             fontWeight: 700, fontSize: 13, transition: "all 0.2s",
             background: isDirty || saveState !== "idle" ? (saveState === "idle" ? "var(--terracota)" : saveCfg.bg) : "rgba(255,255,255,0.07)",
             color: isDirty || saveState !== "idle" ? "white" : "var(--gray-dark)",
@@ -791,7 +847,88 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                     </div>
                   </Card>
 
-                  <Card title="📐 CUB SINDUSCON — Entrada Embutida" subtitle="Preencha o CUB vigente e clique em Salvar. Se o laudo superar o preço de venda, a Caixa financiará mais de 80% do contrato.">
+                  {/* ── CARD: CRONOGRAMA DE OBRA (PCI) ── */}
+                  <Card title="🏗️ Cronograma de Obra (PCI)" subtitle="Configure as medições da construção. A liberação inicial do lote (80%) já é feita automaticamente pelo sistema no Mês 1.">
+                    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                      {emp.simulador.etapasObra.map((etapa: any, idx: number) => (
+                        <div key={etapa.id} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                          <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "var(--gray-mid)" }}>
+                            M{idx + 2}
+                          </div>
+                          <input
+                            type="text"
+                            className="input-field"
+                            style={{ flex: 1, fontSize: 14 }}
+                            placeholder="Descrição da etapa"
+                            value={etapa.descricao}
+                            onChange={(e) => {
+                              const novas = [...emp.simulador.etapasObra];
+                              novas[idx].descricao = e.target.value;
+                              update("simulador.etapasObra", novas);
+                            }}
+                          />
+                          <div style={{ width: 120 }}>
+                            <NumInput
+                              value={etapa.percentual}
+                              suffix="%"
+                              step={1}
+                              onChange={(v) => {
+                                const novas = [...emp.simulador.etapasObra];
+                                novas[idx].percentual = v;
+                                update("simulador.etapasObra", novas);
+                              }}
+                            />
+                          </div>
+                          <button
+                            onClick={() => {
+                              const novas = emp.simulador.etapasObra.filter((_: any, i: number) => i !== idx);
+                              update("simulador.etapasObra", novas);
+                            }}
+                            style={{ padding: 12, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "none", borderRadius: 10, cursor: "pointer" }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ))}
+                      
+                      {/* Totalizador Inteligente */}
+                      {(() => {
+                        const total = (emp.simulador.etapasObra || []).reduce((acc: number, e: any) => acc + (Number(e.percentual) || 0), 0);
+                        const is100 = total === 100;
+                        const falta = 100 - total;
+                        
+                        return (
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 16 }}>
+                            <button
+                              onClick={() => {
+                                const novas = [...(emp.simulador.etapasObra || []), { id: `etapa_${Date.now()}`, descricao: "Nova Medição", percentual: Math.max(0, falta) }];
+                                update("simulador.etapasObra", novas);
+                              }}
+                              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "var(--terracota-glow)", color: "var(--terracota)", border: "1px solid var(--border-active)", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                            >
+                              <Plus size={14} /> Adicionar Medição
+                            </button>
+                            
+                            <div style={{ padding: "8px 16px", borderRadius: 8, background: is100 ? "rgba(74,222,128,0.1)" : "rgba(239,68,68,0.1)", border: `1px solid ${is100 ? "rgba(74,222,128,0.3)" : "rgba(239,68,68,0.3)"}`, display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 11, color: is100 ? "#4ade80" : "#fca5a5", textTransform: "uppercase", fontWeight: 700 }}>
+                                Soma Total:
+                              </span>
+                              <span style={{ fontSize: 16, fontWeight: 800, color: is100 ? "#4ade80" : "#ef4444" }}>
+                                {total}%
+                              </span>
+                              {!is100 && (
+                                <span style={{ fontSize: 11, color: "#fca5a5", marginLeft: 8 }}>
+                                  ({falta > 0 ? `Faltam ${falta}%` : `Passou ${Math.abs(falta)}%`})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </Card>
+
+                  <Card title="🏢 Linha MCMV (Baixa Renda / Fora SBPE)" subtitle="Preencha o CUB vigente e as obras complementares. Se o laudo superar o preço de venda, a Caixa financiará mais de 80% do contrato.">
                     <div style={{display:"flex",flexDirection:"column",gap:20}}>
                       <div style={{padding:"10px 14px",borderRadius:8,background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",display:"flex",gap:8,alignItems:"center"}}>
                         <Info size={13} color="#fb923c" style={{flexShrink:0}}/><p style={{fontSize:12,color:"#fb923c"}}>Atualizar mensalmente. <strong>Clique em "Salvar alterações" após preencher.</strong></p>
@@ -800,18 +937,113 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                         <div><FieldLabel hint="SINDUSCON-GO deste mês">CUB Vigente (R$/m²)</FieldLabel><NumInput value={emp.simulador.cub?.cubVigente||0} prefix="R$" suffix="/m²" step={1} placeholder="Ex: 2900" onChange={v=>update("simulador.cub.cubVigente",v)}/></div>
                         <div><FieldLabel hint="Máximo 18% aceito pela Caixa">BDI (%)</FieldLabel><NumInput value={emp.simulador.cub?.bdi?Math.round(emp.simulador.cub.bdi*100):18} suffix="%" step={0.5} min={0} onChange={v=>update("simulador.cub.bdi",v/100)}/></div>
                       </Two>
-                      {diagCUB?(
+
+                      {/* ── SEÇÃO: OBRAS COMPLEMENTARES MCMV ── */}
+                      <div style={{ marginTop: 8, padding: "20px", background: "rgba(0,0,0,0.2)", borderRadius: 12, border: "1px dashed var(--border-subtle)" }}>
+                        <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--terracota-light)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                          Obras Complementares (Estratégia PCI)
+                        </h4>
+                        <p style={{ fontSize: 12, color: "var(--gray-mid)", marginBottom: 16, lineHeight: 1.5 }}>
+                          Adicione itens externos à área construída. O sistema converterá esse valor em m² e somará ao CUB Base para elevar o Laudo de Avaliação no MCMV.
+                        </p>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+                          {(emp.simulador.cub?.itensComplementares || []).map((item: any, idx: number) => (
+                            <div key={item.id} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                              <input 
+                                type="text" 
+                                className="input-field" 
+                                style={{ flex: 2, fontSize: 14 }}
+                                placeholder="Ex: Muros (2,5m altura)" 
+                                value={item.descricao}
+                                onChange={(e) => {
+                                  const novos = [...(emp.simulador.cub.itensComplementares || [])];
+                                  novos[idx].descricao = e.target.value;
+                                  update("simulador.cub.itensComplementares", novos);
+                                }}
+                              />
+                              <div style={{ flex: 1 }}>
+                                <NumInput 
+                                  value={item.valor} 
+                                  prefix="R$" 
+                                  onChange={(v) => {
+                                    const novos = [...(emp.simulador.cub.itensComplementares || [])];
+                                    novos[idx].valor = v;
+                                    update("simulador.cub.itensComplementares", novos);
+                                  }}
+                                />
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  const novos = (emp.simulador.cub.itensComplementares || []).filter((_: any, i: number) => i !== idx);
+                                  update("simulador.cub.itensComplementares", novos);
+                                }}
+                                style={{ padding: 12, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "none", borderRadius: 10, cursor: "pointer" }}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 16 }}>
+                          <button 
+                            onClick={() => {
+                              const novos = [...(emp.simulador.cub.itensComplementares || []), { id: `item_${Date.now()}`, descricao: "", valor: 0 }];
+                              update("simulador.cub.itensComplementares", novos);
+                            }}
+                            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "var(--terracota-glow)", color: "var(--terracota)", border: "1px solid var(--border-active)", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                          >
+                            <Plus size={14} /> Adicionar Item
+                          </button>
+                          <div style={{ textAlign: "right" }}>
+                            <span style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginRight: 8 }}>Total Complementar:</span>
+                            <span style={{ fontSize: 16, fontWeight: 800, color: "white" }}>
+                              {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format((emp.simulador.cub?.itensComplementares || []).reduce((a:number,b:any)=>a+(Number(b.valor)||0),0))}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {/* Alerta de Obrigatoriedade na PCI */}
+                        {((emp.simulador.cub?.itensComplementares || []).reduce((a:number,b:any)=>a+(Number(b.valor)||0),0)) > 0 && (
+                          <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginTop: 16, padding: "12px 16px", borderRadius: 10, background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)" }}>
+                            <AlertTriangle size={16} color="#fb923c" style={{ flexShrink: 0, marginTop: 2 }} />
+                            <p style={{ fontSize: 12, color: "#fed7aa", lineHeight: 1.5 }}>
+                              <strong>Atenção (NBR 12721):</strong> Os itens informados devem ser discriminados no campo <strong>"Outros / Obras e Serviços Complementares"</strong> na Planilha PCI.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* DIAGNÓSTICO */}
+                      {diagCUB ? (
                         <div style={{display:"flex",flexDirection:"column",gap:12}}>
                           <p style={{fontSize:11,fontWeight:700,color:"var(--gray-mid)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Diagnóstico automático</p>
                           {diagCUB.map((d:any)=>{const cor=d.funciona?"#4ade80":"#facc15";return(
                             <div key={d.nome} style={{padding:"16px 18px",borderRadius:12,background:`${cor}0d`,border:`1px solid ${cor}28`}}>
                               <p style={{fontSize:13,fontWeight:700,color:cor,marginBottom:12}}>{d.funciona?"✅":"⚡"} {d.nome} — entrada embutida {d.funciona?"funciona":"parcial"}</p>
-                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+                              
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                                <div>
+                                  <p style={{ fontSize: 10, color: "var(--gray-dark)", marginBottom: 3 }}>CUB Base</p>
+                                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--gray-mid)" }}>R$ {Math.round(emp.simulador.cub?.cubVigente || 0).toLocaleString("pt-BR")}/m²</p>
+                                </div>
+                                <div>
+                                  <p style={{ fontSize: 10, color: "var(--gray-dark)", marginBottom: 3 }}>Impacto Extra</p>
+                                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--terracota-light)" }}>+ R$ {Math.round(d.totalItens / (emp.modelos.find((mx:any)=>mx.nome===d.nome)?.area || 1)).toLocaleString("pt-BR")}/m²</p>
+                                </div>
+                                <div>
+                                  <p style={{ fontSize: 10, color: "var(--gray-dark)", marginBottom: 3 }}>CUB Efetivo Usado</p>
+                                  <p style={{ fontSize: 13, fontWeight: 800, color: "white" }}>R$ {Math.round(d.cubEquivalente).toLocaleString("pt-BR")}/m²</p>
+                                </div>
+                              </div>
+
+                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 12}}>
                                 {[["Laudo CUB",`R$ ${Math.round(d.laudo).toLocaleString("pt-BR")}`],["Máx fin (80%)",`R$ ${Math.round(d.maxFin).toLocaleString("pt-BR")}`],["Entrada mín",`R$ ${Math.round(d.entradaMin).toLocaleString("pt-BR")}`]].map(([l,v])=>(
                                   <div key={l}><p style={{fontSize:10,color:"var(--gray-dark)",marginBottom:3}}>{l}</p><p style={{fontSize:13,fontWeight:700,color:"var(--gray-light)"}}>{v}</p></div>
                                 ))}
                               </div>
-                              {!d.funciona&&<p style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>CUB mínimo para 100%: R$ {Math.ceil(d.cubMin).toLocaleString("pt-BR")}/m²</p>}
+                              {!d.funciona&&<p style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>CUB equivalente mínimo para 100%: R$ {Math.ceil(((emp.modelos.find((mx:any)=>mx.nome===d.nome)?.valor - emp.simulador.entradaMin) / 0.8 - (emp.modelos[0]?.valorLote||48000)) / ((emp.modelos.find((mx:any)=>mx.nome===d.nome)?.area || 1) * (1+(emp.simulador.cub?.bdi||0.18)))).toLocaleString("pt-BR")}/m²</p>}
                             </div>
                           );})}
                         </div>
@@ -822,6 +1054,9 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                       )}
                     </div>
                   </Card>
+
+                  <ConfiguracoesSBPE emp={emp} update={update} />
+
                 </motion.div>
               )}
 
@@ -1003,6 +1238,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                       <Hr/>
                       <div><FieldLabel hint="Faixa 2 (com subsídio)">Alerta Faixa 2</FieldLabel><textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}} value={emp.textos.alertaF12} onChange={e=>update("textos.alertaF12",e.target.value)}/></div>
                       <div><FieldLabel hint="Faixa 3 e 4 (sem subsídio)">Alerta Faixa 3/4</FieldLabel><textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}} value={emp.textos.alertaF3} onChange={e=>update("textos.alertaF3",e.target.value)}/></div>
+                      <div><FieldLabel hint="Linha SBPE (Alto Padrão)">Alerta SBPE</FieldLabel><textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}} value={emp.textos.alertaSBPE || ""} onChange={e=>update("textos.alertaSBPE",e.target.value)}/></div>
                     </div>
                   </Card>
                 </motion.div>
