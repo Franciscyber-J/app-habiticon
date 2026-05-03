@@ -13,6 +13,7 @@ import {
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { doc, updateDoc } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase";
+import { notificarTelegram } from "@/lib/notificacoes"; // ← NOVO: IMPORT DO TELEGRAM
 
 // ─────────────────────────────────────────────────────────
 // TIPAGENS E CONSTANTES
@@ -244,6 +245,31 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
 
       await updateDoc(doc(db, "leads", lead.id), { dossie: dossieAtualizado });
       mostrarToast(`${files.length} anexo(s) adicionado(s)!`, "sucesso");
+
+      // ─────────────────────────────────────────────────────────
+      // ← NOVO: DISPARO DE TELEGRAM AO ANEXAR DOCUMENTO
+      // ─────────────────────────────────────────────────────────
+      try {
+        const dataFormatada = new Date().toLocaleString("pt-BR", { 
+          day: "2-digit", month: "2-digit", year: "numeric", 
+          hour: "2-digit", minute: "2-digit" 
+        }).replace(",", " às");
+
+        const mensagemDoc = 
+`📎 <b>DOCUMENTOS ATUALIZADOS</b> 📎
+━━━━━━━━━━━━━━━━━━━━
+👤 <b>Cliente:</b> ${lead.nome}
+👷‍♂️ <b>Corretor:</b> ${lead.nomeCorretor || "Não atribuído (House)"}
+📂 <b>Arquivo anexado:</b> ${docAlvo.label}
+👥 <b>Referente a:</b> ${pessoaAlvo.nome}
+📅 <b>Data:</b> ${dataFormatada}
+━━━━━━━━━━━━━━━━━━━━
+🎯 <i>Novos arquivos foram anexados ao dossiê. Acesse a mesa de crédito para analisar a documentação.</i>`;
+
+        await notificarTelegram("documentoAnexado", mensagemDoc);
+      } catch (telegramErr) {
+        console.error("Erro ao enviar notificação do Telegram:", telegramErr);
+      }
 
       if (inputRef.current) inputRef.current.value = "";
 

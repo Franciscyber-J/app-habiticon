@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/firebase"; 
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, getDoc } from "firebase/firestore";
-// Precisamos importar o storage caso vocÊ tenha inicializado, mas para simplificar
+// Precisamos importar o storage caso você tenha inicializado, mas para simplificar
 // vamos focar na deleção do documento e usar uma lógica robusta se o storage admin não estiver configurado.
 import { getStorage, ref, deleteObject } from "firebase/storage"; 
+import { notificarTelegram } from "@/lib/notificacoes"; // ← IMPORTAÇÃO DO TELEGRAM AQUI
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,8 @@ export async function POST(req: NextRequest) {
       slug = slug.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "-");
     }
 
+    const dataAtual = timestamp || new Date().toISOString();
+
     const novoLead = {
       nome, 
       whatsapp,
@@ -59,11 +62,43 @@ export async function POST(req: NextRequest) {
       area: area || 0,           
       quartos: quartos || 0,     
       simulacao: simulacao || null, 
-      timestamp: timestamp || new Date().toISOString(),
+      timestamp: dataAtual,
       status: "novo",
     };
 
     const docRef = await addDoc(collection(db, "leads"), novoLead);
+
+    // ─────────────────────────────────────────────────────────
+    // ← NOVO: DISPARO DE TELEGRAM FORMATADO PARA "NOVO LEAD"
+    // ─────────────────────────────────────────────────────────
+    try {
+      const dataFormatada = new Date(dataAtual).toLocaleString("pt-BR", { 
+        day: "2-digit", month: "2-digit", year: "numeric", 
+        hour: "2-digit", minute: "2-digit" 
+      }).replace(",", " às");
+
+      // Monta um bloco financeiro dinâmico se a simulação existir
+      const msgSimulacao = simulacao && simulacao.valorFinanciado 
+        ? `\n💰 <b>Renda Informada:</b> R$ ${simulacao.rendaFamiliar?.toLocaleString('pt-BR')}\n🏦 <b>A Financiar:</b> R$ ${simulacao.valorFinanciado?.toLocaleString('pt-BR')}` 
+        : "";
+
+      const mensagemTelegram = 
+`🌟 <b>NOVO LEAD CAPTURADO</b> 🌟
+━━━━━━━━━━━━━━━━━━━━
+👤 <b>Cliente:</b> ${nome}
+📱 <b>WhatsApp:</b> <a href="https://wa.me/55${whatsapp.replace(/\D/g, "")}">${whatsapp}</a>
+🏢 <b>Empreendimento:</b> ${empreendimento || "Não informado"}
+🏠 <b>Modelo:</b> ${modelo || "Não especificado"}${msgSimulacao}
+📅 <b>Data:</b> ${dataFormatada}
+━━━━━━━━━━━━━━━━━━━━
+🎯 <i>Lead gerado via Motor de Vendas/Simulador. Já disponível na roleta do Painel Admin.</i>`;
+
+      // Passamos a chave "novoLead" para respeitar a configuração do seu Painel Admin
+      await notificarTelegram("novoLead", mensagemTelegram);
+    } catch (telegramErr) {
+      console.error("Aviso: Falha ao notificar o Telegram", telegramErr);
+      // Não damos return error aqui para garantir que o cliente conclua o cadastro mesmo se o Telegram falhar
+    }
 
     return NextResponse.json({ success: true, lead: { id: docRef.id, ...novoLead } });
   } catch (error) {

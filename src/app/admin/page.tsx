@@ -21,6 +21,7 @@ import { DashboardFinanceiro } from "@/components/admin/DashboardFinanceiro";
 import { GestaoComissoes } from "@/components/admin/GestaoComissoes";
 import { GestaoRecebiveis } from "@/components/admin/GestaoRecebiveis";
 import { GeradorContratoModal } from "@/components/admin/GeradorContratoModal";
+import { notificarTelegram } from "@/lib/notificacoes"; // ← NOVO IMPORT DO TELEGRAM
 
 // ── IMPORTAÇÕES DA FRAGMENTAÇÃO DO LAYOUT ──
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
@@ -168,7 +169,7 @@ export default function AdminPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [listaCorretores, setListaCorretores] = useState<any[]>([]);
-  const [listaCorrespondentes, setListaCorrespondentes] = useState<any[]>([]); // ← NOVO
+  const [listaCorrespondentes, setListaCorrespondentes] = useState<any[]>([]); 
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
 
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
@@ -197,9 +198,13 @@ export default function AdminPage() {
   const [novaVenda, setNovaVenda] = useState({ nome: "", whatsapp: "", empreendimentoId: "" });
   const [leadParaContrato, setLeadParaContrato] = useState<any | null>(null);
 
-  // ← ESTADO DO MODAL DE ACESSO DE CORRESPONDENTES
+  // Estado do Modal de Acesso de Correspondentes
   const [modalAcessoLead, setModalAcessoLead] = useState<Lead | null>(null);
   const [salvandoAcesso, setSalvandoAcesso] = useState(false);
+
+  // ← NOVO: Estado do Modal de Notificações do Telegram
+  const [modalNotificacoes, setModalNotificacoes] = useState(false);
+  const [alertasConfig, setAlertasConfig] = useState({ novoLead: true, vendaDireta: true, documentoAnexado: true });
 
   const router = useRouter();
 
@@ -250,7 +255,7 @@ export default function AdminPage() {
     return () => { cleanup.then(unsub => { if (unsub) unsub(); }); };
   }, [carregarDados, authVerificado]);
 
-  // ── CARREGA CORRETORES ──
+  // ── CARREGA CORRETORES E CORRESPONDENTES ──
   useEffect(() => {
     if (!authVerificado) return;
     const qCorretores = query(collection(db, "usuarios"), where("status", "==", "ativo"), where("role", "==", "corretor"));
@@ -261,7 +266,6 @@ export default function AdminPage() {
     return () => unsub();
   }, [authVerificado]);
 
-  // ← CARREGA CORRESPONDENTES
   useEffect(() => {
     if (!authVerificado) return;
     const qCorrespondentes = query(collection(db, "usuarios"), where("status", "==", "ativo"), where("role", "==", "correspondente"));
@@ -270,6 +274,14 @@ export default function AdminPage() {
       setListaCorrespondentes(data);
     }, (error) => console.error("Erro ao carregar correspondentes:", error));
     return () => unsub();
+  }, [authVerificado]);
+
+  // ← NOVO: Carrega as configurações de Alerta (Telegram) ao abrir
+  useEffect(() => {
+    if (!authVerificado) return;
+    getDoc(doc(db, "configuracoes", "alertas")).then(snap => {
+      if (snap.exists()) setAlertasConfig(snap.data() as any);
+    }).catch(err => console.error("Erro ao carregar configs de alerta", err));
   }, [authVerificado]);
 
   // ─────────────────────────────────────────────────────────
@@ -479,11 +491,29 @@ export default function AdminPage() {
         empreendimentoNome: emp?.nome || "", corretorId: "interno", nomeCorretor: "Venda Direta (House)",
         status: "em_atendimento", timestamp: new Date().toISOString(), origem: "painel_admin"
       });
+      
+// ← NOVO: DISPARO DE TELEGRAM AO CRIAR VENDA DIRETA (FORMATADO)
+      const dataFormatada = new Date().toLocaleString("pt-BR", { 
+        day: "2-digit", month: "2-digit", year: "numeric", 
+        hour: "2-digit", minute: "2-digit" 
+      }).replace(",", " às");
+
+      const mensagemTelegram = 
+`🚨 <b>NOVA VENDA DIRETA (HOUSE)</b> 🚨
+━━━━━━━━━━━━━━━━━━━━
+👤 <b>Cliente:</b> ${novaVenda.nome}
+📱 <b>WhatsApp:</b> <a href="https://wa.me/55${novaVenda.whatsapp.replace(/\D/g, "")}">${novaVenda.whatsapp}</a>
+🏢 <b>Empreendimento:</b> ${emp?.nome || "Não informado"}
+📅 <b>Data:</b> ${dataFormatada}
+━━━━━━━━━━━━━━━━━━━━
+🎯 <i>Venda lançada via Painel Admin sem comissão de corretagem vinculada. O lead já está disponível para o time de Repasse/Correspondentes.</i>`;
+
+      await notificarTelegram("vendaDireta", mensagemTelegram);
+            
       setModalVendaDireta(false); setNovaVenda({ nome: "", whatsapp: "", empreendimentoId: "" });
     } catch (err) { alert("Erro ao registrar cliente."); } finally { setUploadingGeral(false); }
   };
 
-  // ← FUNÇÃO DE TOGGLE DE ACESSO POR CORRESPONDENTE (AGORA É LISTA BRANCA)
   const toggleAcessoCorrespondente = async (correspondentId: string) => {
     if (!modalAcessoLead) return;
     setSalvandoAcesso(true);
@@ -492,14 +522,13 @@ export default function AdminPage() {
       const jaPermitido = permitidosAtuais.includes(correspondentId);
       
       const novosPermitidos = jaPermitido
-        ? permitidosAtuais.filter(id => id !== correspondentId) // desligar (remover acesso)
-        : [...permitidosAtuais, correspondentId];               // ligar (conceder acesso)
+        ? permitidosAtuais.filter(id => id !== correspondentId)
+        : [...permitidosAtuais, correspondentId];
 
       await updateDoc(doc(db, "leads", modalAcessoLead.id), {
         correspondentesPermitidos: novosPermitidos
       });
 
-      // Atualiza estado local do modal para refletir imediatamente
       setModalAcessoLead(prev => prev ? { ...prev, correspondentesPermitidos: novosPermitidos } : null);
     } catch (error) {
       console.error("Erro ao alterar acesso:", error);
@@ -507,6 +536,14 @@ export default function AdminPage() {
     } finally {
       setSalvandoAcesso(false);
     }
+  };
+
+  // ← NOVO: Função para Ligar/Desligar os Alertas do Telegram no Banco de Dados
+  const toggleAlerta = async (tipo: string) => {
+    const novoValor = !alertasConfig[tipo as keyof typeof alertasConfig];
+    const novaConfig = { ...alertasConfig, [tipo]: novoValor };
+    setAlertasConfig(novaConfig);
+    await setDoc(doc(db, "configuracoes", "alertas"), novaConfig, { merge: true });
   };
 
   const leadsFiltrados = useMemo(() => {
@@ -726,7 +763,6 @@ export default function AdminPage() {
                                 const isReprovado = lead.status === "nao_qualificado" || lead.status === "credito_reprovado";
                                 const isDecidido = isAprovado || isReprovado;
                                 const statusAjustado = (lead.status === "credito_aprovado" ? "qualificado" : lead.status === "credito_reprovado" ? "nao_qualificado" : lead.status) ?? "em_atendimento";
-                                // ← Conta quantos correspondentes têm acesso a este lead
                                 const qtdePermitidos = (lead.correspondentesPermitidos || []).length;
 
                                 return (
@@ -745,7 +781,6 @@ export default function AdminPage() {
                                             <Phone size={12} /> {lead.whatsapp}
                                             {lead.whatsapp2 && <><span style={{ margin: "0 4px", color: "var(--border-subtle)" }}>|</span><Phone size={12} /> {lead.whatsapp2}</>}
                                           </span>
-                                          {/* TAG DE DATA E HORA AQUI */}
                                           <span style={{ fontSize: 11, color: "var(--gray-dark)", display: "flex", alignItems: "center", gap: 4, border: "1px solid var(--border-subtle)", padding: "2px 8px", borderRadius: 6 }}>
                                             <Clock size={11} /> 
                                             {lead.timestamp ? new Date(lead.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às") : "Data indisponível"}
@@ -769,11 +804,9 @@ export default function AdminPage() {
                                         {isDecidido && <Lock size={12} />}
                                       </div>
 
-                                      {/* ← BOTÃO DE ACESSO DE CORRESPONDENTES */}
                                       {listaCorrespondentes.length > 0 && (
                                         <button
                                           onClick={() => {
-                                            // Sincroniza o lead mais recente do state antes de abrir o modal
                                             const leadAtualizado = todosLeads.find(l => l.id === lead.id) || lead;
                                             setModalAcessoLead(leadAtualizado);
                                           }}
@@ -993,7 +1026,7 @@ export default function AdminPage() {
         )}
       </AnimatePresence>
 
-      {/* ← MODAL DE CONTROLE DE ACESSO DOS CORRESPONDENTES */}
+      {/* MODAL DE CONTROLE DE ACESSO DOS CORRESPONDENTES */}
       <AnimatePresence>
         {modalAcessoLead && (
           <motion.div
@@ -1170,6 +1203,47 @@ export default function AdminPage() {
       )}
 
       {leadParaContrato && <GeradorContratoModal lead={leadParaContrato} onClose={() => setLeadParaContrato(null)} />}
+
+      {/* BOTÃO FLUTUANTE DE CONFIGURAÇÃO DE NOTIFICAÇÕES (Canto inferior direito) */}
+      <button onClick={() => setModalNotificacoes(true)} style={{ position: "fixed", bottom: 24, right: 24, zIndex: 90, width: 56, height: 56, borderRadius: "50%", background: "var(--terracota)", color: "white", border: "none", boxShadow: "0 10px 25px rgba(175,111,83,0.5)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "0.2s" }}>
+        <Settings size={24} />
+      </button>
+
+      {/* MODAL DE CONFIGURAÇÃO DE NOTIFICAÇÕES TELEGRAM */}
+      <AnimatePresence>
+        {modalNotificacoes && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 20, width: "100%", maxWidth: 420, overflow: "hidden" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.2)" }}>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}><MessageCircle size={18} color="#38bdf8" /> Alertas no Telegram</h3>
+                <button onClick={() => setModalNotificacoes(false)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+              </div>
+              <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 16 }}>
+                <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5, marginBottom: 8 }}>Selecione quais eventos do sistema você deseja receber no seu bot <strong>@HabiticonAvisosBot</strong>.</p>
+                
+                {[
+                  { id: "novoLead", label: "Novo Lead Capturado", desc: "Avisa quando um cliente se cadastrar na Vitrine" },
+                  { id: "vendaDireta", label: "Nova Venda Direta", desc: "Avisa quando uma Venda House for criada no painel" },
+                  { id: "documentoAnexado", label: "Documentos Atualizados", desc: "Avisa quando clientes ou corretores anexarem fotos" }
+                ].map((item) => (
+                  <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", background: "rgba(0,0,0,0.2)", borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
+                    <div>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: "white" }}>{item.label}</p>
+                      <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 4 }}>{item.desc}</p>
+                    </div>
+                    <button
+                      onClick={() => toggleAlerta(item.id)}
+                      style={{ padding: "6px 12px", borderRadius: 8, cursor: "pointer", fontWeight: 800, fontSize: 12, border: "none", background: alertasConfig[item.id as keyof typeof alertasConfig] ? "rgba(74,222,128,0.2)" : "rgba(239,68,68,0.2)", color: alertasConfig[item.id as keyof typeof alertasConfig] ? "#4ade80" : "#f87171", display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      {alertasConfig[item.id as keyof typeof alertasConfig] ? <><ToggleRight size={16} /> LIGADO</> : <><ToggleLeft size={16} /> DESLIGADO</>}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <style dangerouslySetInnerHTML={{__html: `@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } } @keyframes Printer { } `}} />
     </div>
