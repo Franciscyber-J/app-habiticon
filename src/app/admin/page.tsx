@@ -9,7 +9,7 @@ import { db, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, updateDoc, onSnapshot, query, where, arrayUnion } from "firebase/firestore";
 import {
-  Building2, Settings, Users, MapPin,
+  Building2, Settings, Users, MapPin, Clock,
   ToggleLeft, ToggleRight, Plus, ExternalLink,
   ArrowLeft, ChevronRight, Phone, MessageCircle,
   CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info, Printer, Wallet, UserCircle, Map as MapIcon, X, Menu, ShieldCheck, ToggleLeft as EyeOff, ToggleRight as EyeOn
@@ -744,6 +744,11 @@ export default function AdminPage() {
                                           <span style={{ fontSize: 12, color: "var(--gray-mid)", display: "flex", alignItems: "center", gap: 4 }}>
                                             <Phone size={12} /> {lead.whatsapp}
                                             {lead.whatsapp2 && <><span style={{ margin: "0 4px", color: "var(--border-subtle)" }}>|</span><Phone size={12} /> {lead.whatsapp2}</>}
+                                          </span>
+                                          {/* TAG DE DATA E HORA AQUI */}
+                                          <span style={{ fontSize: 11, color: "var(--gray-dark)", display: "flex", alignItems: "center", gap: 4, border: "1px solid var(--border-subtle)", padding: "2px 8px", borderRadius: 6 }}>
+                                            <Clock size={11} /> 
+                                            {lead.timestamp ? new Date(lead.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às") : "Data indisponível"}
                                           </span>
                                           {lead.modelo && <span style={{ fontSize: 11, color: "var(--terracota-light)", fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(175,111,83,0.1)" }}>{lead.modelo}</span>}
                                           {isInterno ? (
