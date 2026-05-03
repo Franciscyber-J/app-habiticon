@@ -32,7 +32,7 @@ interface LeadData {
   area?: number;
   dossie?: any;
   documentosConstrutora?: any;
-  correspondentesBloqueados?: string[]; // ← NOVO CAMPO DE CONTROLE
+  correspondentesPermitidos?: string[]; // ← LISTA BRANCA (Tudo fechado por padrão)
   simulacao?: {
     valorImovel: number;
     valorAvaliacao?: number;
@@ -111,10 +111,10 @@ export default function PainelCorrespondente() {
       const unsubLeads = onSnapshot(qLeads, (snap) => {
         const leads = snap.docs
           .map(d => ({ id: d.id, ...d.data() } as LeadData))
-          // ← FILTRO SILENCIOSO: remove leads onde este correspondente está bloqueado
+          // ← FILTRO SILENCIOSO: SÓ mostra leads onde o UID deste correspondente está na Lista Branca
           .filter(lead => {
-            const bloqueados = lead.correspondentesBloqueados || [];
-            return !bloqueados.includes(user.uid);
+            const permitidos = lead.correspondentesPermitidos || [];
+            return permitidos.includes(user.uid);
           })
           .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setLeadsParaAnalise(leads);
@@ -303,7 +303,7 @@ export default function PainelCorrespondente() {
               {leadsFiltrados.length === 0 ? (
                 <div style={{ padding: "60px 20px", textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 16, border: "1px dashed var(--border-subtle)" }}>
                   <ShieldCheck size={32} color="var(--gray-dark)" style={{ margin: "0 auto 16px" }} />
-                  <p style={{ color: "var(--gray-mid)", fontWeight: 600 }}>Nenhum lead encontrado com estes filtros.</p>
+                  <p style={{ color: "var(--gray-mid)", fontWeight: 600 }}>Nenhum lead disponível para você no momento.</p>
                 </div>
               ) : (
                 leadsFiltrados.map((lead: LeadData) => {

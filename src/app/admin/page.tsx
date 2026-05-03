@@ -55,7 +55,7 @@ interface Lead {
   dossie?: any;
   documentosConstrutora?: any;
   propostaUrl?: string;
-  correspondentesBloqueados?: string[]; // ← CAMPO DE CONTROLE DE ACESSO
+  correspondentesPermitidos?: string[]; // ← LISTA BRANCA (Tudo fechado por padrão)
 }
 
 interface DocumentoPadrao {
@@ -483,24 +483,24 @@ export default function AdminPage() {
     } catch (err) { alert("Erro ao registrar cliente."); } finally { setUploadingGeral(false); }
   };
 
-  // ← FUNÇÃO DE TOGGLE DE ACESSO POR CORRESPONDENTE
+  // ← FUNÇÃO DE TOGGLE DE ACESSO POR CORRESPONDENTE (AGORA É LISTA BRANCA)
   const toggleAcessoCorrespondente = async (correspondentId: string) => {
     if (!modalAcessoLead) return;
     setSalvandoAcesso(true);
     try {
-      const bloqueadosAtuais: string[] = modalAcessoLead.correspondentesBloqueados || [];
-      const jaBloqueado = bloqueadosAtuais.includes(correspondentId);
+      const permitidosAtuais: string[] = modalAcessoLead.correspondentesPermitidos || [];
+      const jaPermitido = permitidosAtuais.includes(correspondentId);
       
-      const novosBloqueados = jaBloqueado
-        ? bloqueadosAtuais.filter(id => id !== correspondentId) // desbloquear
-        : [...bloqueadosAtuais, correspondentId];               // bloquear
+      const novosPermitidos = jaPermitido
+        ? permitidosAtuais.filter(id => id !== correspondentId) // desligar (remover acesso)
+        : [...permitidosAtuais, correspondentId];               // ligar (conceder acesso)
 
       await updateDoc(doc(db, "leads", modalAcessoLead.id), {
-        correspondentesBloqueados: novosBloqueados
+        correspondentesPermitidos: novosPermitidos
       });
 
       // Atualiza estado local do modal para refletir imediatamente
-      setModalAcessoLead(prev => prev ? { ...prev, correspondentesBloqueados: novosBloqueados } : null);
+      setModalAcessoLead(prev => prev ? { ...prev, correspondentesPermitidos: novosPermitidos } : null);
     } catch (error) {
       console.error("Erro ao alterar acesso:", error);
       alert("Erro ao salvar. Tente novamente.");
@@ -726,8 +726,8 @@ export default function AdminPage() {
                                 const isReprovado = lead.status === "nao_qualificado" || lead.status === "credito_reprovado";
                                 const isDecidido = isAprovado || isReprovado;
                                 const statusAjustado = (lead.status === "credito_aprovado" ? "qualificado" : lead.status === "credito_reprovado" ? "nao_qualificado" : lead.status) ?? "em_atendimento";
-                                // ← Conta quantos correspondentes estão bloqueados neste lead
-                                const qtdeBloqueados = (lead.correspondentesBloqueados || []).length;
+                                // ← Conta quantos correspondentes têm acesso a este lead
+                                const qtdePermitidos = (lead.correspondentesPermitidos || []).length;
 
                                 return (
                                   <motion.div key={lead.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ delay: i * 0.03 }} style={{ padding: "16px 20px", background: "var(--bg-card)", border: estaSolto ? "1px solid rgba(239,68,68,0.5)" : `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? "var(--border-subtle)"}`, borderRadius: 14, display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between", alignItems: "center", position: "relative", overflow: "hidden" }}>
@@ -781,14 +781,15 @@ export default function AdminPage() {
                                           style={{
                                             padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700,
                                             display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
-                                            background: qtdeBloqueados > 0 ? "rgba(239,68,68,0.1)" : "rgba(56,189,248,0.1)",
-                                            border: qtdeBloqueados > 0 ? "1px solid rgba(239,68,68,0.3)" : "1px solid rgba(56,189,248,0.3)",
-                                            color: qtdeBloqueados > 0 ? "#f87171" : "#38bdf8"
+                                            background: qtdePermitidos === 0 ? "rgba(239,68,68,0.1)" : "rgba(74,222,128,0.1)",
+                                            border: qtdePermitidos === 0 ? "1px solid rgba(239,68,68,0.3)" : "1px solid rgba(74,222,128,0.3)",
+                                            color: qtdePermitidos === 0 ? "#f87171" : "#4ade80",
+                                            transition: "0.2s"
                                           }}
                                         >
                                           <ShieldCheck size={14} />
                                           <span className="hidden sm:inline">
-                                            {qtdeBloqueados > 0 ? `${qtdeBloqueados} bloqueado${qtdeBloqueados > 1 ? "s" : ""}` : "Acesso"}
+                                            {qtdePermitidos > 0 ? `${qtdePermitidos} liberado${qtdePermitidos > 1 ? "s" : ""}` : "Acesso Fechado"}
                                           </span>
                                         </button>
                                       )}
@@ -1019,7 +1020,7 @@ export default function AdminPage() {
               <div style={{ padding: "16px 24px", background: "rgba(56,189,248,0.06)", borderBottom: "1px solid var(--border-subtle)", display: "flex", gap: 10, alignItems: "flex-start" }}>
                 <Info size={15} color="#38bdf8" style={{ flexShrink: 0, marginTop: 1 }} />
                 <p style={{ fontSize: 12, color: "var(--gray-light)", lineHeight: 1.6 }}>
-                  Correspondentes com acesso <strong style={{ color: "#4ade80" }}>ligado</strong> veem este lead normalmente. Com acesso <strong style={{ color: "#f87171" }}>desligado</strong>, o lead simplesmente não aparece para eles — sem nenhum aviso ou mensagem de bloqueio.
+                  Por padrão, os leads ficam <strong style={{ color: "#f87171" }}>ocultos</strong> para a equipe bancária. Você precisa <strong style={{ color: "#4ade80" }}>LIGAR</strong> a chave para delegar este lead a um correspondente específico.
                 </p>
               </div>
 
@@ -1030,9 +1031,8 @@ export default function AdminPage() {
                   </div>
                 ) : (
                   listaCorrespondentes.map((correspondente) => {
-                    const bloqueados = modalAcessoLead.correspondentesBloqueados || [];
-                    const estaBloqueado = bloqueados.includes(correspondente.id);
-                    const temAcesso = !estaBloqueado;
+                    const permitidos = modalAcessoLead.correspondentesPermitidos || [];
+                    const temAcesso = permitidos.includes(correspondente.id);
 
                     return (
                       <div
