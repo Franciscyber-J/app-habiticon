@@ -12,6 +12,7 @@ interface Model {
   valor: number;
   imagem: string;
   planta: string;
+  tamanhoLote?: string; // NOVO CAMPO ADICIONADO AQUI
 }
 
 interface ModelSelectorProps {
@@ -88,6 +89,8 @@ export function ModelSelector({ modelos, selected, onSelect }: ModelSelectorProp
                     R$ {modelo.valor.toLocaleString("pt-BR")}
                   </div>
                 </div>
+                
+                {/* CAMPO DINÂMICO DO LOTE */}
                 <div
                   style={{
                     fontSize: 11,
@@ -99,8 +102,9 @@ export function ModelSelector({ modelos, selected, onSelect }: ModelSelectorProp
                     letterSpacing: "0.03em",
                   }}
                 >
-                  Lote 250m²
+                  {modelo.tamanhoLote ? `Lote ${modelo.tamanhoLote}` : "Lote não definido"}
                 </div>
+
               </div>
             </div>
           </motion.button>

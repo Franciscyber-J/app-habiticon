@@ -359,6 +359,7 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
         area: 60,
         valor: 200000,
         valorLote: next.modelos[0]?.valorLote || 48000,
+        tamanhoLote: "",
         imagem: "",
         planta: ""
       });
@@ -800,6 +801,19 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                             <div><FieldLabel>Área (m²)</FieldLabel><NumInput value={m.area} suffix="m²" onChange={v=>update(`modelos.${idx}.area`,v)}/></div>
                             <div><FieldLabel>Quartos</FieldLabel><NumInput value={m.quartos} min={1} onChange={v=>update(`modelos.${idx}.quartos`,v)}/></div>
                           </Two>
+                          <div style={{ marginTop: 16 }}>
+                            <FieldLabel hint="Use para descrever a metragem aproximada (Ex: ~250m² ou A partir de 200m²)">
+                              Descrição do Lote
+                            </FieldLabel>
+                            <input
+                              type="text"
+                              className="input-field"
+                              style={{ fontSize: 15 }}
+                              value={m.tamanhoLote || ""}
+                              onChange={e => update(`modelos.${idx}.tamanhoLote`, e.target.value)}
+                              placeholder="Ex: ~250m²"
+                            />
+                          </div>
                           {idx===0&&emp.modelos.length>1&&(
                             <div style={{display:"flex",gap:8,padding:"10px 12px",borderRadius:8,background:"rgba(175,111,83,0.07)",border:"1px solid rgba(175,111,83,0.2)"}}>
                               <Info size={13} color="var(--terracota)" style={{flexShrink:0,marginTop:1}}/><p style={{fontSize:11,color:"var(--gray-mid)",lineHeight:1.5}}>Lote único — alterar aqui atualiza todos os modelos.</p>

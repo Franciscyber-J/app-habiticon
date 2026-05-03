@@ -683,7 +683,7 @@ export function formatBRLDecimal(valor: number): string {
 }
 
 // ===================================================
-// MOTOR DE FAIXA EFETIVA
+// MOTOR DE FAIXA EFETIVA (Atualizado com Faixa 4 e Trava de Laudo)
 // ===================================================
 
 export interface FaixaEfetiva {
@@ -712,56 +712,61 @@ export function determinarFaixaEfetiva(
     subsidioEfetivo: 0, taxaEfetiva: 12, taxaEfetivaCotista: 12,
   };
 
-  // ── Faixa pela RENDA ───────────────────────────────
+  // 1. Faixa pela RENDA (Ignorando o valor da casa por enquanto)
   const faixaPelaRenda = renda > 0
     ? faixas.find(f => renda >= f.rendaMin && renda <= f.rendaMax) ?? null
     : null;
 
-  // ── Faixa pelo LAUDO (CUB) ─────────────────────────
+  // 2. Faixa pelo LAUDO (CUB) - Em qual faixa essa casa cabe?
   let faixaPeloLaudo: FaixaMCMV | null = null;
   if (laudoCUB !== null && laudoCUB > 0) {
-    const faixasComTeto = faixas.filter(f => f.tetoImovel != null);
+    const faixasComTeto = faixas.filter(f => f.tetoImovel != null).sort((a, b) => (a.tetoImovel || 0) - (b.tetoImovel || 0));
+    
     if (faixasComTeto.length > 0) {
       faixaPeloLaudo = faixasComTeto.find(f => laudoCUB <= (f.tetoImovel ?? Infinity)) ?? null;
+      
+      // Se não encontrou faixa pelo laudo, o imóvel estourou o teto MÁXIMO do MCMV (Ex: 634k > 600k)
       if (!faixaPeloLaudo) {
         return {
           ...semFaixa,
-          bloqueio: `O laudo CUB de R$ ${Math.round(laudoCUB).toLocaleString("pt-BR")} ultrapassa o teto de todas as faixas disponíveis.`,
+          bloqueio: `O laudo CUB de R$ ${Math.round(laudoCUB).toLocaleString("pt-BR")} ultrapassa o teto de todas as faixas do MCMV. O cliente deve ser enquadrado no SBPE.`,
         };
       }
     }
   }
 
-  // ── Sem renda informada → sem faixa efetiva ────────
+  // 3. Sem renda informada -> sem faixa efetiva, mas já sabemos em qual faixa a casa mora
   if (!faixaPelaRenda) {
     return { ...semFaixa, faixaPeloLaudo };
   }
 
-  // ── Faixa efetiva = a mais restritiva ──────────────
+  // 4. O Conflito: O cliente ganha X, mas a casa exige Y.
+  // Regra da Caixa: O laudo PUXA a faixa para cima. Se a casa é de rico, a taxa é de rico, mesmo ganhando pouco.
   const laudoForcouFaixaSuperior =
     faixaPeloLaudo !== null && faixaPeloLaudo.id > faixaPelaRenda.id;
 
   const faixaEfetiva = laudoForcouFaixaSuperior ? faixaPeloLaudo! : faixaPelaRenda;
 
-  // ── Verifica compatibilidade renda × faixa efetiva ─
-  if (laudoForcouFaixaSuperior) {
+  // 5. Verifica Compatibilidade: Se o laudo forçou a faixa, a renda "nova" bate com a faixa exigida?
+  // Se ele ganha 5000 (Faixa 2), mas a casa exige Faixa 4 (renda min 9600), BLOQUEIA.
+  if (laudoForcouFaixaSuperior && renda < faixaEfetiva.rendaMin) {
     const rendaMinNecessaria = faixaEfetiva.rendaMin;
     return {
       faixaEfetiva,
       faixaPeloLaudo,
       faixaPelaRenda,
-      aprovado: false,
-      bloqueio: `O laudo CUB (R$ ${Math.round(laudoCUB!).toLocaleString("pt-BR")}) exige ${faixaEfetiva.nome}, mas a renda de R$ ${renda.toLocaleString("pt-BR")} só qualifica para ${faixaPelaRenda.nome}. Renda mínima necessária: R$ ${rendaMinNecessaria.toLocaleString("pt-BR")}.`,
+      aprovado: false, // BLOQUEADO POR RENDA INSUFICIENTE PARA O TETO DA CASA
+      bloqueio: `O laudo CUB (R$ ${Math.round(laudoCUB!).toLocaleString("pt-BR")}) exige enquadramento na ${faixaEfetiva.nome}, mas a renda de R$ ${renda.toLocaleString("pt-BR")} é inferior à mínima dessa faixa. Renda mínima necessária: R$ ${rendaMinNecessaria.toLocaleString("pt-BR")}.`,
       laudoForcouFaixaSuperior: true,
-      rendaMinimaParaAprovacao: rendaMinNecessaria,
+      rendaMinimaParaAprovacao: rendaMinNecessaria, // <-- Aqui arruma o bug do "R$ 0"
       subsidioEfetivo: 0,
       taxaEfetiva: faixaEfetiva.taxa,
       taxaEfetivaCotista: faixaEfetiva.taxaCotista ?? faixaEfetiva.taxa,
     };
   }
 
-  // ── Aprovado — calcula subsídio real ───────────────
-  const subsidioEfetivo = faixaEfetiva.id === 2 ? subsidioCalculado : 0;
+  // 6. Aprovado — Calcula subsídio real (Apenas Faixa 1 e 2 tem subsídio real na Caixa)
+  const subsidioEfetivo = (faixaEfetiva.id === 1 || faixaEfetiva.id === 2) ? subsidioCalculado : 0;
 
   return {
     faixaEfetiva,
@@ -769,7 +774,7 @@ export function determinarFaixaEfetiva(
     faixaPelaRenda,
     aprovado: true,
     bloqueio: null,
-    laudoForcouFaixaSuperior: false,
+    laudoForcouFaixaSuperior,
     rendaMinimaParaAprovacao: faixaEfetiva.rendaMin,
     subsidioEfetivo,
     taxaEfetiva: faixaEfetiva.taxa,

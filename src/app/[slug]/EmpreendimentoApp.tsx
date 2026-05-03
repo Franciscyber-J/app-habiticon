@@ -192,11 +192,27 @@ export default function EmpreendimentoApp({
   const modelo = empFresh.modelos.find((m) => m.id === modeloSelecionado) || empFresh.modelos[0];
 
   const tetoRendaMCMV = useMemo(() => Math.max(...empFresh.mcmv.faixas.map((f: any) => f.rendaMax), 13000), [empFresh.mcmv.faixas]);
-  const tetoImovelMCMV = empFresh.mcmv.tetoImovel || 600000;
+  
+  // O Teto do Imóvel deve olhar para o maior teto cadastrado nas faixas (geralmente a Faixa 4 = 600k)
+  const tetoMaximoMCMVGlobal = useMemo(() => Math.max(...empFresh.mcmv.faixas.map((f: any) => f.tetoImovel || 0), empFresh.mcmv.tetoImovel || 600000), [empFresh.mcmv.faixas, empFresh.mcmv.tetoImovel]);
   
   const isSBPE = useMemo(() => {
-    return (rendaFamiliar > tetoRendaMCMV) || ((modelo?.valor || 0) > tetoImovelMCMV);
-  }, [rendaFamiliar, tetoRendaMCMV, modelo, tetoImovelMCMV]);
+    if (!modelo) return false;
+    
+    // Calcula o Laudo CUB puro para ver se a casa estoura o programa independentemente do contrato
+    const cubCfg = empFresh.simulador.cub;
+    const totalItens = cubCfg?.itensComplementares?.reduce((acc, item) => acc + (Number(item.valor) || 0), 0) || 0;
+    const laudoPotencialMCMV = cubCfg && cubCfg.cubVigente > 0
+      ? calcularLaudoCUB(empFresh.modelos[0]?.valorLote || 48000, modelo.area, cubCfg.cubVigente, cubCfg.bdi, 0, 0.8, totalItens).laudoTotal
+      : modelo.valor;
+
+    // Regra da Caixa: SBPE se renda for gigante, se contrato for gigante, ou se LAUDO CUB for gigante
+    return (
+      (rendaFamiliar > tetoRendaMCMV) || 
+      (modelo.valor > tetoMaximoMCMVGlobal) || 
+      (laudoPotencialMCMV > tetoMaximoMCMVGlobal)
+    );
+  }, [rendaFamiliar, tetoRendaMCMV, modelo, tetoMaximoMCMVGlobal, empFresh.simulador.cub, empFresh.modelos]);
 
   const handleSubsidioChange = useCallback((
     sub: number, taxa: number, rendaDigitada: boolean, rendaVal = 0, faixaId?: number
