@@ -389,18 +389,17 @@ export default function PainelCorrespondente() {
 
                           <button
                             onClick={() => setLeadAnaliseId(lead.id)}
-                            disabled={!temDossie}
                             style={{
                               padding: "10px 18px", borderRadius: 10, fontSize: 13, fontWeight: 800,
                               display: "flex", justifyContent: "center", gap: 8, alignItems: "center",
-                              border: "none", cursor: temDossie ? "pointer" : "not-allowed",
-                              background: temDossie ? "#38bdf8" : "rgba(255,255,255,0.05)",
-                              color: temDossie ? "white" : "var(--gray-mid)",
-                              boxShadow: temDossie ? "0 4px 14px rgba(56,189,248,0.3)" : "none"
+                              border: "none", cursor: "pointer",
+                              background: "#38bdf8",
+                              color: "white",
+                              boxShadow: "0 4px 14px rgba(56,189,248,0.3)"
                             }}
                           >
                             <ShieldCheck size={16} />
-                            {temDossie ? "Analisar Dossiê" : "Aguardando Documentos"}
+                            Analisar Dossiê
                           </button>
 
                           {estaAprovado && (

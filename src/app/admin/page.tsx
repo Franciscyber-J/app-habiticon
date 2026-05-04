@@ -21,11 +21,11 @@ import { DashboardFinanceiro } from "@/components/admin/DashboardFinanceiro";
 import { GestaoComissoes } from "@/components/admin/GestaoComissoes";
 import { GestaoRecebiveis } from "@/components/admin/GestaoRecebiveis";
 import { GeradorContratoModal } from "@/components/admin/GeradorContratoModal";
-import { notificarTelegram } from "@/lib/notificacoes"; // ← NOVO IMPORT DO TELEGRAM
 
 // ── IMPORTAÇÕES DA FRAGMENTAÇÃO DO LAYOUT ──
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AbaEmpreendimentos } from "@/components/admin/AbaEmpreendimentos";
+import { notificarTelegram } from "@/lib/notificacoes"; // ← IMPORT DO TELEGRAM
 
 // ─────────────────────────────────────────────────────────
 // TIPAGENS E CONSTANTES
@@ -169,7 +169,7 @@ export default function AdminPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [listaCorretores, setListaCorretores] = useState<any[]>([]);
-  const [listaCorrespondentes, setListaCorrespondentes] = useState<any[]>([]); 
+  const [listaCorrespondentes, setListaCorrespondentes] = useState<any[]>([]); // ← NOVO
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
 
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
@@ -255,7 +255,7 @@ export default function AdminPage() {
     return () => { cleanup.then(unsub => { if (unsub) unsub(); }); };
   }, [carregarDados, authVerificado]);
 
-  // ── CARREGA CORRETORES E CORRESPONDENTES ──
+  // ── CARREGA CORRETORES ──
   useEffect(() => {
     if (!authVerificado) return;
     const qCorretores = query(collection(db, "usuarios"), where("status", "==", "ativo"), where("role", "==", "corretor"));
@@ -266,6 +266,7 @@ export default function AdminPage() {
     return () => unsub();
   }, [authVerificado]);
 
+  // ← CARREGA CORRESPONDENTES
   useEffect(() => {
     if (!authVerificado) return;
     const qCorrespondentes = query(collection(db, "usuarios"), where("status", "==", "ativo"), where("role", "==", "correspondente"));
@@ -492,7 +493,7 @@ export default function AdminPage() {
         status: "em_atendimento", timestamp: new Date().toISOString(), origem: "painel_admin"
       });
       
-// ← NOVO: DISPARO DE TELEGRAM AO CRIAR VENDA DIRETA (FORMATADO)
+      // ← NOVO: DISPARO DE TELEGRAM AO CRIAR VENDA DIRETA (FORMATADO)
       const dataFormatada = new Date().toLocaleString("pt-BR", { 
         day: "2-digit", month: "2-digit", year: "numeric", 
         hour: "2-digit", minute: "2-digit" 
@@ -509,7 +510,7 @@ export default function AdminPage() {
 🎯 <i>Venda lançada via Painel Admin sem comissão de corretagem vinculada. O lead já está disponível para o time de Repasse/Correspondentes.</i>`;
 
       await notificarTelegram("vendaDireta", mensagemTelegram);
-            
+      
       setModalVendaDireta(false); setNovaVenda({ nome: "", whatsapp: "", empreendimentoId: "" });
     } catch (err) { alert("Erro ao registrar cliente."); } finally { setUploadingGeral(false); }
   };

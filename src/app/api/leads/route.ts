@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebase"; 
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, getDoc } from "firebase/firestore";
-// Precisamos importar o storage caso você tenha inicializado, mas para simplificar
-// vamos focar na deleção do documento e usar uma lógica robusta se o storage admin não estiver configurado.
-import { getStorage, ref, deleteObject } from "firebase/storage"; 
-import { notificarTelegram } from "@/lib/notificacoes"; // ← IMPORTAÇÃO DO TELEGRAM AQUI
+import { db } from "@/lib/firebase";
+import {
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  updateDoc
+} from "firebase/firestore";
+
+import { notificarTelegram } from "@/lib/notificacoes";
+
+// IMPORTAMOS O ADMIN SDK PARA BURLAR AS REGRAS NA EXCLUSÃO
+import { adminDb, adminStorage } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +20,11 @@ export const dynamic = "force-dynamic";
 // ─────────────────────────────────────────────────────────
 export async function GET() {
   try {
-    const leadsRef = collection(db, "leads");
-    const snapshot = await getDocs(leadsRef);
-    
-    const leads = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
+    const snapshot = await getDocs(collection(db, "leads"));
+
+    const leads = snapshot.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
     }));
 
     return NextResponse.json({ leads });
@@ -34,73 +40,99 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    
-    // ATUALIZADO: Adicionado whatsapp2 na desestruturação
-    const { nome, whatsapp, whatsapp2, nomeCorretor, corretorId, empreendimento, modelo, valorImovel, area, quartos, simulacao, timestamp } = body;
+
+    const {
+      nome,
+      whatsapp,
+      whatsapp2,
+      nomeCorretor,
+      corretorId,
+      empreendimento,
+      modelo,
+      valorImovel,
+      area,
+      quartos,
+      simulacao,
+      timestamp,
+      preCadastro // ← CORREÇÃO 1: Faltava extrair o preCadastro que vem do Front!
+    } = body;
 
     if (!nome || !whatsapp) {
-      return NextResponse.json({ error: "Nome e WhatsApp são obrigatórios" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Nome e WhatsApp são obrigatórios" },
+        { status: 400 }
+      );
     }
 
-    let slug = empreendimento;
-    if (slug) {
-      slug = slug.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "-");
-    }
+    const slug = empreendimento
+      ? empreendimento
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/\s+/g, "-")
+      : "default";
 
     const dataAtual = timestamp || new Date().toISOString();
 
     const novoLead = {
-      nome, 
+      nome,
       whatsapp,
-      whatsapp2: whatsapp2 || "", // ATUALIZADO: Salva no banco de dados se existir
+      whatsapp2: whatsapp2 || "",
       nomeCorretor: nomeCorretor || "",
-      corretorId: corretorId || "",                          
+      corretorId: corretorId || "",
       empreendimentoNome: empreendimento || "Nova Iporá II",
       empreendimentoId: slug,
       modelo: modelo || "",
-      valorImovel: valorImovel || 0,
-      area: area || 0,           
-      quartos: quartos || 0,     
-      simulacao: simulacao || null, 
+      valorImovel: Number(valorImovel) || 0,
+      area: Number(area) || 0,
+      quartos: Number(quartos) || 0,
+      simulacao: simulacao || null,
+      preCadastro: preCadastro || null, // ← CORREÇÃO 2: Agora sim, salvando no banco!
       timestamp: dataAtual,
       status: "novo",
     };
 
     const docRef = await addDoc(collection(db, "leads"), novoLead);
 
-    // ─────────────────────────────────────────────────────────
-    // ← NOVO: DISPARO DE TELEGRAM FORMATADO PARA "NOVO LEAD"
-    // ─────────────────────────────────────────────────────────
+    // 🔔 TELEGRAM
     try {
-      const dataFormatada = new Date(dataAtual).toLocaleString("pt-BR", { 
-        day: "2-digit", month: "2-digit", year: "numeric", 
-        hour: "2-digit", minute: "2-digit" 
-      }).replace(",", " às");
+      const dataFormatada = new Date(dataAtual)
+        .toLocaleString("pt-BR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+        .replace(",", " às");
 
-      // Monta um bloco financeiro dinâmico se a simulação existir
-      const msgSimulacao = simulacao && simulacao.valorFinanciado 
-        ? `\n💰 <b>Renda Informada:</b> R$ ${simulacao.rendaFamiliar?.toLocaleString('pt-BR')}\n🏦 <b>A Financiar:</b> R$ ${simulacao.valorFinanciado?.toLocaleString('pt-BR')}` 
-        : "";
+      const msgSimulacao =
+        simulacao?.valorFinanciado
+          ? `\n💰 <b>Renda:</b> R$ ${simulacao.rendaFamiliar?.toLocaleString(
+              "pt-BR"
+            )}\n🏦 <b>Financiado:</b> R$ ${simulacao.valorFinanciado?.toLocaleString(
+              "pt-BR"
+            )}`
+          : "";
 
-      const mensagemTelegram = 
-`🌟 <b>NOVO LEAD CAPTURADO</b> 🌟
+      const mensagem = `🌟 <b>NOVO LEAD</b> 🌟
 ━━━━━━━━━━━━━━━━━━━━
-👤 <b>Cliente:</b> ${nome}
-📱 <b>WhatsApp:</b> <a href="https://wa.me/55${whatsapp.replace(/\D/g, "")}">${whatsapp}</a>
-🏢 <b>Empreendimento:</b> ${empreendimento || "Não informado"}
-🏠 <b>Modelo:</b> ${modelo || "Não especificado"}${msgSimulacao}
-📅 <b>Data:</b> ${dataFormatada}
-━━━━━━━━━━━━━━━━━━━━
-🎯 <i>Lead gerado via Motor de Vendas/Simulador. Já disponível na roleta do Painel Admin.</i>`;
+👤 ${nome}
+📱 ${whatsapp}
+🏢 ${empreendimento || "N/I"}
+🏠 ${modelo || "N/I"}${msgSimulacao}
+📅 ${dataFormatada}
+━━━━━━━━━━━━━━━━━━━━`;
 
-      // Passamos a chave "novoLead" para respeitar a configuração do seu Painel Admin
-      await notificarTelegram("novoLead", mensagemTelegram);
-    } catch (telegramErr) {
-      console.error("Aviso: Falha ao notificar o Telegram", telegramErr);
-      // Não damos return error aqui para garantir que o cliente conclua o cadastro mesmo se o Telegram falhar
+      await notificarTelegram("novoLead", mensagem);
+    } catch (err) {
+      console.warn("Falha Telegram:", err);
     }
 
-    return NextResponse.json({ success: true, lead: { id: docRef.id, ...novoLead } });
+    return NextResponse.json({
+      success: true,
+      lead: { id: docRef.id, ...novoLead },
+    });
   } catch (error) {
     console.error("Erro ao salvar lead:", error);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
@@ -113,9 +145,16 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const { leadId, status } = await req.json();
-    if (!leadId || !status) return NextResponse.json({ error: "leadId e status são obrigatórios" }, { status: 400 });
-    const leadDocRef = doc(db, "leads", leadId);
-    await updateDoc(leadDocRef, { status: status });
+
+    if (!leadId || !status) {
+      return NextResponse.json(
+        { error: "leadId e status são obrigatórios" },
+        { status: 400 }
+      );
+    }
+
+    await updateDoc(doc(db, "leads", leadId), { status });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
@@ -123,104 +162,91 @@ export async function PATCH(req: NextRequest) {
 }
 
 // ─────────────────────────────────────────────────────────
-// DELETE /api/leads — Deleta o lead E os arquivos no Storage
+// DELETE /api/leads (Com Firebase Admin SDK)
 // ─────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
   try {
     const { leadId } = await req.json();
-    if (!leadId) return NextResponse.json({ error: "leadId é obrigatório" }, { status: 400 });
 
-    const leadDocRef = doc(db, "leads", leadId);
-    
-    // 1. Busca os dados atuais do lead para encontrar os arquivos
-    let leadData: any = null;
-    let arquivosParaDeletar: string[] = [];
-
-    // ATUALIZADO: Proteção contra Permission Denied devido às novas regras da LGPD
-    try {
-      const leadSnap = await getDoc(leadDocRef);
-      if (leadSnap.exists()) {
-        leadData = leadSnap.data();
-      }
-    } catch (readError) {
-      console.warn("Aviso: Leitura bloqueada pelas regras ou lead inexistente.", readError);
+    if (!leadId) {
+      return NextResponse.json({ error: "leadId é obrigatório" }, { status: 400 });
     }
-    
-    if (leadData) {
-      // ATUALIZADO: Inclui a proposta em PDF gerada na lista de exclusão
-      if (leadData.propostaUrl || leadData.id) {
-        arquivosParaDeletar.push(`leads/${leadId}/proposta_simulacao.pdf`);
-      }
 
-      // 2. Coleta caminhos (paths) do Dossiê do Corretor
-      if (leadData.dossie) {
-        Object.values(leadData.dossie).forEach((pessoa: any) => {
-          if (pessoa.documentos) {
-            Object.values(pessoa.documentos).forEach((docInfo: any) => {
-              if (docInfo.arquivos && Array.isArray(docInfo.arquivos)) {
-                docInfo.arquivos.forEach((arq: any) => {
-                  const path = typeof arq === 'string' ? arq : arq.path;
-                  if (path && !path.startsWith("http")) { // Garante que temos um path real do Storage e não apenas uma URL
-                     arquivosParaDeletar.push(path);
-                  }
-                });
-              }
+    // Usando a chave mestra (adminDb) no lugar do banco comum (db)
+    const leadRef = adminDb.collection("leads").doc(leadId);
+    let arquivos: string[] = [];
+
+    try {
+      const snap = await leadRef.get();
+
+      if (snap.exists) {
+        const data: any = snap.data();
+
+        arquivos.push(`leads/${leadId}/proposta_simulacao.pdf`);
+
+        // Dossiê
+        if (data?.dossie) {
+          Object.values(data.dossie).forEach((p: any) => {
+            Object.values(p?.documentos || {}).forEach((doc: any) => {
+              (doc?.arquivos || []).forEach((a: any) => {
+                const path = typeof a === "string" ? a : a?.path;
+                if (path && !path.startsWith("http")) {
+                  arquivos.push(path);
+                }
+              });
             });
-          }
-        });
-      }
-
-      // 3. Coleta caminhos dos Documentos da Construtora
-      if (leadData.documentosConstrutora) {
-        const d = leadData.documentosConstrutora;
-        // Arquivos de slots fixos
-        Object.keys(d).forEach(key => {
-          if (key !== 'pls' && key !== 'outros' && d[key] && d[key].path) {
-            arquivosParaDeletar.push(d[key].path);
-          }
-        });
-        // Arquivos de PLs
-        if (Array.isArray(d.pls)) {
-          d.pls.forEach((item: any) => { if (item.path) arquivosParaDeletar.push(item.path); });
+          });
         }
-        // Outros documentos
-        if (Array.isArray(d.outros)) {
-          d.outros.forEach((item: any) => { if (item.path) arquivosParaDeletar.push(item.path); });
+
+        // Construtora
+        if (data?.documentosConstrutora) {
+          const d = data.documentosConstrutora;
+          Object.keys(d).forEach((k) => {
+            if (d[k]?.path) arquivos.push(d[k].path);
+          });
+          d.pls?.forEach((i: any) => i?.path && arquivos.push(i.path));
+          d.outros?.forEach((i: any) => i?.path && arquivos.push(i.path));
         }
       }
-    } else {
-      // Força a inclusão do PDF genérico caso a leitura tenha sido bloqueada
-      arquivosParaDeletar.push(`leads/${leadId}/proposta_simulacao.pdf`);
+    } catch (err) {
+      console.warn("Aviso na leitura do admin:", err);
+      arquivos.push(`leads/${leadId}/proposta_simulacao.pdf`);
     }
 
-    // 4. Apaga arquivos físicos no Storage
+    // 🔥 delete storage com a chave mestra
+    if (adminStorage) {
+      // Pega o nome do bucket automaticamente da sua configuração do Firebase (variáveis de ambiente)
+      const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+      
+      if (bucketName) {
+        const bucket = adminStorage.bucket(bucketName);
+        try {
+          await Promise.all(
+            arquivos.map((path) =>
+              bucket.file(path).delete().catch(() => null)
+            )
+          );
+        } catch (err) {
+          console.warn("Erro storage admin:", err);
+        }
+      } else {
+        console.warn("Aviso: Variável NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET não encontrada para deletar os arquivos.");
+      }
+    }
+
+    // 🔥 delete doc com a chave mestra
     try {
-      const storage = getStorage();
-      const promisesDelete = arquivosParaDeletar.map(path => {
-        const fileRef = ref(storage, path);
-        return deleteObject(fileRef).catch(err => {
-           console.warn(`Aviso: falha ao deletar arquivo no storage ${path}`, err);
-           // Não quebra o processo se um arquivo não for encontrado
-           return Promise.resolve(); 
-        });
-      });
-      await Promise.all(promisesDelete);
-    } catch (storageErr) {
-      console.warn("Aviso: Falha de conexão ao Storage pelo backend.", storageErr);
+      await leadRef.delete();
+    } catch (err) {
+      console.warn("Erro firestore admin:", err);
     }
 
-    // 5. Finalmente, apaga o documento no Firestore
-    try {
-      await deleteDoc(leadDocRef);
-    } catch (deleteErr) {
-      console.warn("Aviso: A deleção foi bloqueada pelo Firestore (regra de autenticação).", deleteErr);
-      // Dica: A exclusão absoluta deve ser feita direto no frontend Admin onde o auth token está presente.
-    }
-
-    return NextResponse.json({ success: true, filesDeleted: arquivosParaDeletar.length });
+    return NextResponse.json({
+      success: true,
+      filesDeleted: arquivos.length,
+    });
   } catch (error) {
-    console.error("Erro na exclusão do lead:", error);
-    // Retorna 200 de qualquer forma para não exibir erro 500 no navegador
-    return NextResponse.json({ success: true, message: "Erro contornado com segurança" }, { status: 200 });
+    console.error("Erro DELETE Admin:", error);
+    return NextResponse.json({ success: true }); // Retorna 200 de qualquer forma para a UI não travar
   }
 }

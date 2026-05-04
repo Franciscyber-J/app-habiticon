@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, CheckCircle2, FileText, ExternalLink, ShieldCheck, AlertCircle,
-  MessageSquareWarning, ThumbsUp, ThumbsDown, Calculator, FilePlus, FilePlus2, RefreshCcw, UploadCloud
+  MessageSquareWarning, ThumbsUp, ThumbsDown, Calculator, FilePlus, FilePlus2,
+  RefreshCcw, UploadCloud, Phone, FileCheck2, Loader2, Edit3
 } from "lucide-react";
-import { doc, updateDoc, getDoc } from "firebase/firestore"; // ATUALIZADO: importado getDoc
+import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { db } from "@/lib/firebase";
 
@@ -42,6 +43,33 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
   const [modalAprovacaoAberto, setModalAprovacaoAberto] = useState(false);
   const [dadosAprovacao, setDadosAprovacao] = useState({ valorAprovado: "", valorParcela: "", observacoes: "" });
   const [uploadingGeral, setUploadingGeral] = useState(false);
+  const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
+
+  // ── ESTADOS DO MODAL DE REPROVAÇÃO ──
+  const [modalReprovacaoAberto, setModalReprovacaoAberto] = useState(false);
+  const [motivoReprovacao, setMotivoReprovacao] = useState("");
+
+  // ── NOVO: WhatsApp do corretor ──
+  const [telefoneCorretor, setTelefoneCorretor] = useState<string>("");
+
+  // ── NOVO: Upload de documento de aprovação de crédito ──
+  const [uploadingAprovacao, setUploadingAprovacao] = useState(false);
+  const fileInputAprovacaoRef = useRef<HTMLInputElement>(null);
+
+  // ── EDIÇÃO DE FICHA ──
+  const [editandoFicha, setEditandoFicha] = useState(false);
+  const [fichaForm, setFichaForm] = useState<any>({});
+
+  // ── BUSCA TELEFONE DO CORRETOR QUANDO O MODAL ABRE ──
+  useEffect(() => {
+    if (!isOpen || !lead?.corretorId || lead.corretorId === "interno" || lead.corretorId === "") {
+      setTelefoneCorretor("");
+      return;
+    }
+    getDoc(doc(db, "usuarios", lead.corretorId))
+      .then(snap => { if (snap.exists()) setTelefoneCorretor(snap.data().telefone || ""); })
+      .catch(() => {});
+  }, [isOpen, lead?.corretorId]);
 
   if (!isOpen || !lead) return null;
 
@@ -65,7 +93,23 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
 
   const mostrarToast = (msg: string, tipo: "sucesso" | "erro") => {
     setToast({ msg, tipo });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 4000); 
+  };
+
+  const iniciarEdicaoFicha = () => {
+    setFichaForm(lead.preCadastro || {});
+    setEditandoFicha(true);
+  };
+
+  const salvarFicha = async () => {
+    try {
+      await updateDoc(doc(db, "leads", lead.id), { preCadastro: fichaForm });
+      setEditandoFicha(false);
+      mostrarToast("Ficha atualizada com sucesso!", "sucesso");
+    } catch (error) {
+      console.error(error);
+      mostrarToast("Erro ao atualizar ficha.", "erro");
+    }
   };
 
   const abrirFormularioPendencia = (docId: string, textoAtual: string) => {
@@ -155,6 +199,7 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
     if (files.length === 0) return;
 
     setUploadingGeral(true);
+    setUploadingDocId(docId);
     mostrarToast("A anexar documentos...", "sucesso");
 
     const storage = getStorage();
@@ -197,62 +242,129 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
       mostrarToast("Erro ao anexar arquivo.", "erro");
     } finally {
       setUploadingGeral(false);
+      setUploadingDocId(null);
       e.target.value = ""; // reseta o input
     }
   };
 
-  const iniciarProcessoAprovacao = async (novoStatus: "qualificado" | "nao_qualificado") => {
+  // ── NOVO: Upload de Documentos de Análise (Múltiplos) ──
+  const handleUploadDocumentosAnalise = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    
+    setUploadingAprovacao(true);
+    const storage = getStorage();
+    
+    try {
+      const novosDocs = [];
+      for (const file of files) {
+        const path = `leads/${lead.id}/analise_credito/${Date.now()}_${file.name}`;
+        const fileRef = ref(storage, path);
+        await uploadBytesResumable(fileRef, file);
+        const url = await getDownloadURL(fileRef);
+        
+        novosDocs.push({
+          url, 
+          path,
+          nome: file.name,
+          uploadedAt: new Date().toISOString()
+        });
+      }
+
+      const documentosAtuais = lead.documentosAnaliseCredito || [];
+      const listaAtualizada = [...documentosAtuais, ...novosDocs];
+
+      await updateDoc(doc(db, "leads", lead.id), {
+        documentosAnaliseCredito: listaAtualizada
+      });
+      
+      mostrarToast(`${files.length} documento(s) anexado(s) com sucesso!`, "sucesso");
+    } catch (error) {
+      console.error("Erro no upload da análise:", error);
+      mostrarToast("Erro ao anexar documentos.", "erro");
+    } finally {
+      setUploadingAprovacao(false);
+      e.target.value = "";
+    }
+  };
+
+  const removerDocumentoAnalise = async (indexParaRemover: number) => {
+    if (!confirm("Remover definitivamente este documento de análise?")) return;
+    
+    const docsAtuais = lead.documentosAnaliseCredito || [];
+    const docParaRemover = docsAtuais[indexParaRemover];
+    
+    try {
+      if (docParaRemover.path) {
+        const { deleteObject } = await import("firebase/storage");
+        const storage = getStorage();
+        const fileRef = ref(storage, docParaRemover.path);
+        await deleteObject(fileRef).catch(() => console.warn("Arquivo já não existia no storage"));
+      }
+
+      const novaLista = docsAtuais.filter((_: any, index: number) => index !== indexParaRemover);
+      
+      await updateDoc(doc(db, "leads", lead.id), {
+        documentosAnaliseCredito: novaLista
+      });
+      mostrarToast("Documento removido.", "sucesso");
+    } catch (error) {
+      console.error("Erro ao remover:", error);
+      mostrarToast("Erro ao excluir arquivo.", "erro");
+    }
+  };
+
+  const iniciarProcessoAprovacao = (novoStatus: "qualificado" | "nao_qualificado") => {
     if (isDecidido) return;
 
     if (novoStatus === "nao_qualificado") {
-      const resposta = prompt("Descreva o motivo da reprovação (obrigatório para feedback ao corretor):");
-      if (!resposta || !resposta.trim()) {
-        mostrarToast("Ação cancelada: O motivo da reprovação é obrigatório.", "erro");
-        return; 
-      }
-      
-      try {
-        await updateDoc(doc(db, "leads", lead.id), { 
-          status: novoStatus,
-          motivoReprovacao: resposta.trim(),
-          creditoAprovadoInfo: null,
-          loteReserva: null // ATUALIZADO: Tira a reserva do lead
-        });
-
-        // ─── AUTOMAÇÃO: LOTE VOLTA PARA DISPONÍVEL SE CRÉDITO REPROVADO ───
-        if (lead.loteReserva && lead.empreendimentoId) {
-          const { quadraId, loteId } = lead.loteReserva;
-          if (quadraId && loteId) {
-            const loteRef = doc(db, "empreendimentos", lead.empreendimentoId, "quadras", quadraId, "lotes", loteId);
-            const loteSnap = await getDoc(loteRef);
-            
-            if (loteSnap.exists()) {
-              const filaAtual = loteSnap.data().fila || [];
-              const novaFila = filaAtual.filter((f: any) => f.leadId !== lead.id);
-              const statusLot = novaFila.length === 0 ? "disponivel" : "vinculado";
-
-              await updateDoc(loteRef, {
-                fila: novaFila,
-                status: statusLot
-              }).catch(err => console.error("Erro ao liberar lote (background):", err));
-            }
-          }
-        }
-        // ─────────────────────────────────────────────────────────────────
-
-        mostrarToast("Crédito Reprovado registado! Lote libertado.", "sucesso");
-        setTimeout(() => onClose(), 1500);
-      } catch (error) {
-        mostrarToast("Erro ao atualizar status.", "erro");
-      }
+      setMotivoReprovacao("");
+      setModalReprovacaoAberto(true);
     } else {
-      // Se for aprovado, abre o modal de detalhamento
       setDadosAprovacao({
         valorAprovado: dadosFinanceiros.valorFinanciado.toString(),
         valorParcela: "",
         observacoes: ""
       });
       setModalAprovacaoAberto(true);
+    }
+  };
+
+  const confirmarReprovacao = async () => {
+    if (!motivoReprovacao.trim()) {
+      mostrarToast("O motivo da reprovação é obrigatório.", "erro");
+      return; 
+    }
+    
+    try {
+      await updateDoc(doc(db, "leads", lead.id), { 
+        status: "nao_qualificado",
+        motivoReprovacao: motivoReprovacao.trim(),
+        creditoAprovadoInfo: null,
+        loteReserva: null
+      });
+
+      if (lead.loteReserva && lead.empreendimentoId) {
+        const { quadraId, loteId } = lead.loteReserva;
+        if (quadraId && loteId) {
+          const loteRef = doc(db, "empreendimentos", lead.empreendimentoId, "quadras", quadraId, "lotes", loteId);
+          const loteSnap = await getDoc(loteRef);
+          
+          if (loteSnap.exists()) {
+            const filaAtual = loteSnap.data().fila || [];
+            const novaFila = filaAtual.filter((f: any) => f.leadId !== lead.id);
+            const statusLot = novaFila.length === 0 ? "disponivel" : "vinculado";
+
+            await updateDoc(loteRef, { fila: novaFila, status: statusLot })
+              .catch(err => console.error("Erro ao liberar lote:", err));
+          }
+        }
+      }
+
+      setModalReprovacaoAberto(false);
+      mostrarToast("Crédito Reprovado com sucesso!", "sucesso");
+    } catch (error) {
+      mostrarToast("Erro ao atualizar status.", "erro");
     }
   };
 
@@ -270,7 +382,6 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
       });
 
       // ─── AUTOMAÇÃO DE VENDA DO LOTE ───
-      // Se o cliente tem um lote reservado, atualizamos automaticamente o status do lote para "vendido"
       if (lead.loteReserva && lead.empreendimentoId) {
         const { quadraId, loteId } = lead.loteReserva;
         if (quadraId && loteId) {
@@ -283,8 +394,7 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
       // ──────────────────────────────────
 
       setModalAprovacaoAberto(false);
-      mostrarToast("Crédito Aprovado com sucesso!", "sucesso");
-      setTimeout(() => onClose(), 1500);
+      mostrarToast("Crédito Aprovado! Role para baixo para anexar o Laudo SICAQ.", "sucesso");
     } catch (error) {
       mostrarToast("Erro ao salvar aprovação.", "erro");
     }
@@ -300,7 +410,6 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
       });
 
       // ─── AUTOMAÇÃO DE REVERSÃO DO LOTE ───
-      // O lote estava "vendido" (vermelho). Volta para a fila de negociação (laranja)
       if (lead.loteReserva && lead.empreendimentoId) {
         const { quadraId, loteId } = lead.loteReserva;
         if (quadraId && loteId) {
@@ -388,6 +497,12 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
             }}
           >
 
+            {/* Input oculto para o upload de aprovação/análise de crédito */}
+            <input
+              type="file" ref={fileInputAprovacaoRef} onChange={handleUploadDocumentosAnalise} multiple
+              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style={{ display: "none" }}
+            />
+
             {/* TOAST */}
             <AnimatePresence>
               {toast && (
@@ -463,6 +578,29 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
                       </div>
                     </div>
 
+                    {/* ── ANEXO DE DOCUMENTOS DE ANÁLISE DENTRO DO MODAL ── */}
+                    <div style={{ padding: "16px", background: "rgba(167,139,250,0.06)", border: "1px solid rgba(167,139,250,0.2)", borderRadius: 12, marginBottom: 24 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <div>
+                          <p style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa", display: "flex", alignItems: "center", gap: 6 }}><FileCheck2 size={16}/> Documentos de Análise</p>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 2 }}>Parecer, Laudo, Prints (Uso Interno)</p>
+                        </div>
+                        <button onClick={() => fileInputAprovacaoRef.current?.click()} disabled={uploadingAprovacao} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#a78bfa", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: uploadingAprovacao ? 0.5 : 1 }}>
+                          {uploadingAprovacao ? <><Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Enviando...</> : <><UploadCloud size={13} /> Anexar</>}
+                        </button>
+                      </div>
+                      
+                      {lead.documentosAnaliseCredito && lead.documentosAnaliseCredito.length > 0 && (
+                        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                          {lead.documentosAnaliseCredito.map((doc: any, i: number) => (
+                            <p key={i} style={{ fontSize: 11, color: "#4ade80", display: "flex", alignItems: "center", gap: 4 }}>
+                              <CheckCircle2 size={12}/> {doc.nome}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     <div style={{ display: "flex", gap: 12 }}>
                       <button
                         onClick={() => setModalAprovacaoAberto(false)}
@@ -482,9 +620,84 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
               )}
             </AnimatePresence>
 
+            {/* MODAL SOBREPOSTO DE REPROVAÇÃO DETALHADA */}
+            <AnimatePresence>
+              {modalReprovacaoAberto && (
+                <motion.div
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  style={{
+                    position: "absolute", inset: 0, zIndex: 110,
+                    background: "rgba(15,30,22,0.95)", backdropFilter: "blur(10px)",
+                    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                    display: "flex", alignItems: "center", justifyContent: "center", padding: 24
+                  }}
+                >
+                  <div style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 20, padding: 32, width: "100%", maxWidth: 500, boxShadow: "0 20px 40px rgba(0,0,0,0.5)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(239,68,68,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <ThumbsDown size={22} color="#f87171" />
+                      </div>
+                      <div>
+                        <h3 style={{ fontSize: 18, fontWeight: 800, color: "white" }}>Reprovação de Crédito</h3>
+                        <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>Informações para o corretor e cliente</p>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 24 }}>
+                      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Motivo da Reprovação *</label>
+                      <textarea
+                        className="input-field" style={{ fontSize: 13, resize: "vertical", minHeight: 80 }}
+                        value={motivoReprovacao}
+                        onChange={(e) => setMotivoReprovacao(e.target.value)}
+                        placeholder="Ex: Restrição interna na CAIXA impeditiva de financiamento..."
+                      />
+                    </div>
+
+                    {/* ── ANEXO DE DOCUMENTOS DE ANÁLISE DENTRO DO MODAL ── */}
+                    <div style={{ padding: "16px", background: "rgba(167,139,250,0.06)", border: "1px solid rgba(167,139,250,0.2)", borderRadius: 12, marginBottom: 24 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <div>
+                          <p style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa", display: "flex", alignItems: "center", gap: 6 }}><FileCheck2 size={16}/> Documentos de Análise</p>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 2 }}>Parecer, Laudo, Prints (Uso Interno)</p>
+                        </div>
+                        <button onClick={() => fileInputAprovacaoRef.current?.click()} disabled={uploadingAprovacao} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#a78bfa", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: uploadingAprovacao ? 0.5 : 1 }}>
+                          {uploadingAprovacao ? <><Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Enviando...</> : <><UploadCloud size={13} /> Anexar</>}
+                        </button>
+                      </div>
+                      
+                      {lead.documentosAnaliseCredito && lead.documentosAnaliseCredito.length > 0 && (
+                        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                          {lead.documentosAnaliseCredito.map((doc: any, i: number) => (
+                            <p key={i} style={{ fontSize: 11, color: "#4ade80", display: "flex", alignItems: "center", gap: 4 }}>
+                              <CheckCircle2 size={12}/> {doc.nome}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", gap: 12 }}>
+                      <button
+                        onClick={() => setModalReprovacaoAberto(false)}
+                        style={{ flex: 1, padding: "12px", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", borderRadius: 12, color: "var(--gray-light)", fontWeight: 700, cursor: "pointer" }}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={confirmarReprovacao}
+                        style={{ flex: 1, padding: "12px", background: "#f87171", border: "none", borderRadius: 12, color: "#450a0a", fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 14px rgba(239,68,68,0.3)" }}
+                      >
+                        Confirmar Reprovação
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* HEADER: RESUMO FINANCEIRO */}
             <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", position: "sticky", top: 0, background: "var(--bg-base)", zIndex: 10, borderTopLeftRadius: 28, borderTopRightRadius: 28 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
                 <div>
                   <h2 style={{ fontSize: 20, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 10 }}>
                     <ShieldCheck size={22} color="#38bdf8" /> Auditoria de Crédito
@@ -496,6 +709,43 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
                 <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gray-light)", cursor: "pointer" }}>
                   <X size={18} />
                 </button>
+              </div>
+
+              {/* ── NOVO: WhatsApp do Cliente e do Corretor com identificação ── */}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                {lead.whatsapp && (
+                  <a
+                    href={`https://wa.me/55${(lead.whatsapp || "").replace(/\D/g, "")}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#4ade80", textDecoration: "none", background: "rgba(74,222,128,0.1)", padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(74,222,128,0.25)" }}
+                  >
+                    <Phone size={13} />
+                    <span style={{ fontWeight: 400, color: "rgba(74,222,128,0.7)", fontSize: 11 }}>Cliente:</span>
+                    {lead.whatsapp}
+                  </a>
+                )}
+                {lead.whatsapp2 && lead.whatsapp2.replace(/\D/g, "").length >= 10 && (
+                  <a
+                    href={`https://wa.me/55${(lead.whatsapp2 || "").replace(/\D/g, "")}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#4ade80", textDecoration: "none", background: "rgba(74,222,128,0.1)", padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(74,222,128,0.25)" }}
+                  >
+                    <Phone size={13} />
+                    <span style={{ fontWeight: 400, color: "rgba(74,222,128,0.7)", fontSize: 11 }}>Cliente 2:</span>
+                    {lead.whatsapp2}
+                  </a>
+                )}
+                {telefoneCorretor && (
+                  <a
+                    href={`https://wa.me/55${telefoneCorretor.replace(/\D/g, "")}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#38bdf8", textDecoration: "none", background: "rgba(56,189,248,0.1)", padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(56,189,248,0.25)" }}
+                  >
+                    <Phone size={13} />
+                    <span style={{ fontWeight: 400, color: "rgba(56,189,248,0.7)", fontSize: 11 }}>Corretor:</span>
+                    {lead.nomeCorretor ? `${lead.nomeCorretor} — ${telefoneCorretor}` : telefoneCorretor}
+                  </a>
+                )}
               </div>
 
               {/* MINI DASHBOARD FINANCEIRO */}
@@ -544,13 +794,148 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
 
             {/* CORPO: AUDITORIA DE DOCUMENTOS */}
             <div style={{ padding: "24px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
+              
+              {/* ── FICHA DE PRÉ-CADASTRO DO CLIENTE ── */}
+              {abaAtiva === "proponente" && (
+                <div style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 16, padding: "16px", display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: "#38bdf8", display: "flex", alignItems: "center", gap: 6, margin: 0 }}>
+                      <FileText size={16} /> Ficha de Pré-Cadastro
+                    </h3>
+                    
+                    {/* Não permite editar se o crédito já foi finalizado (isDecidido) */}
+                    {!editandoFicha && !isDecidido ? (
+                      <button onClick={iniciarEdicaoFicha} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", padding: "6px 12px", borderRadius: 8, color: "var(--gray-light)", fontSize: 12, cursor: "pointer", transition: "0.2s" }}>
+                        <Edit3 size={14} /> Editar
+                      </button>
+                    ) : editandoFicha ? (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => setEditandoFicha(false)} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(239,68,68,0.1)", border: "none", padding: "6px 12px", borderRadius: 8, color: "#f87171", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
+                          <X size={14} /> Cancelar
+                        </button>
+                        <button onClick={salvarFicha} style={{ display: "flex", alignItems: "center", gap: 6, background: "#38bdf8", border: "none", padding: "6px 12px", borderRadius: 8, color: "#082f49", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
+                          <CheckCircle2 size={14} /> Salvar
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  
+                  {editandoFicha ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>E-mail</label>
+                        <input type="email" value={fichaForm.email || ""} onChange={e => setFichaForm({...fichaForm, email: e.target.value})} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>PIS / NIT</label>
+                        <input type="text" value={fichaForm.pisnit || ""} onChange={e => setFichaForm({...fichaForm, pisnit: e.target.value})} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Estado Civil</label>
+                        <select value={fichaForm.estadoCivil || ""} onChange={e => setFichaForm({...fichaForm, estadoCivil: e.target.value})} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }}>
+                          <option value="">Selecione...</option>
+                          <option value="solteiro">Solteiro(a)</option>
+                          <option value="casado">Casado(a)</option>
+                          <option value="divorciado">Divorciado(a)</option>
+                          <option value="viuvo">Viúvo(a)</option>
+                          <option value="uniao_estavel">União Estável</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Filhos Menores</label>
+                        <select value={fichaForm.temFilhosMenores || ""} onChange={e => setFichaForm({...fichaForm, temFilhosMenores: e.target.value})} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }}>
+                          <option value="">Selecione...</option>
+                          <option value="sim">Sim</option>
+                          <option value="nao">Não</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Vínculo</label>
+                        <select value={fichaForm.tipoVinculo || ""} onChange={e => setFichaForm({...fichaForm, tipoVinculo: e.target.value})} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }}>
+                          <option value="">Selecione...</option>
+                          <option value="clt">CLT (Carteira Assinada)</option>
+                          <option value="autonomo">Autônomo</option>
+                          <option value="empresario">Empresário / MEI</option>
+                          <option value="aposentado">Aposentado / Pensionista</option>
+                          <option value="servidor_publico">Servidor Público</option>
+                          <option value="outro">Outro</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>+3 Anos Carteira</label>
+                        <select value={fichaForm.temCarteiraAssinada3Anos || ""} onChange={e => setFichaForm({...fichaForm, temCarteiraAssinada3Anos: e.target.value})} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }}>
+                          <option value="">Selecione...</option>
+                          <option value="sim">Sim (várias empresas)</option>
+                          <option value="nao">Não</option>
+                          <option value="nao_se_aplica">Não se aplica</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Financ. Caixa</label>
+                        <select value={fichaForm.temFinanciamentoCaixa || ""} onChange={e => setFichaForm({...fichaForm, temFinanciamentoCaixa: e.target.value})} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }}>
+                          <option value="">Selecione...</option>
+                          <option value="nunca">Nunca teve</option>
+                          <option value="ativo">Possui ativo</option>
+                          <option value="quitado">Já quitado</option>
+                        </select>
+                      </div>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Observações do Corretor / Analista</label>
+                        <textarea value={fichaForm.observacoesCorretor || ""} onChange={e => setFichaForm({...fichaForm, observacoesCorretor: e.target.value})} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, minHeight: 60, outline: "none" }} />
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+                        <div>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>E-mail</p>
+                          <p style={{ fontSize: 13, color: "white", fontWeight: 600 }}>{lead.preCadastro?.email || "-"}</p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>PIS / NIT</p>
+                          <p style={{ fontSize: 13, color: "white", fontWeight: 600 }}>{lead.preCadastro?.pisnit || "-"}</p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Estado Civil</p>
+                          <p style={{ fontSize: 13, color: "white", fontWeight: 600, textTransform: "capitalize" }}>{lead.preCadastro?.estadoCivil ? lead.preCadastro?.estadoCivil.replace("_", " ") : "-"}</p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Filhos Menores</p>
+                          <p style={{ fontSize: 13, color: "white", fontWeight: 600, textTransform: "capitalize" }}>{lead.preCadastro?.temFilhosMenores || "-"}</p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Vínculo</p>
+                          <p style={{ fontSize: 13, color: "white", fontWeight: 600, textTransform: "capitalize" }}>{lead.preCadastro?.tipoVinculo ? lead.preCadastro?.tipoVinculo.replace("_", " ") : "-"}</p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>+3 Anos Carteira</p>
+                          <p style={{ fontSize: 13, color: "white", fontWeight: 600, textTransform: "capitalize" }}>{lead.preCadastro?.temCarteiraAssinada3Anos ? lead.preCadastro?.temCarteiraAssinada3Anos.replace(/_/g, " ") : "-"}</p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Financ. Caixa</p>
+                          <p style={{ fontSize: 13, color: "white", fontWeight: 600, textTransform: "capitalize" }}>{lead.preCadastro?.temFinanciamentoCaixa || "-"}</p>
+                        </div>
+                      </div>
+
+                      {lead.preCadastro?.observacoesCorretor && (
+                        <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px solid var(--border-subtle)" }}>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Observações do Corretor / Analista:</p>
+                          <p style={{ fontSize: 13, color: "var(--gray-light)", marginTop: 4, lineHeight: 1.5 }}>{lead.preCadastro?.observacoesCorretor}</p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
               {listaDocumentosPessoa.length === 0 ? (
                 <p style={{ color: "var(--gray-mid)", textAlign: "center", padding: "40px 0" }}>Nenhum documento salvo ainda.</p>
               ) : (
                 listaDocumentosPessoa.map(([docId, docDados]: any) => {
                   const arquivos = docDados.arquivos || [];
                   const isEnviado = arquivos.length > 0;
-                  const temPendencia = !!docDados.pendenciaCorrespondente;
+                  const isUploading = uploadingDocId === docId;
+                  const temPendencia = docDados.pendenciaCorrespondente && docDados.pendenciaCorrespondente !== "";
                   const isEditandoPendencia = docPendenciaAtivo === docId;
 
                   return (
@@ -768,6 +1153,49 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
                     </div>
                   )}
 
+                  {/* ── Documentos de Análise de Crédito (exclusivo correspondente/admin) ── */}
+                  {isDecidido && (
+                    <div style={{ width: "100%", background: "rgba(167,139,250,0.06)", border: "1px solid rgba(167,139,250,0.2)", borderRadius: 12, padding: "16px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <FileCheck2 size={16} color="#a78bfa" />
+                          <p style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa" }}>Documentos de Análise de Crédito</p>
+                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 100, background: "rgba(167,139,250,0.15)", color: "#a78bfa", fontWeight: 600 }}>Uso interno</span>
+                        </div>
+                        <button
+                          onClick={() => fileInputAprovacaoRef.current?.click()}
+                          disabled={uploadingAprovacao}
+                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#a78bfa", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: uploadingAprovacao ? 0.5 : 1 }}
+                        >
+                          {uploadingAprovacao
+                            ? <><Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Enviando...</>
+                            : <><UploadCloud size={13} /> Anexar Documentos</>
+                          }
+                        </button>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {lead.documentosAnaliseCredito && lead.documentosAnaliseCredito.length > 0 ? (
+                          lead.documentosAnaliseCredito.map((docItem: any, index: number) => (
+                            <div key={index} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "rgba(0,0,0,0.2)", borderRadius: 8, border: "1px solid var(--border-subtle)" }}>
+                              <FileText size={16} color="#a78bfa" style={{ flexShrink: 0 }} />
+                              <p style={{ fontSize: 12, color: "var(--gray-light)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{docItem.nome}</p>
+                              
+                              <a href={docItem.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 6, background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#a78bfa", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
+                                <ExternalLink size={12} /> Abrir
+                              </a>
+                              <button onClick={() => removerDocumentoAnalise(index)} style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "5px 8px", borderRadius: 6, background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", cursor: "pointer" }} title="Remover Documento">
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <p style={{ fontSize: 11, color: "var(--gray-dark)", marginTop: 4 }}>Nenhum documento anexado. Ficam visíveis apenas para o correspondente e a construtora.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     onClick={reverterDecisao}
                     style={{
@@ -802,6 +1230,7 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
           </motion.div>
         </motion.div>
       )}
+      <style dangerouslySetInnerHTML={{__html: `@keyframes spin { 100% { transform: rotate(360deg); } }`}} />
     </AnimatePresence>
   );
 }

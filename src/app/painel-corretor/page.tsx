@@ -88,8 +88,18 @@ export default function PainelCorretor() {
   const [modalNovoLeadAberto, setModalNovoLeadAberto] = useState(false);
   const [salvandoNovoLead, setSalvandoNovoLead] = useState(false);
   const [novoLeadData, setNovoLeadData] = useState({
-    nome: "", whatsapp: "", whatsapp2: "", empreendimentoId: "", modeloId: ""
+    nome: "", whatsapp: "", whatsapp2: "", empreendimentoId: "", modeloId: "",
+    // ── Pré-cadastro do cliente ──
+    email: "",
+    estadoCivil: "",                // solteiro | casado | divorciado | viuvo | uniao_estavel
+    pisnit: "",
+    tipoVinculo: "",                // clt | autonomo | empresario | aposentado | servidor_publico | outro
+    temCarteiraAssinada3Anos: "",   // sim | nao | nao_se_aplica
+    temFinanciamentoCaixa: "",      // nunca | ativo | quitado
+    temFilhosMenores: "",           // sim | nao
+    observacoesCorretor: "",
   });
+
 
   const leadDossieSelecionado = meusLeads.find(l => l.id === leadDossieId) || null;
 
@@ -218,7 +228,7 @@ export default function PainelCorretor() {
       const res = await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+                body: JSON.stringify({
           nome: novoLeadData.nome,
           whatsapp: novoLeadData.whatsapp,
           whatsapp2: novoLeadData.whatsapp2,
@@ -232,6 +242,17 @@ export default function PainelCorretor() {
           quartos: modeloSelecionado?.quartos || 0,
           origem: "cadastro_manual",
           timestamp: new Date().toISOString(),
+          // ── Pré-cadastro ──
+          preCadastro: {
+            email:                    novoLeadData.email,
+            estadoCivil:              novoLeadData.estadoCivil,
+            pisnit:                   novoLeadData.pisnit,
+            tipoVinculo:              novoLeadData.tipoVinculo,
+            temCarteiraAssinada3Anos: novoLeadData.temCarteiraAssinada3Anos,
+            temFinanciamentoCaixa:    novoLeadData.temFinanciamentoCaixa,
+            temFilhosMenores:         novoLeadData.temFilhosMenores,
+            observacoesCorretor:      novoLeadData.observacoesCorretor,
+          },
         }),
       });
 
@@ -246,7 +267,13 @@ export default function PainelCorretor() {
 
       alert("Cliente cadastrado e vinculado a você com sucesso!");
       setModalNovoLeadAberto(false);
-      setNovoLeadData({ nome: "", whatsapp: "", whatsapp2: "", empreendimentoId: "", modeloId: "" });
+      setNovoLeadData({
+        nome: "", whatsapp: "", whatsapp2: "", empreendimentoId: "", modeloId: "",
+        email: "", estadoCivil: "", pisnit: "", tipoVinculo: "",
+        temCarteiraAssinada3Anos: "", temFinanciamentoCaixa: "",
+        temFilhosMenores: "", observacoesCorretor: "",
+      });
+
       setAbaAtiva("meus"); // Direciona para a aba correta
     } catch (error) {
       console.error("Erro ao cadastrar lead:", error);
@@ -1031,6 +1058,98 @@ export default function PainelCorretor() {
                   </select>
                 </div>
               )}
+
+              {/* ── PRÉ-CADASTRO DO CLIENTE ── */}
+              <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+                <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--terracota-light)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6, margin: 0 }}>
+                  📋 Dados do Cliente (Pré-Cadastro)
+                </h3>
+ 
+                {/* E-mail */}
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>E-mail</label>
+                  <input type="email" value={novoLeadData.email} onChange={(e) => setNovoLeadData({...novoLeadData, email: e.target.value})} className="input-field" style={{ fontSize: 14 }} placeholder="cliente@email.com" />
+                </div>
+ 
+                {/* PIS/NIT */}
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Número do PIS / NIT</label>
+                  <input type="text" value={novoLeadData.pisnit} onChange={(e) => setNovoLeadData({...novoLeadData, pisnit: e.target.value})} className="input-field" style={{ fontSize: 14 }} placeholder="000.00000.00-0" />
+                </div>
+ 
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  {/* Estado Civil */}
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Estado Civil</label>
+                    <select value={novoLeadData.estadoCivil} onChange={(e) => setNovoLeadData({...novoLeadData, estadoCivil: e.target.value})} className="input-field" style={{ fontSize: 14, cursor: "pointer", appearance: "none" }}>
+                      <option value="">Selecione...</option>
+                      <option value="solteiro">Solteiro(a)</option>
+                      <option value="casado">Casado(a)</option>
+                      <option value="divorciado">Divorciado(a)</option>
+                      <option value="viuvo">Viúvo(a)</option>
+                      <option value="uniao_estavel">União Estável</option>
+                    </select>
+                  </div>
+                  {/* Filhos menores */}
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Possui Filhos Menores?</label>
+                    <select value={novoLeadData.temFilhosMenores} onChange={(e) => setNovoLeadData({...novoLeadData, temFilhosMenores: e.target.value})} className="input-field" style={{ fontSize: 14, cursor: "pointer", appearance: "none" }}>
+                      <option value="">Selecione...</option>
+                      <option value="sim">Sim</option>
+                      <option value="nao">Não</option>
+                    </select>
+                  </div>
+                </div>
+ 
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  {/* Tipo de vínculo */}
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Vínculo Empregatício</label>
+                    <select value={novoLeadData.tipoVinculo} onChange={(e) => setNovoLeadData({...novoLeadData, tipoVinculo: e.target.value})} className="input-field" style={{ fontSize: 14, cursor: "pointer", appearance: "none" }}>
+                      <option value="">Selecione...</option>
+                      <option value="clt">CLT (Carteira Assinada)</option>
+                      <option value="autonomo">Autônomo</option>
+                      <option value="empresario">Empresário / MEI</option>
+                      <option value="aposentado">Aposentado / Pensionista</option>
+                      <option value="servidor_publico">Servidor Público</option>
+                      <option value="outro">Outro</option>
+                    </select>
+                  </div>
+                  {/* 3 anos carteira */}
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>+3 anos de carteira?</label>
+                    <select value={novoLeadData.temCarteiraAssinada3Anos} onChange={(e) => setNovoLeadData({...novoLeadData, temCarteiraAssinada3Anos: e.target.value})} className="input-field" style={{ fontSize: 14, cursor: "pointer", appearance: "none" }}>
+                      <option value="">Confirmar com cliente...</option>
+                      <option value="sim">Sim (pode ser em várias empresas)</option>
+                      <option value="nao">Não</option>
+                      <option value="nao_se_aplica">Não se aplica</option>
+                    </select>
+                  </div>
+                </div>
+ 
+                {/* Financiamento CAIXA */}
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Financiamento de imóvel na CAIXA</label>
+                  <select value={novoLeadData.temFinanciamentoCaixa} onChange={(e) => setNovoLeadData({...novoLeadData, temFinanciamentoCaixa: e.target.value})} className="input-field" style={{ fontSize: 14, cursor: "pointer", appearance: "none" }}>
+                    <option value="">Confirmar com cliente...</option>
+                    <option value="nunca">Nunca teve</option>
+                    <option value="ativo">Possui ativo</option>
+                    <option value="quitado">Já quitado</option>
+                  </select>
+                </div>
+ 
+                {/* Observações */}
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Observações do Corretor</label>
+                  <textarea
+                    value={novoLeadData.observacoesCorretor}
+                    onChange={(e) => setNovoLeadData({...novoLeadData, observacoesCorretor: e.target.value})}
+                    className="input-field"
+                    style={{ fontSize: 13, resize: "vertical", minHeight: 72 }}
+                    placeholder="Ex: Cliente tem renda informal complementar, mencionou dívida no SPC já regularizada..."
+                  />
+                </div>
+              </div>
 
               <div style={{ marginTop: 8, padding: "12px", background: "rgba(74,222,128,0.05)", border: "1px dashed rgba(74,222,128,0.2)", borderRadius: 10 }}>
                  <p style={{ fontSize: 12, color: "var(--gray-mid)", lineHeight: 1.5, textAlign: "center" }}>
