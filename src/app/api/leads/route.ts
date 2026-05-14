@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
       simulacao: simulacao || null,
       preCadastro: preCadastro || null, // ← CORREÇÃO 2: Agora sim, salvando no banco!
       timestamp: dataAtual,
-      status: "novo",
+      status: corretorId ? "em_atendimento" : "novo",
     };
 
     const docRef = await addDoc(collection(db, "leads"), novoLead);
