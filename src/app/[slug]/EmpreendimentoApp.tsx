@@ -489,7 +489,7 @@ export default function EmpreendimentoApp({
   };
 
   const handleCompartilharLocalizacao = async () => {
-    const mapsLink = `http://googleusercontent.com/maps.google.com/?q=${empFresh.coordenadas.lat},${empFresh.coordenadas.lng}`;
+    const mapsLink = `https://maps.google.com/?q=${empFresh.coordenadas.lat},${empFresh.coordenadas.lng}`;
     
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
