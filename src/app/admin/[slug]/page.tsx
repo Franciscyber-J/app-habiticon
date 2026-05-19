@@ -8,11 +8,11 @@ import { use } from "react";
 import {
   ArrowLeft, Upload, Trash2, Image as ImageIcon,
   DollarSign, FileText, Settings2, Eye, CheckCircle, CheckCircle2,
-  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X, Map, Layers, Wallet, Plus, AlertTriangle
+  Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X, Map, Layers, Wallet, Plus, AlertTriangle, Phone
 } from "lucide-react";
 import { ConfiguracoesSBPE } from "@/components/admin/ConfiguracoesSBPE";
 
-type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao" | "mapa" | "comissoes";
+type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao" | "mapa" | "comissoes" | "atendimento";
 type SaveState = "idle" | "saving" | "saved" | "error";
 interface Params { params: Promise<{ slug: string }> }
 
@@ -86,17 +86,17 @@ import React from "react";
 
 // ─── Ambientes disponíveis ───────────────────────────────
 const AMBIENTES_LISTA = [
-  { id:"garagem",         label:"Garagem",           icone:"🚗" },
-  { id:"sala",            label:"Sala",              icone:"🛋️" },
-  { id:"cozinha",         label:"Cozinha",           icone:"🍳" },
-  { id:"copa",            label:"Copa",              icone:"🍽️" },
-  { id:"quarto_master",   label:"Quarto Master",     icone:"👑" },
-  { id:"banheiro_suite",  label:"Banheiro Suíte",    icone:"🚿" },
-  { id:"quarto_solteiro", label:"Quarto Solteiro",   icone:"🛏️" },
-  { id:"quarto_2",        label:"Quarto 2",          icone:"🛏️" },
-  { id:"banheiro_social", label:"Banheiro Social",   icone:"🚽" },
-  { id:"lavanderia",      label:"Lavanderia",        icone:"🧺" },
-  { id:"area_gourmet",    label:"Área Gourmet",      icone:"🔥" },
+  { id:"garagem",         label:"Garagem",         icone:"🚗" },
+  { id:"sala",            label:"Sala",            icone:"🛋️" },
+  { id:"cozinha",         label:"Cozinha",         icone:"🍳" },
+  { id:"copa",            label:"Copa",            icone:"🍽️" },
+  { id:"quarto_master",   label:"Quarto Master",   icone:"👑" },
+  { id:"banheiro_suite",  label:"Banheiro Suíte",  icone:"🚿" },
+  { id:"quarto_solteiro", label:"Quarto Solteiro", icone:"🛏️" },
+  { id:"quarto_2",        label:"Quarto 2",        icone:"🛏️" },
+  { id:"banheiro_social", label:"Banheiro Social", icone:"🚽" },
+  { id:"lavanderia",      label:"Lavanderia",      icone:"🧺" },
+  { id:"area_gourmet",    label:"Área Gourmet",    icone:"🔥" },
 ] as const;
 
 // Mini-componente de upload por ambiente
@@ -349,6 +349,25 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
           };
         }
 
+        // INJEÇÃO DOS DADOS DE ATENDIMENTO
+        if (!f.atendimento) {
+          f.atendimento = {
+            responsavel: "Habiticon",
+            presencial: {
+              disponivel: false,
+              nome: "",
+              telefone: "",
+              endereco: "",
+              maps_url: "",
+              horario: "Seg-Sex 8h às 15h",
+              observacao: ""
+            },
+            online: {
+              observacao: "Corretores atendem em qualquer horário pelo WhatsApp"
+            }
+          };
+        }
+
         setEmp(f); setOrig(JSON.parse(JSON.stringify(f)));
       }
       setLoading(false);
@@ -553,6 +572,7 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
     {id:"localizacao" as Section, label:"Localização",    icon:MapPin,     hint:"Endereço e mapa"},
     {id:"mapa"        as Section, label:"Mapa & Lotes",   icon:Map,        hint:"SVG, quadras e lotes"}, 
     {id:"comissoes"   as Section, label:"Comissões",      icon:Wallet,     hint:"Regras de repasse"},
+    {id:"atendimento" as Section, label:"Atendimento",    icon:Phone,      hint:"Contatos e presencial"},
   ];
 
   const saveCfg = {
@@ -1535,7 +1555,7 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                 </motion.div>
               )}
 
-              {/* ═══ NOVO MÓDULO: REGRAS DE COMISSÃO ══════════════════════════════ */}
+              {/* ═══ MÓDULO: REGRAS DE COMISSÃO ══════════════════════════════ */}
               {section==="comissoes"&&(
                 <motion.div key="comis" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
                   <div>
@@ -1654,6 +1674,167 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                           )}
                         </div>
                       </div>
+                    </div>
+                  </Card>
+
+                </motion.div>
+              )}
+
+              {/* ═══ ATENDIMENTO ══════════════════════════════ */}
+              {section==="atendimento"&&(
+                <motion.div key="atd" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
+                  <div>
+                    <h2 className="text-title" style={{marginBottom:8}}>Atendimento</h2>
+                    <p className="text-body">Configure como e onde os clientes serão atendidos. O agente WhatsApp usa estas informações automaticamente para orientar cada cliente.</p>
+                  </div>
+
+                  {/* RESUMO — dados cadastrais salvos */}
+                  {orig?.atendimento?.responsavel && (
+                    <div style={{padding:"20px 24px",borderRadius:14,background:"rgba(74,222,128,0.05)",border:"1px solid rgba(74,222,128,0.2)"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,paddingBottom:14,borderBottom:"1px solid rgba(74,222,128,0.1)"}}>
+                        <CheckCircle2 size={16} color="#4ade80"/>
+                        <p style={{fontSize:12,fontWeight:700,color:"#4ade80",textTransform:"uppercase",letterSpacing:"0.05em"}}>Dados Cadastrais Salvos</p>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                        {([
+                          ["Responsável", orig.atendimento.responsavel],
+                          ["Presencial", orig.atendimento.presencial?.disponivel ? "✅ Disponível" : "❌ Indisponível"],
+                          ...(orig.atendimento.presencial?.disponivel ? [
+                            ["Local", orig.atendimento.presencial.nome || "—"],
+                            ["Telefone", orig.atendimento.presencial.telefone || "—"],
+                            ["Horário", orig.atendimento.presencial.horario || "—"],
+                            ["Endereço", orig.atendimento.presencial.endereco || "—"],
+                          ] : [
+                            ["Obs.", orig.atendimento.presencial?.observacao || "—"],
+                          ]),
+                          ["Online", orig.atendimento.online?.observacao || "—"],
+                        ] as [string,string][]).map(([k,v]) => (
+                          <div key={k} style={{display:"flex",flexDirection:"column",gap:3}}>
+                            <span style={{fontSize:10,color:"var(--gray-dark)",textTransform:"uppercase",fontWeight:700,letterSpacing:"0.04em"}}>{k}</span>
+                            <span style={{fontSize:12,color:"var(--gray-mid)",lineHeight:1.5}}>{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {orig.atendimento.presencial?.maps_url && (
+                        <a href={orig.atendimento.presencial.maps_url} target="_blank" rel="noopener noreferrer"
+                          style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:14,padding:"7px 14px",borderRadius:8,
+                            background:"rgba(175,111,83,0.1)",border:"1px solid rgba(175,111,83,0.2)",
+                            color:"var(--terracota)",fontSize:12,fontWeight:600,textDecoration:"none"}}>
+                          <ExternalLink size={13}/> Ver localização no Maps
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {/* CARD 1 — RESPONSÁVEL */}
+                  <Card title="🤝 Responsável pelo Atendimento" subtitle="Habiticon ou nome do parceiro exclusivo que gerencia as vendas deste empreendimento.">
+                    <div>
+                      <FieldLabel hint="Ex: Habiticon ou Opes Data Negócios Imobiliários">Responsável</FieldLabel>
+                      <input type="text" className="input-field" style={{fontSize:15}}
+                        value={emp.atendimento?.responsavel || ""}
+                        onChange={e=>update("atendimento.responsavel", e.target.value)}
+                        placeholder="Habiticon"/>
+                    </div>
+                  </Card>
+
+                  {/* CARD 2 — PRESENCIAL */}
+                  <Card title="📍 Atendimento Presencial" subtitle="Local físico onde clientes podem ser atendidos. Deixe indisponível se não houver local definido.">
+                    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",borderRadius:12,background:"rgba(0,0,0,0.2)",border:"1px solid var(--border-subtle)"}}>
+                        <div>
+                          <p style={{fontSize:14,fontWeight:700,color:"var(--gray-light)",marginBottom:4}}>Presencial disponível</p>
+                          <p style={{fontSize:12,color:"var(--gray-mid)"}}>Ativa os campos de endereço e horário</p>
+                        </div>
+                        <button
+                          onClick={()=>update("atendimento.presencial.disponivel", !emp.atendimento?.presencial?.disponivel)}
+                          style={{padding:"8px 16px",borderRadius:10,cursor:"pointer",border:"none",fontWeight:800,fontSize:13,transition:"0.2s",
+                            background: emp.atendimento?.presencial?.disponivel ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.08)",
+                            color: emp.atendimento?.presencial?.disponivel ? "#4ade80" : "var(--gray-mid)",
+                            boxShadow: emp.atendimento?.presencial?.disponivel ? "0 0 0 1px rgba(74,222,128,0.3)" : "none"}}>
+                          {emp.atendimento?.presencial?.disponivel ? "DISPONÍVEL" : "INDISPONÍVEL"}
+                        </button>
+                      </div>
+
+                      {emp.atendimento?.presencial?.disponivel && (
+                        <motion.div initial={{opacity:0,y:-8}} animate={{opacity:1,y:0}} style={{display:"flex",flexDirection:"column",gap:16}}>
+                          <div>
+                            <FieldLabel hint="Nome do local exibido ao cliente">Nome do Local</FieldLabel>
+                            <input type="text" className="input-field" style={{fontSize:15}}
+                              value={emp.atendimento?.presencial?.nome || ""}
+                              onChange={e=>update("atendimento.presencial.nome", e.target.value)}
+                              placeholder="Ex: Escritório Habiticon Iporá"/>
+                          </div>
+                          <Two>
+                            <div>
+                              <FieldLabel hint="Telefone de contato">Telefone</FieldLabel>
+                              <input type="text" className="input-field" style={{fontSize:15}}
+                                value={emp.atendimento?.presencial?.telefone || ""}
+                                onChange={e=>update("atendimento.presencial.telefone", e.target.value)}
+                                placeholder="Ex: 62 3945-9984"/>
+                            </div>
+                            <div>
+                              <FieldLabel hint="Dias e horário de funcionamento">Horário</FieldLabel>
+                              <input type="text" className="input-field" style={{fontSize:15}}
+                                value={emp.atendimento?.presencial?.horario || ""}
+                                onChange={e=>update("atendimento.presencial.horario", e.target.value)}
+                                placeholder="Ex: Seg-Sex 8h às 15h"/>
+                            </div>
+                          </Two>
+                          <div>
+                            <FieldLabel hint="Endereço completo">Endereço</FieldLabel>
+                            <input type="text" className="input-field" style={{fontSize:15}}
+                              value={emp.atendimento?.presencial?.endereco || ""}
+                              onChange={e=>update("atendimento.presencial.endereco", e.target.value)}
+                              placeholder="Ex: Rua X, 123 — Bairro, Cidade - GO"/>
+                          </div>
+                          <div>
+                            <FieldLabel hint="Link do Google Maps">Link Google Maps</FieldLabel>
+                            <div style={{display:"flex",gap:8}}>
+                              <input type="text" className="input-field" style={{fontSize:15,flex:1}}
+                                value={emp.atendimento?.presencial?.maps_url || ""}
+                                onChange={e=>update("atendimento.presencial.maps_url", e.target.value)}
+                                placeholder="https://maps.app.goo.gl/..."/>
+                              {emp.atendimento?.presencial?.maps_url && (
+                                <a href={emp.atendimento.presencial.maps_url} target="_blank" rel="noopener noreferrer"
+                                  style={{display:"flex",alignItems:"center",gap:6,padding:"0 16px",borderRadius:10,
+                                    background:"rgba(175,111,83,0.1)",border:"1px solid rgba(175,111,83,0.3)",
+                                    color:"var(--terracota)",fontSize:13,fontWeight:600,textDecoration:"none",flexShrink:0}}>
+                                  <ExternalLink size={14}/> Ver
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <FieldLabel hint="Ex: Somente por agendamento prévio">Observação</FieldLabel>
+                            <input type="text" className="input-field" style={{fontSize:15}}
+                              value={emp.atendimento?.presencial?.observacao || ""}
+                              onChange={e=>update("atendimento.presencial.observacao", e.target.value)}
+                              placeholder="Ex: Atendimento somente por agendamento prévio"/>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {!emp.atendimento?.presencial?.disponivel && (
+                        <div>
+                          <FieldLabel hint="Explicação para o agente (opcional)">Observação</FieldLabel>
+                          <input type="text" className="input-field" style={{fontSize:15}}
+                            value={emp.atendimento?.presencial?.observacao || ""}
+                            onChange={e=>update("atendimento.presencial.observacao", e.target.value)}
+                            placeholder="Ex: Atendimento presencial não disponível no momento"/>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+
+                  {/* CARD 3 — ONLINE */}
+                  <Card title="💬 Atendimento Online" subtitle="Como clientes são atendidos de forma remota. Usado pelo agente quando não há presencial disponível.">
+                    <div>
+                      <FieldLabel hint="Descrição exibida ao cliente pelo agente WhatsApp">Observação</FieldLabel>
+                      <textarea rows={2} className="input-field" style={{resize:"none",fontSize:13,lineHeight:1.6}}
+                        value={emp.atendimento?.online?.observacao || ""}
+                        onChange={e=>update("atendimento.online.observacao", e.target.value)}
+                        placeholder="Ex: Corretores atendem em qualquer horário pelo WhatsApp"/>
                     </div>
                   </Card>
 
