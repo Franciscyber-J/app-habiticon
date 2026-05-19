@@ -253,6 +253,32 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
   const [editandoAmb, setEditandoAmb] = useState<string|null>(null); 
   const [uploading, setUploading] = useState(false);
 
+  const pdfRef = useRef<HTMLInputElement>(null);
+const [uploadingPdf, setUploadingPdf] = useState(false);
+
+const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  setUploadingPdf(true);
+  try {
+    let listaAtual = [...(emp.vitrine.apresentacoes || [])];
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append("file", file); fd.append("slug", slug);
+      fd.append("tipo", "docs_padrao");
+      fd.append("titulo", file.name.replace(/\.[^/.]+$/, "").replace(/_/g, " "));
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.url) listaAtual = [...listaAtual, { url: data.url, titulo: data.titulo || file.name }];
+    }
+    update("vitrine.apresentacoes", listaAtual);
+    await fetch("/api/empreendimentos", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug, field: "vitrine.apresentacoes", value: listaAtual }),
+    });
+  } finally { setUploadingPdf(false); if (pdfRef.current) pdfRef.current.value = ""; }
+};
+
   const isDirty = emp && orig && JSON.stringify(emp) !== JSON.stringify(orig);
 
   useEffect(() => {
@@ -1233,6 +1259,61 @@ export default function AdminEmpreendimentoPage({ params }: Params) {
                           }}
                         />
                       ))}
+                    </div>
+                  </Card>
+
+                  <Card title="📄 Apresentações para Download" subtitle="PDFs disponibilizados para clientes baixarem na vitrine. Suporta múltiplos arquivos — um por modelo ou geral.">
+                    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                      <input ref={pdfRef} type="file" accept=".pdf" multiple className="hidden" onChange={handleUploadPDF}/>
+                      <button onClick={()=>pdfRef.current?.click()} disabled={uploadingPdf} className="btn-secondary w-full">
+                        <FileText size={16}/>{uploadingPdf?"Enviando PDF...":"Adicionar PDF de Apresentação"}
+                      </button>
+
+                      {(emp.vitrine.apresentacoes||[]).length > 0 ? (
+                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                          {(emp.vitrine.apresentacoes||[]).map((pdf:any, i:number) => (
+                            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderRadius:10,background:"rgba(0,0,0,0.2)",border:"1px solid var(--border-subtle)"}}>
+                              <FileText size={18} color="var(--terracota)" style={{flexShrink:0}}/>
+                              <input
+                                type="text" className="input-field"
+                                style={{flex:1,fontSize:13,padding:"6px 10px"}}
+                                value={pdf.titulo||""}
+                                onChange={e=>{
+                                  const nova=[...(emp.vitrine.apresentacoes||[])];
+                                  nova[i]={...nova[i],titulo:e.target.value};
+                                  update("vitrine.apresentacoes",nova);
+                                }}
+                                onBlur={async()=>{
+                                  const nova=[...(emp.vitrine.apresentacoes||[])];
+                                  await fetch("/api/empreendimentos",{method:"PATCH",headers:{"Content-Type":"application/json"},
+                                    body:JSON.stringify({slug,field:"vitrine.apresentacoes",value:nova})});
+                                }}
+                                placeholder="Título do documento (ex: Apresentação Modelo 3Q)"
+                              />
+                              <a href={pdf.url} target="_blank" rel="noopener noreferrer"
+                                style={{padding:"6px 10px",borderRadius:7,background:"rgba(175,111,83,0.1)",border:"1px solid var(--border-active)",color:"var(--terracota)",fontSize:11,fontWeight:600,textDecoration:"none",flexShrink:0}}>
+                                Ver
+                              </a>
+                              <button onClick={async()=>{
+                                  if(!confirm("Remover este PDF?")) return;
+                                  await fetch("/api/upload",{method:"DELETE",headers:{"Content-Type":"application/json"},
+                                    body:JSON.stringify({slug,url:pdf.url,tipo:"docs_padrao"})});
+                                  const nova=(emp.vitrine.apresentacoes||[]).filter((_:any,idx:number)=>idx!==i);
+                                  update("vitrine.apresentacoes",nova);
+                                  await fetch("/api/empreendimentos",{method:"PATCH",headers:{"Content-Type":"application/json"},
+                                    body:JSON.stringify({slug,field:"vitrine.apresentacoes",value:nova})});
+                                }}
+                                style={{padding:"6px",borderRadius:7,background:"rgba(239,68,68,0.1)",color:"#ef4444",border:"none",cursor:"pointer",flexShrink:0}}>
+                                <Trash2 size={14}/>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex-center py-6 rounded-xl" style={{background:"rgba(0,0,0,0.15)",border:"1px dashed var(--border-subtle)"}}>
+                          <p className="text-muted text-sm">Nenhum PDF cadastrado ainda</p>
+                        </div>
+                      )}
                     </div>
                   </Card>
 

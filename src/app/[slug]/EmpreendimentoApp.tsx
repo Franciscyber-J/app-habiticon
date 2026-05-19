@@ -109,6 +109,7 @@ interface Empreendimento {
     imagens: { url: string; titulo?: string }[];
     plantas:  { url: string; titulo?: string }[];
     ambientes?: Record<string, { ativo: boolean; fotos: { url: string; titulo?: string }[] }>;
+    apresentacoes?: { url: string; titulo?: string }[];
   };
   textos: {
     notasLegais: string;
@@ -1143,6 +1144,31 @@ export default function EmpreendimentoApp({
                       <p style={{ fontSize: 14, color: "var(--gray-dark)" }}>Nenhuma foto disponível ainda.</p>
                     </div>
                   )}
+
+                  {/* Documentos para Download */}
+                    {(empFresh.vitrine.apresentacoes || []).length > 0 && (
+                      <div className="glass-card-nohover">
+                        <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 16 }}>
+                          📄 Documentos para Download
+                        </h3>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {(empFresh.vitrine.apresentacoes || []).map((pdf, i) => (
+                            <a key={i} href={pdf.url} target="_blank" rel="noopener noreferrer"
+                              style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 18px", borderRadius:12,
+                                background:"var(--terracota-glow)", border:"1px solid var(--border-active)", textDecoration:"none" }}>
+                              <FileText size={20} color="var(--terracota)" style={{ flexShrink: 0 }} />
+                              <div style={{ flex: 1 }}>
+                                <p style={{ fontSize: 14, fontWeight: 700, color: "var(--terracota-light)" }}>
+                                  {pdf.titulo || "Apresentação"}
+                                </p>
+                                <p style={{ fontSize: 11, color: "var(--gray-dark)", marginTop: 2 }}>PDF · Clique para abrir</p>
+                              </div>
+                              <span style={{ fontSize: 12, color: "var(--terracota)", fontWeight: 700, flexShrink: 0 }}>↓ Baixar</span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                   {/* Mapa + Novo botão de Compartilhar Localização */}
                   {empFresh.coordenadas?.lat && empFresh.coordenadas?.lng && (
