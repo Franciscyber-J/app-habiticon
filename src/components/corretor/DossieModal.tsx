@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────
 // IMPORTAÇÕES
 // ─────────────────────────────────────────────────────────
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   X, CheckCircle2, FileText, Camera, Loader2, FileCheck2, 
@@ -11,9 +11,10 @@ import {
   AlertCircle, Lock, Edit3, Phone, Send, Clock
 } from "lucide-react";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase";
-import { notificarTelegram } from "@/lib/notificacoes"; // ← NOVO: IMPORT DO TELEGRAM
+import { notificarTelegram } from "@/lib/notificacoes";
+import { simular, formatBRL, calcularLaudoCUB, COTA_MAXIMA_CAIXA, parcelamentoCartao, parcelamentoBoleto, TAXA_BOLETO_MENSAL } from "@/lib/calculos";
 
 // ─────────────────────────────────────────────────────────
 // TIPAGENS E CONSTANTES
@@ -51,15 +52,97 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
   const [mostrandoInputNovoDoc, setMostrandoInputNovoDoc] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
-  // 👇 ADICIONE ESTAS DUAS LINHAS 👇
+  // Estados de Edição da Ficha e do Empreendimento
   const [editandoFicha, setEditandoFicha] = useState(false);
   const [fichaForm, setFichaForm] = useState<any>({});
+  const [empreendimento, setEmpreendimento] = useState<any>(null);
   
   // ── ESTADO DO MODAL PARA ADICIONAR/EDITAR PESSOA ──
   const [promptConfig, setPromptConfig] = useState<{isOpen: boolean, tipo: "adicionar" | "editar", valor: string}>({isOpen: false, tipo: "adicionar", valor: ""});
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploadAlvo, setUploadAlvo] = useState<{ pessoaId: string, docId: string } | null>(null);
+
+  // ── HELPERS DE MOEDA E FORMAS DE ENTRADA ──
+  const formatarMoedaInput = (valor: string): string => {
+    const digits = valor.replace(/\D/g, '');
+    if (!digits) return '';
+    return (parseInt(digits, 10) / 100).toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const parsearMoedaInput = (valor: string): number => {
+    return parseFloat((valor || '').replace(/\./g, '').replace(',', '.')) || 0;
+  };
+
+  const FORMAS_ENTRADA = [
+    { id: 'avista', label: 'À Vista (sem juros)', maxParcelas: 1  },
+    { id: 'cartao', label: 'Cartão C6 Bank',      maxParcelas: 10 },
+    { id: 'boleto', label: 'Boleto Parcelado',    maxParcelas: 5  },
+  ];
+
+  const calcularParcelaEntrada = (valorEntrada: number, formaId: string, parcelas: number): number => {
+    if (!valorEntrada || valorEntrada <= 0) return 0;
+    if (formaId === 'avista' || parcelas <= 1) return valorEntrada;
+    if (formaId === 'cartao') return parcelamentoCartao(valorEntrada, parcelas).parcelaComJuros;
+    if (formaId === 'boleto') return parcelamentoBoleto(valorEntrada * 0.5, parcelas).parcelaPorParcela; // PMT sobre 50%
+    return valorEntrada / parcelas;
+  };
+
+  // Busca os dados do empreendimento para carregar os modelos e valores do simulador (ex: entrada mínima)
+  useEffect(() => {
+    if (isOpen && lead?.empreendimentoId) {
+      getDoc(doc(db, "empreendimentos", lead.empreendimentoId)).then(snap => {
+        if (snap.exists()) setEmpreendimento(snap.data());
+      });
+    }
+  }, [isOpen, lead]);
+
+// ── SIMULAÇÃO FINANCEIRA — MOTOR EXATO HABITICON ──
+  const simulacaoFinanceira = useMemo(() => {
+    if (!isOpen || !lead || !empreendimento) return null;
+
+    const modeloEncontrado = empreendimento.modelos?.find((m: any) => m.nome === lead.modelo);
+    const valorImovel = modeloEncontrado?.valor || lead.valorImovel || 0;
+    const entradaOfertada = Number(lead.preCadastro?.entrada) || empreendimento.simulador?.entradaMin || 0;
+
+    if (valorImovel <= 0 || entradaOfertada <= 0) return null;
+
+    const taxaAnual = lead.taxaAplicada || empreendimento.simulador?.taxaFaixa12 || 8.16;
+    const prazoMeses = empreendimento.simulador?.prazoMeses || 360;
+    const subsidio = Number(lead.simulacao?.subsidio) || 0;
+
+    const cubCfg = empreendimento.simulador?.cub;
+    let laudoCUBTotal = 0;
+    if (cubCfg?.cubVigente > 0 && modeloEncontrado?.area) {
+      const totalItens = cubCfg.itensComplementares?.reduce(
+        (acc: number, item: any) => acc + (Number(item.valor) || 0), 0
+      ) || 0;
+      laudoCUBTotal = calcularLaudoCUB(
+        modeloEncontrado.valorLote || 48000,
+        modeloEncontrado.area,
+        cubCfg.cubVigente,
+        cubCfg.bdi,
+        0,
+        COTA_MAXIMA_CAIXA,
+        totalItens
+      ).laudoTotal;
+    }
+
+    return simular({
+      valorImovel,
+      entrada: entradaOfertada,
+      prazoMeses,
+      taxaAnual,
+      subsidio,
+      usarSubsidio: subsidio > 0,
+      rendaFamiliar: 0,
+      tetoImovel: empreendimento.mcmv?.tetoImovel || 500000,
+      idadeTomador: 35,
+    });
+  }, [isOpen, lead, empreendimento]);
 
   if (!isOpen || !lead) return null;
 
@@ -88,15 +171,71 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
     setTimeout(() => setToast(null), 3000);
   };
 
-  // 👇 ADICIONE ESTE BLOCO 👇
+  // ─────────────────────────────────────────────────────────
+  // FUNÇÕES DE EDIÇÃO DA FICHA DE PRÉ-CADASTRO
+  // ─────────────────────────────────────────────────────────
   const iniciarEdicaoFicha = () => {
-    setFichaForm(lead.preCadastro || {});
+    const entradaNum = Number(lead.preCadastro?.entrada) || 0;
+    setFichaForm({
+      ...lead.preCadastro,
+      modelo: lead.modelo || "",
+      entrada: entradaNum > 0
+        ? entradaNum.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : "",
+      formaEntrada:      lead.preCadastro?.formaEntrada      || "avista",
+      parcelasEntrada:   lead.preCadastro?.parcelasEntrada   || 1,
+      modoEntradaManual: lead.preCadastro?.modoEntradaManual || false,
+    });
     setEditandoFicha(true);
   };
 
   const salvarFicha = async () => {
     try {
-      await updateDoc(doc(db, "leads", lead.id), { preCadastro: fichaForm });
+      const { modelo, entrada, formaEntrada, parcelasEntrada, modoEntradaManual, ...restoPreCadastro } = fichaForm;
+      const entradaNum  = parsearMoedaInput(entrada);
+      const parcelasNum = Number(parcelasEntrada) || 1;
+      const formaStr    = formaEntrada || "avista";
+
+      // Validação de mínimo (só se não for modo manual)
+      if (!modoEntradaManual) {
+        const minimo = empreendimento?.simulador?.entradaMin || 10000;
+        if (entradaNum < minimo) {
+          mostrarToast(`Entrada mínima é R$ ${minimo.toLocaleString('pt-BR')} — corrija antes de salvar.`, "erro");
+          return;
+        }
+      }
+
+      const parcelaCalc  = calcularParcelaEntrada(entradaNum, formaStr, parcelasNum);
+      // Para boleto: 50% no ato + 50% parcelado. Para cartão/à vista: ato = valor integral.
+      const atoEntrada        = formaStr === 'boleto' ? Math.round(entradaNum * 0.5) : entradaNum;
+      const parcelavelEntrada = formaStr === 'boleto' ? Math.round(entradaNum * 0.5) : 0;
+
+      const updates: any = {
+        preCadastro: {
+          ...restoPreCadastro,
+          entrada:            entradaNum,
+          formaEntrada:       formaStr,
+          parcelasEntrada:    parcelasNum,
+          modoEntradaManual:  modoEntradaManual || false,
+          parcelaEntradaCalc: modoEntradaManual ? entradaNum : parcelaCalc,
+          atoEntrada,
+          parcelavelEntrada,
+        }
+      };
+
+      if (modelo !== lead.modelo) {
+         const modeloCompleto = empreendimento?.modelos?.find((m: any) => m.nome === modelo);
+         if (modeloCompleto) {
+            updates.modelo = modeloCompleto.nome;
+            updates.valorImovel = modeloCompleto.valor || 0;
+            updates.area = modeloCompleto.area || 0;
+            updates.quartos = modeloCompleto.quartos || 0;
+         } else {
+            updates.modelo = modelo || "";
+         }
+      }
+
+      await updateDoc(doc(db, "leads", lead.id), updates);
       setEditandoFicha(false);
       mostrarToast("Ficha atualizada com sucesso!", "sucesso");
     } catch (error) {
@@ -466,7 +605,6 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
               )}
             </AnimatePresence>
 
-            {/* Apenas retirei o capture="environment" */}
             <input 
               type="file" ref={inputRef} onChange={handleFileChange} multiple 
               style={{ display: "none" }} accept=".pdf, image/*" 
@@ -538,9 +676,9 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
                   </button>
                 ))}
                 <button onClick={iniciarAdicionarCompositor} style={{
-  padding: "10px 16px", borderRadius: "10px 10px 0 0", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-  background: "transparent", color: "#fb923c", display: "flex", alignItems: "center", gap: 6
-}}>
+                  padding: "10px 16px", borderRadius: "10px 10px 0 0", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+                  background: "transparent", color: "#fb923c", display: "flex", alignItems: "center", gap: 6
+                }}>
                   <Plus size={14} /> Compositor
                 </button>
                 <div style={{ flexShrink: 0, width: 24 }} />
@@ -633,6 +771,158 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
                           <option value="quitado">Já quitado</option>
                         </select>
                       </div>
+
+                      {/* ── MODELO DA CASA E ENTRADA COM FORMA DE PAGAMENTO ── */}
+                      <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 12, marginTop: 8, paddingTop: 12, borderTop: "1px solid var(--border-subtle)" }}>
+
+                        {/* Linha: Modelo + Entrada */}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+                          <div>
+                            <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Modelo da Casa</label>
+                            <select
+                              value={fichaForm.modelo || ""}
+                              onChange={e => setFichaForm({...fichaForm, modelo: e.target.value})}
+                              style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }}
+                            >
+                              <option value="">Selecione um modelo...</option>
+                              {empreendimento?.modelos?.map((m: any) => (
+                                <option key={m.id} value={m.nome}>{m.nome} — R$ {m.valor?.toLocaleString('pt-BR')}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Valor de Entrada</label>
+                            <div style={{ position: "relative", marginTop: 4 }}>
+                              <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--gray-mid)", fontSize: 13, fontWeight: 700, pointerEvents: "none" }}>R$</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={fichaForm.entrada || ""}
+                                onChange={e => setFichaForm({...fichaForm, entrada: formatarMoedaInput(e.target.value)})}
+                                onBlur={() => {
+                                  if (!fichaForm.modoEntradaManual) {
+                                    const val = parsearMoedaInput(fichaForm.entrada);
+                                    const minimo = empreendimento?.simulador?.entradaMin || 10000;
+                                    if (val < minimo) {
+                                      setFichaForm({...fichaForm, entrada: minimo.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })});
+                                    }
+                                  }
+                                }}
+                                style={{ width: "100%", padding: "8px 12px 8px 36px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, outline: "none" }}
+                                placeholder={`${(empreendimento?.simulador?.entradaMin || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Toggle Modo Manual */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, background: fichaForm.modoEntradaManual ? "rgba(251,146,60,0.12)" : "rgba(0,0,0,0.2)", border: fichaForm.modoEntradaManual ? "1px solid rgba(251,146,60,0.35)" : "1px solid var(--border-subtle)" }}>
+                          <div>
+                            <p style={{ fontSize: 12, fontWeight: 700, color: fichaForm.modoEntradaManual ? "#fb923c" : "var(--gray-light)" }}>Entrada negociada manualmente</p>
+                            <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 1 }}>Desativa o cálculo automático — corretor define o valor livre</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setFichaForm({...fichaForm, modoEntradaManual: !fichaForm.modoEntradaManual})}
+                            style={{ width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", flexShrink: 0, background: fichaForm.modoEntradaManual ? "var(--terracota)" : "rgba(255,255,255,0.15)", position: "relative", transition: "background 0.2s" }}
+                          >
+                            <span style={{ position: "absolute", top: 2, left: fichaForm.modoEntradaManual ? 22 : 2, width: 20, height: 20, borderRadius: "50%", background: "white", transition: "left 0.2s" }} />
+                          </button>
+                        </div>
+
+                        {/* Forma de Pagamento + Parcelas (somente se NÃO for modo manual) */}
+                        {!fichaForm.modoEntradaManual && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+                              <div>
+                                <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Forma de Pagamento</label>
+                                <select
+                                  value={fichaForm.formaEntrada || "avista"}
+                                  onChange={e => setFichaForm({...fichaForm, formaEntrada: e.target.value, parcelasEntrada: e.target.value === "avista" ? 1 : 2})}
+                                  style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }}
+                                >
+                                  {FORMAS_ENTRADA.map(f => (
+                                    <option key={f.id} value={f.id}>{f.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {fichaForm.formaEntrada && fichaForm.formaEntrada !== "avista" && (
+                                <div>
+                                  <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Nº de Parcelas</label>
+                                  <select
+                                    value={fichaForm.parcelasEntrada || 2}
+                                    onChange={e => setFichaForm({...fichaForm, parcelasEntrada: Number(e.target.value)})}
+                                    style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }}
+                                  >
+                                    {Array.from(
+                                      { length: (FORMAS_ENTRADA.find(f => f.id === fichaForm.formaEntrada)?.maxParcelas || 1) - 1 },
+                                      (_, i) => i + 2
+                                    ).map(n => <option key={n} value={n}>{n}x</option>)}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Preview do cálculo */}
+                            {fichaForm.entrada && parsearMoedaInput(fichaForm.entrada) > 0 && (
+                              <div style={{ background: "rgba(74,222,128,0.07)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 8, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                                <CheckCircle2 size={14} color="#4ade80" style={{ flexShrink: 0 }} />
+                                <div>
+                                  {(!fichaForm.formaEntrada || fichaForm.formaEntrada === "avista" || Number(fichaForm.parcelasEntrada) <= 1) ? (
+                                    <p style={{ fontSize: 13, color: "#4ade80", fontWeight: 700 }}>
+                                      À vista: R$ {parsearMoedaInput(fichaForm.entrada).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </p>
+                                  ) : (() => {
+                                    const _v = parsearMoedaInput(fichaForm.entrada);
+                                    const _n = Number(fichaForm.parcelasEntrada);
+                                    const _f = fichaForm.formaEntrada;
+                                    const _isBoleto = _f === 'boleto';
+                                    const _baseCalc = _isBoleto ? _v * 0.5 : _v;
+                                    const _calc = _f === 'cartao'
+                                      ? parcelamentoCartao(_v, _n)
+                                      : parcelamentoBoleto(_baseCalc, _n);
+                                    const _parcela = _f === 'cartao'
+                                      ? (_calc as ReturnType<typeof parcelamentoCartao>).parcelaComJuros
+                                      : (_calc as ReturnType<typeof parcelamentoBoleto>).parcelaPorParcela;
+                                    const _total = _calc.totalComJuros;
+                                    const _taxaInfo = _f === 'cartao'
+                                      ? `C6 Bank — Taxa efetiva: ${(_calc as ReturnType<typeof parcelamentoCartao>).taxaEfetiva.toFixed(2)}% total`
+                                      : `Boleto PMT — ${TAXA_BOLETO_MENSAL}% a.m.`;
+                                    return (
+                                      <>
+                                        {_isBoleto && (
+                                          <p style={{ fontSize: 12, color: "#fb923c", fontWeight: 700, marginBottom: 4 }}>
+                                            Ato no contrato: R$ {(_v * 0.5).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                          </p>
+                                        )}
+                                        <p style={{ fontSize: 13, color: "#4ade80", fontWeight: 700 }}>
+                                          {_isBoleto ? "Boleto: " : ""}{_n}x de {formatBRL(_parcela)}
+                                        </p>
+                                        <p style={{ fontSize: 10, color: "var(--gray-mid)", marginTop: 2 }}>
+                                          {_taxaInfo} — Total {_isBoleto ? "boleto" : ""}: R$ {_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </p>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Preview modo manual */}
+                        {fichaForm.modoEntradaManual && fichaForm.entrada && parsearMoedaInput(fichaForm.entrada) > 0 && (
+                          <div style={{ background: "rgba(251,146,60,0.08)", border: "1px solid rgba(251,146,60,0.25)", borderRadius: 8, padding: "10px 14px" }}>
+                            <p style={{ fontSize: 12, color: "#fb923c", fontWeight: 700 }}>
+                              Entrada negociada: R$ {parsearMoedaInput(fichaForm.entrada).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </p>
+                            <p style={{ fontSize: 10, color: "var(--gray-mid)", marginTop: 2 }}>Cálculo automático desativado</p>
+                          </div>
+                        )}
+
+                      </div>
+
                       <div style={{ gridColumn: "1 / -1" }}>
                         <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Observações do Corretor</label>
                         <textarea value={fichaForm.observacoesCorretor || ""} onChange={e => setFichaForm({...fichaForm, observacoesCorretor: e.target.value})} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, minHeight: 60, outline: "none" }} />
@@ -669,7 +959,85 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
                           <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Financ. Caixa</p>
                           <p style={{ fontSize: 13, color: "white", fontWeight: 600, textTransform: "capitalize" }}>{lead.preCadastro?.temFinanciamentoCaixa || "-"}</p>
                         </div>
+
+                        {/* ── NOVOS CAMPOS NO MODO DE VISUALIZAÇÃO ── */}
+                        <div>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Modelo Escolhido</p>
+                          <p style={{ fontSize: 13, color: "var(--terracota-light)", fontWeight: 700 }}>{lead.modelo || "Ainda não definido"}</p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Entrada Ofertada</p>
+                          <p style={{ fontSize: 13, color: "white", fontWeight: 600 }}>
+                            {lead.preCadastro?.entrada ? `R$ ${Number(lead.preCadastro.entrada).toLocaleString('pt-BR')}` : "-"}
+                          </p>
+                        </div>
                       </div>
+
+                      {/* Forma de Pagamento da Entrada — VIEW */}
+                      {lead.preCadastro?.entrada > 0 && (
+                        <div style={{ marginTop: 8, paddingTop: 12, borderTop: "1px solid var(--border-subtle)" }}>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>Forma de Pagamento da Entrada</p>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            {lead.preCadastro?.modoEntradaManual ? (
+                              <span style={{ fontSize: 12, color: "#fb923c", fontWeight: 700, background: "rgba(251,146,60,0.1)", padding: "5px 12px", borderRadius: 6, border: "1px solid rgba(251,146,60,0.25)" }}>
+                                Negociado manualmente
+                              </span>
+                            ) : (
+                              <>
+                                <span style={{ fontSize: 13, color: "white", fontWeight: 600 }}>
+                                  {FORMAS_ENTRADA.find(f => f.id === lead.preCadastro?.formaEntrada)?.label || "À Vista (sem juros)"}
+                                </span>
+                                {lead.preCadastro?.parcelasEntrada > 1 ? (
+                                  <>
+                                    {lead.preCadastro?.formaEntrada === 'boleto' && (
+                                      <span style={{ fontSize: 12, color: "#fb923c", fontWeight: 700, background: "rgba(251,146,60,0.1)", padding: "5px 12px", borderRadius: 6, border: "1px solid rgba(251,146,60,0.25)" }}>
+                                        Ato: {formatBRL(lead.preCadastro.atoEntrada || 0)}
+                                      </span>
+                                    )}
+                                    <span style={{ fontSize: 12, color: "#4ade80", fontWeight: 700, background: "rgba(74,222,128,0.1)", padding: "5px 12px", borderRadius: 6, border: "1px solid rgba(74,222,128,0.2)" }}>
+                                      {lead.preCadastro?.formaEntrada === 'boleto' ? "Boleto: " : ""}{lead.preCadastro.parcelasEntrada}x de {formatBRL(lead.preCadastro.parcelaEntradaCalc || 0)}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span style={{ fontSize: 12, color: "#4ade80", fontWeight: 700, background: "rgba(74,222,128,0.1)", padding: "5px 12px", borderRadius: 6, border: "1px solid rgba(74,222,128,0.2)" }}>
+                                    À vista
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ── SIMULAÇÃO FINANCEIRA — MOTOR HABITICON ── */}
+                      {simulacaoFinanceira && simulacaoFinanceira.finLiberadoPRICE > 0 && (
+                        <div style={{ marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--border-subtle)" }}>
+                          <p style={{ fontSize: 11, color: "var(--terracota)", textTransform: "uppercase", fontWeight: 700, marginBottom: 10, letterSpacing: "0.06em" }}>
+                            Simulação Financeira — Motor Habiticon
+                          </p>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+                            <div style={{ background: "rgba(0,0,0,0.25)", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border-subtle)" }}>
+                              <p style={{ fontSize: 10, color: "var(--gray-mid)", fontWeight: 700, marginBottom: 3 }}>Valor Financiado</p>
+                              <p style={{ fontSize: 14, color: "white", fontWeight: 800 }}>{formatBRL(simulacaoFinanceira.finLiberadoPRICE)}</p>
+                            </div>
+                            <div style={{ background: "rgba(74,222,128,0.07)", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(74,222,128,0.2)" }}>
+                              <p style={{ fontSize: 10, color: "var(--gray-mid)", fontWeight: 700, marginBottom: 3 }}>Parcela SAC (1ª)</p>
+                              <p style={{ fontSize: 14, color: "#4ade80", fontWeight: 800 }}>{formatBRL(simulacaoFinanceira.parcelaSACPrimeira)}</p>
+                            </div>
+                            <div style={{ background: "rgba(74,222,128,0.07)", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(74,222,128,0.2)" }}>
+                              <p style={{ fontSize: 10, color: "var(--gray-mid)", fontWeight: 700, marginBottom: 3 }}>Parcela PRICE</p>
+                              <p style={{ fontSize: 14, color: "#4ade80", fontWeight: 800 }}>{formatBRL(simulacaoFinanceira.parcelaPricePrimeira)}</p>
+                            </div>
+                            <div style={{ background: "rgba(0,0,0,0.25)", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border-subtle)" }}>
+                              <p style={{ fontSize: 10, color: "var(--gray-mid)", fontWeight: 700, marginBottom: 3 }}>SAC Última parcela</p>
+                              <p style={{ fontSize: 13, color: "var(--gray-light)", fontWeight: 700 }}>{formatBRL(simulacaoFinanceira.parcelaSACUltima)}</p>
+                            </div>
+                          </div>
+                          <p style={{ fontSize: 10, color: "var(--gray-dark)", marginTop: 8, lineHeight: 1.5 }}>
+                            * Motor Caixa Habiticon — inclui MIP, DFI e taxa adm R$ 25/mês. Sujeito à análise da CEF.
+                          </p>
+                        </div>
+                      )}
 
                       {lead.preCadastro?.observacoesCorretor && (
                         <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px solid var(--border-subtle)" }}>
@@ -682,7 +1050,6 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
                 </div>
               )}
 
-{/* 👇 CAIXA LARANJA RESTAURADA COM OS BOTÕES DE EDITAR/EXCLUIR COMPOSITOR 👇 */}
               <div style={{ background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.25)", borderRadius: 16, padding: "16px", display: "flex", gap: 12, alignItems: "flex-start", position: "relative" }}>
                 <FileCheck2 size={22} color="#fb923c" style={{ flexShrink: 0 }} />
                 <div style={{ width: "100%" }}>
