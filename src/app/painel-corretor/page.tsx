@@ -114,6 +114,10 @@ export default function PainelCorretor() {
   const [lotesVisaoGeral, setLotesVisaoGeral] = useState<any[]>([]);
   const [loadingVisaoGeral, setLoadingVisaoGeral] = useState(false);
 
+  // ── MODAL NÃO QUALIFICADO ──
+  const [modalNaoQualificado, setModalNaoQualificado] = useState<{aberto: boolean, lead: LeadData | null}>({aberto: false, lead: null});
+  const [motivoNaoQualificado, setMotivoNaoQualificado] = useState("");
+
   // ── AUTENTICAÇÃO E VALIDAÇÃO DE ROLE ──
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
@@ -362,6 +366,27 @@ export default function PainelCorretor() {
     } catch (error) {
       console.error("Erro ao desvincular:", error);
       alert("Erro ao desvincular o lote.");
+    }
+  };
+
+  const marcarNaoQualificado = async () => {
+    const { lead } = modalNaoQualificado;
+    if (!lead) return;
+    if (!motivoNaoQualificado.trim()) {
+      alert("O motivo é obrigatório. Descreva por que este lead não está qualificado.");
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "leads", lead.id), {
+        status: "nao_qualificado",
+        motivoReprovacao: motivoNaoQualificado.trim(),
+        origemDesqualificacao: "corretor",
+      });
+      setModalNaoQualificado({ aberto: false, lead: null });
+      setMotivoNaoQualificado("");
+    } catch (error) {
+      console.error("Erro ao marcar não qualificado:", error);
+      alert("Erro ao atualizar o status do lead.");
     }
   };
 
@@ -701,6 +726,19 @@ export default function PainelCorretor() {
                               >
                                 <FolderOpen size={15} /> Dossiê
                               </button>
+
+                              {lead.status === "em_atendimento" && !isAprovado && (
+                                <button
+                                  onClick={() => { setModalNaoQualificado({ aberto: true, lead }); setMotivoNaoQualificado(""); }}
+                                  title="Marcar lead como não qualificado"
+                                  style={{
+                                    padding: "8px 14px", background: "rgba(239,68,68,0.1)", borderRadius: 8, fontSize: 13, fontWeight: 700,
+                                    display: "flex", gap: 6, border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", cursor: "pointer", transition: "0.2s"
+                                  }}
+                                >
+                                  <AlertOctagon size={15} /> Não Qualificado
+                                </button>
+                              )}
 
                               {lead.propostaUrl && (
                                 <a
@@ -1279,6 +1317,87 @@ export default function PainelCorretor() {
                 <Save size={16} /> {salvandoPerfil ? "A salvar..." : "Guardar Alterações"}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+{/* =========================================================
+          MODAL: MARCAR COMO NÃO QUALIFICADO
+          ========================================================= */}
+      {modalNaoQualificado.aberto && modalNaoQualificado.lead && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 150,
+          background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: "20px"
+        }}>
+          <div style={{
+            background: "var(--bg-card)", width: "100%", maxWidth: 460,
+            borderRadius: 20, border: "1px solid rgba(239,68,68,0.3)",
+            boxShadow: "0 20px 40px rgba(0,0,0,0.6)", overflow: "hidden"
+          }}>
+            {/* Header */}
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(239,68,68,0.2)", background: "rgba(239,68,68,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2 style={{ fontSize: 17, fontWeight: 800, color: "#f87171", display: "flex", alignItems: "center", gap: 10 }}>
+                <AlertOctagon size={20} /> Não Qualificado
+              </h2>
+              <button onClick={() => setModalNaoQualificado({ aberto: false, lead: null })} style={{ background: "transparent", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ padding: "12px 16px", background: "rgba(239,68,68,0.07)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.2)" }}>
+                <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>
+                  Você está marcando <strong style={{ color: "white" }}>{modalNaoQualificado.lead.nome}</strong> como não qualificado. Este lead será movido para a aba correta e o motivo ficará registrado no histórico.
+                </p>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#f87171", textTransform: "uppercase", marginBottom: 8, letterSpacing: "0.05em" }}>
+                  Motivo (obrigatório)
+                </label>
+                <textarea
+                  autoFocus
+                  value={motivoNaoQualificado}
+                  onChange={e => setMotivoNaoQualificado(e.target.value)}
+                  placeholder="Ex: Não atende ligações após 5 tentativas nos últimos 20 dias. Lead especulativo sem real interesse de compra."
+                  style={{
+                    width: "100%", minHeight: 100, padding: "12px 14px",
+                    borderRadius: 10, background: "rgba(0,0,0,0.3)",
+                    border: motivoNaoQualificado.trim() ? "1px solid rgba(239,68,68,0.4)" : "1px solid rgba(239,68,68,0.2)",
+                    color: "white", fontSize: 13, resize: "vertical", outline: "none",
+                    lineHeight: 1.6, fontFamily: "inherit"
+                  }}
+                />
+                {!motivoNaoQualificado.trim() && (
+                  <p style={{ fontSize: 11, color: "rgba(248,113,113,0.7)", marginTop: 6 }}>
+                    ⚠ Descreva o motivo para poder confirmar.
+                  </p>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+                <button
+                  onClick={() => setModalNaoQualificado({ aberto: false, lead: null })}
+                  style={{ flex: 1, padding: "12px", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", borderRadius: 10, color: "var(--gray-light)", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={marcarNaoQualificado}
+                  disabled={!motivoNaoQualificado.trim()}
+                  style={{
+                    flex: 1, padding: "12px", background: motivoNaoQualificado.trim() ? "#ef4444" : "rgba(239,68,68,0.2)",
+                    border: "none", borderRadius: 10, color: motivoNaoQualificado.trim() ? "white" : "#f87171",
+                    fontWeight: 800, cursor: motivoNaoQualificado.trim() ? "pointer" : "not-allowed",
+                    fontSize: 14, transition: "0.2s"
+                  }}
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -57,6 +57,8 @@ interface Lead {
   documentosConstrutora?: any;
   propostaUrl?: string;
   correspondentesPermitidos?: string[]; // ← LISTA BRANCA (Tudo fechado por padrão)
+  motivoReprovacao?: string;
+  origemDesqualificacao?: string;
 }
 
 interface DocumentoPadrao {
@@ -171,6 +173,7 @@ export default function AdminPage() {
   const [listaCorretores, setListaCorretores] = useState<any[]>([]);
   const [listaCorrespondentes, setListaCorrespondentes] = useState<any[]>([]); // ← NOVO
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
+  const [filtroStatus, setFiltroStatus] = useState<string>("todos");
 
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
   const leadDossieSelecionado = todosLeads.find(l => l.id === leadDossieId) || null;
@@ -200,6 +203,7 @@ export default function AdminPage() {
 
   // Estado do Modal de Acesso de Correspondentes
   const [modalAcessoLead, setModalAcessoLead] = useState<Lead | null>(null);
+  const [modalMotivoReprovacao, setModalMotivoReprovacao] = useState<Lead | null>(null);
   const [salvandoAcesso, setSalvandoAcesso] = useState(false);
 
   // ← NOVO: Estado do Modal de Notificações do Telegram
@@ -548,11 +552,24 @@ export default function AdminPage() {
   };
 
   const leadsFiltrados = useMemo(() => {
-    if (filtroCorretor === "todos") return todosLeads;
-    if (filtroCorretor === "roleta") return todosLeads.filter(l => !l.corretorId);
-    if (filtroCorretor === "interno") return todosLeads.filter(l => l.corretorId === "interno");
-    return todosLeads.filter(l => l.corretorId === filtroCorretor);
-  }, [todosLeads, filtroCorretor]);
+    return todosLeads.filter(lead => {
+      // Filtro de corretor
+      const matchCorretor =
+        filtroCorretor === "todos" ||
+        (filtroCorretor === "roleta"   && !lead.corretorId) ||
+        (filtroCorretor === "interno"  && lead.corretorId === "interno") ||
+        lead.corretorId === filtroCorretor;
+
+      // Filtro de status
+      const matchStatus =
+        filtroStatus === "todos" ||
+        (filtroStatus === "em_atendimento" && (lead.status === "em_atendimento" || lead.status === "com_pendencia")) ||
+        (filtroStatus === "qualificado"    && (lead.status === "qualificado"    || lead.status === "credito_aprovado")) ||
+        (filtroStatus === "nao_qualificado"&& (lead.status === "nao_qualificado"|| lead.status === "credito_reprovado"));
+
+      return matchCorretor && matchStatus;
+    });
+  }, [todosLeads, filtroCorretor, filtroStatus]);
 
   const ativos = empreendimentos.filter((e) => e.status === "ativo").length;
   const leadsNaRoletaCount = todosLeads.filter(l => !l.corretorId).length;
@@ -710,6 +727,16 @@ export default function AdminPage() {
                         {listaCorretores.map(c => <option key={c.id} value={c.id}>Corretor: {c.nome}</option>)}
                       </select>
                       <span style={{ fontSize: 13, color: "var(--gray-mid)" }}>{leadsFiltrados.length} resultado(s)</span>
+                    <select
+                        value={filtroStatus}
+                        onChange={(e) => setFiltroStatus(e.target.value)}
+                        style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 14, outline: "none", minWidth: 200, cursor: "pointer" }}
+                      >
+                        <option value="todos">Todos os Status</option>
+                        <option value="em_atendimento">⏳ Em Atendimento</option>
+                        <option value="qualificado">✅ Qualificado</option>
+                        <option value="nao_qualificado">🔒 Não Qualificado</option>
+                      </select>
                     </div>
                     <div style={{ display: "flex", gap: 12 }}>
                       <button onClick={() => setModalVendaDireta(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "rgba(168,85,247,0.15)", color: "#c084fc", border: "1px solid rgba(168,85,247,0.3)", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
@@ -800,10 +827,24 @@ export default function AdminPage() {
 
                                     {/* LADO DIREITO */}
                                     <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }} className="w-full sm:w-auto justify-between sm:justify-end">
-                                      <div title={isDecidido ? "O status está bloqueado após a análise de crédito." : "Status atual do lead"} style={{ padding: "7px 12px", borderRadius: 8, display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, background: STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? STATUS_LEAD.em_atendimento.bg, color: STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? STATUS_LEAD.em_atendimento.cor, outline: `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? STATUS_LEAD.em_atendimento.border}`, opacity: isDecidido ? 0.7 : 1 }}>
-                                        {STATUS_LEAD[statusAjustado as LeadStatus]?.label ?? "Em atendimento"}
-                                        {isDecidido && <Lock size={12} />}
-                                      </div>
+                                      {isDecidido ? (
+                                        <button
+                                          onClick={() => setModalMotivoReprovacao(lead)}
+                                          title={
+                                            lead.origemDesqualificacao === "corretor"
+                                              ? "Desqualificado pelo corretor — clique para ver o motivo"
+                                              : "Bloqueado após análise de crédito — clique para ver o motivo"
+                                          }
+                                          style={{ padding: "7px 12px", borderRadius: 8, display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, cursor: "pointer", border: "none", background: STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? STATUS_LEAD.em_atendimento.bg, color: STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? STATUS_LEAD.em_atendimento.cor, outline: `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? STATUS_LEAD.em_atendimento.border}` }}
+                                        >
+                                          {STATUS_LEAD[statusAjustado as LeadStatus]?.label ?? "Em atendimento"}
+                                          <Lock size={12} />
+                                        </button>
+                                      ) : (
+                                        <div title="Status atual do lead" style={{ padding: "7px 12px", borderRadius: 8, display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, background: STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? STATUS_LEAD.em_atendimento.bg, color: STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? STATUS_LEAD.em_atendimento.cor, outline: `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? STATUS_LEAD.em_atendimento.border}` }}>
+                                          {STATUS_LEAD[statusAjustado as LeadStatus]?.label ?? "Em atendimento"}
+                                        </div>
+                                      )}
 
                                       {listaCorrespondentes.length > 0 && (
                                         <button
@@ -1129,6 +1170,52 @@ export default function AdminPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+{/* MODAL DE MOTIVO DE REPROVAÇÃO / NÃO QUALIFICAÇÃO */}
+      {modalMotivoReprovacao && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setModalMotivoReprovacao(null); }}
+          style={{ position: "fixed", inset: 0, zIndex: 250, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div style={{ background: "var(--bg-card)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 20, width: "100%", maxWidth: 460, overflow: "hidden" }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(239,68,68,0.2)", background: "rgba(239,68,68,0.06)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
+                  <Lock size={18} /> Motivo da Desqualificação
+                </h3>
+                <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>
+                  Lead: <strong style={{ color: "var(--gray-light)" }}>{modalMotivoReprovacao.nome}</strong>
+                </p>
+              </div>
+              <button onClick={() => setModalMotivoReprovacao(null)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}>
+                <X size={20} />
+              </button>
+            </div>
+            <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ padding: "10px 14px", borderRadius: 10, display: "flex", alignItems: "center", gap: 8, background: modalMotivoReprovacao.origemDesqualificacao === "corretor" ? "rgba(251,146,60,0.1)" : "rgba(239,68,68,0.08)", border: modalMotivoReprovacao.origemDesqualificacao === "corretor" ? "1px solid rgba(251,146,60,0.3)" : "1px solid rgba(239,68,68,0.2)" }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: modalMotivoReprovacao.origemDesqualificacao === "corretor" ? "#fb923c" : "#f87171" }}>
+                  {modalMotivoReprovacao.origemDesqualificacao === "corretor"
+                    ? "🔶 Desqualificado pelo Corretor"
+                    : "🔴 Reprovado pela Análise de Crédito"}
+                </span>
+              </div>
+              {modalMotivoReprovacao.motivoReprovacao ? (
+                <div style={{ padding: "14px 16px", background: "rgba(0,0,0,0.25)", borderRadius: 10, border: "1px solid var(--border-subtle)", borderLeft: "3px solid #f87171" }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 8 }}>Motivo registrado:</p>
+                  <p style={{ fontSize: 14, color: "var(--gray-light)", lineHeight: 1.6 }}>{modalMotivoReprovacao.motivoReprovacao}</p>
+                </div>
+              ) : (
+                <div style={{ padding: "14px 16px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px dashed var(--border-subtle)" }}>
+                  <p style={{ fontSize: 13, color: "var(--gray-dark)", fontStyle: "italic" }}>Nenhum motivo foi registrado.</p>
+                </div>
+              )}
+              <button onClick={() => setModalMotivoReprovacao(null)} style={{ padding: "12px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <DossieModal isOpen={leadDossieId !== null} onClose={() => setLeadDossieId(null)} lead={leadDossieSelecionado} isAdmin={true} />
       <DocumentosConstrutorModal isOpen={leadDocumentosId !== null} onClose={() => setLeadDocumentosId(null)} lead={leadDocumentosSelecionado} isAdmin={true} />

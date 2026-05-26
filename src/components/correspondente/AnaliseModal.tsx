@@ -340,6 +340,7 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
       await updateDoc(doc(db, "leads", lead.id), { 
         status: "nao_qualificado",
         motivoReprovacao: motivoReprovacao.trim(),
+        origemDesqualificacao: "correspondente",
         creditoAprovadoInfo: null,
         loteReserva: null
       });
