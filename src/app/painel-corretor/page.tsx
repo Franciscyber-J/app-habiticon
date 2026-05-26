@@ -5,7 +5,7 @@ import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs } from "firebase/firestore";
 import Image from "next/image";
-import { Users, LogOut, MessageCircle, Building2, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw, FileText, ExternalLink, Info, ThumbsUp, Share2, Copy, UserCircle, Save, X, Map as MapIcon, Home, Phone } from "lucide-react";
+import { Users, LogOut, MessageCircle, Building2, MessageSquare, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw, FileText, ExternalLink, Info, ThumbsUp, Share2, Copy, UserCircle, Save, X, Map as MapIcon, Home, Phone } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { MapaInterativo } from "@/components/mapa/MapaInterativo";
 import { formatBRL } from "@/lib/calculos";
@@ -25,6 +25,12 @@ interface LeadData {
   timestamp: string;
   status: string;
   corretorId: string;
+  historicoAtendimento?: {
+    texto: string;
+    autorNome: string;
+    autorId: string;
+    timestamp: string;
+  }[];
   dossie?: any;
   motivoReprovacao?: string; 
   creditoAprovadoInfo?: {
@@ -74,6 +80,7 @@ export default function PainelCorretor() {
   const [userName, setUserName] = useState("");
   const [userId, setUserId] = useState("");
   const [abaAtiva, setAbaAtiva] = useState<"meus" | "roleta" | "arquivos">("meus");
+  const [empreendimentosPermitidos, setEmpreendimentosPermitidos] = useState<string[] | null>(null);
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
 
   // Estados do Perfil
@@ -102,6 +109,24 @@ export default function PainelCorretor() {
 
 
   const leadDossieSelecionado = meusLeads.find(l => l.id === leadDossieId) || null;
+
+  const [modalHistoricoLeadId, setModalHistoricoLeadId] = useState<string | null>(null);
+  const modalHistoricoLead = meusLeads.find(l => l.id === modalHistoricoLeadId) || null;
+  const [novoHistorico, setNovoHistorico] = useState("");
+  const [salvandoHistorico, setSalvandoHistorico] = useState(false);
+
+  // Filtros blindados contra valores nulos (null = sem restrição = vê tudo)
+  const empreendimentosVisiveis = useMemo(() => {
+    const base = empreendimentos || [];
+    if (empreendimentosPermitidos === null) return base;
+    return base.filter(e => e?.slug && empreendimentosPermitidos.includes(e.slug));
+  }, [empreendimentos, empreendimentosPermitidos]);
+
+  const leadsRoletaVisiveis = useMemo(() => {
+    const base = leadsRoleta || [];
+    if (empreendimentosPermitidos === null) return base;
+    return base.filter(l => l?.empreendimentoId && empreendimentosPermitidos.includes(l.empreendimentoId));
+  }, [leadsRoleta, empreendimentosPermitidos]);
 
   // Estados do Mapa de Lotes (Reserva)
   const [mapaModalAberto, setMapaModalAberto] = useState<{aberto: boolean, empreendimento: Empreendimento | null, lead: LeadData | null}>({aberto: false, empreendimento: null, lead: null});
@@ -136,6 +161,7 @@ export default function PainelCorretor() {
           return;
         }
         setUserName(userData.nome || user.displayName || "Corretor");
+        setEmpreendimentosPermitidos(userData.empreendimentosPermitidos ?? null);
         
         setPerfilData({
           nome: userData.nome || "",
@@ -390,6 +416,28 @@ export default function PainelCorretor() {
     }
   };
 
+const publicarHistorico = async () => {
+    if (!modalHistoricoLead || !novoHistorico.trim()) return;
+    setSalvandoHistorico(true);
+    try {
+      const entrada = {
+        texto: novoHistorico.trim(),
+        autorNome: perfilData.nome || userName,
+        autorId: userId,
+        timestamp: new Date().toISOString()
+      };
+      const historicoAtual = modalHistoricoLead.historicoAtendimento || [];
+      await updateDoc(doc(db, "leads", modalHistoricoLead.id), {
+        historicoAtendimento: [...historicoAtual, entrada]
+      });
+      setNovoHistorico("");
+    } catch (error) {
+      alert("Erro ao publicar. Tente novamente.");
+    } finally {
+      setSalvandoHistorico(false);
+    }
+  };
+
   // MAPA: MODO VISÃO GERAL (READ-ONLY)
   const abrirVisaoGeralMapa = async (empId: string) => {
     const emp = empreendimentos.find(e => e.slug === empId) || null;
@@ -597,9 +645,9 @@ export default function PainelCorretor() {
             >
               <Flame size={18} color={abaAtiva === "roleta" ? "#ef4444" : "var(--gray-mid)"} />
               Leads Livres
-              {leadsRoleta.length > 0 && (
+              {leadsRoletaVisiveis.length > 0 && (
                 <span style={{ background: "#ef4444", color: "white", padding: "2px 8px", borderRadius: 100, fontSize: 11, animation: "pulse 2s infinite" }}>
-                  {leadsRoleta.length}
+                  {leadsRoletaVisiveis.length}
                 </span>
               )}
             </button>
@@ -725,6 +773,19 @@ export default function PainelCorretor() {
                                 }}
                               >
                                 <FolderOpen size={15} /> Dossiê
+                              </button>
+                              <button
+                                onClick={() => setModalHistoricoLeadId(lead.id)}
+                                title="Histórico de Atendimento"
+                                style={{ position: "relative", padding: "8px 14px", background: "rgba(56,189,248,0.1)", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, alignItems: "center", border: "1px solid rgba(56,189,248,0.25)", color: "#38bdf8", cursor: "pointer", transition: "0.2s" }}
+                              >
+                                <MessageSquare size={15} />
+                                <span className="hidden sm:inline">Histórico</span>
+                                {(lead.historicoAtendimento || []).length > 0 && (
+                                  <span style={{ fontSize: 10, fontWeight: 800, background: "#38bdf8", color: "#082f49", padding: "1px 6px", borderRadius: 100 }}>
+                                    {(lead.historicoAtendimento || []).length}
+                                  </span>
+                                )}
                               </button>
 
                               {lead.status === "em_atendimento" && !isAprovado && (
@@ -875,7 +936,7 @@ export default function PainelCorretor() {
             ========================================================= */}
         {abaAtiva === "roleta" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {leadsRoleta.length === 0 ? (
+            {leadsRoletaVisiveis.length === 0 ? (
               <div style={{ padding: "60px 20px", textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 16, border: "1px dashed var(--border-subtle)" }}>
                 <div style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
                   <Flame size={24} color="var(--gray-dark)" />
@@ -884,7 +945,7 @@ export default function PainelCorretor() {
                 <p style={{ color: "var(--gray-dark)", fontSize: 13, marginTop: 8 }}>Novos leads do tráfego pago aparecerão aqui em tempo real.</p>
               </div>
             ) : (
-              leadsRoleta.map((lead: LeadData) => (
+              leadsRoletaVisiveis.map((lead: LeadData) => (
                 <div key={lead.id} style={{ background: "linear-gradient(90deg, rgba(239,68,68,0.05) 0%, var(--bg-card) 100%)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(239,68,68,0.2)", display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between", alignItems: "center", position: "relative", overflow: "hidden" }}>
                   <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: "#ef4444" }} />
                   <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 min-content", minWidth: 200, paddingLeft: 8 }}>
@@ -929,23 +990,29 @@ export default function PainelCorretor() {
               </p>
               
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {empreendimentos.map(emp => {
-                  const linkPessoal = `${typeof window !== 'undefined' ? window.location.origin : ''}/${emp.slug}?ref=${userId}`;
-                  return (
-                    <div key={`link-${emp.slug}`} style={{ background: "rgba(0,0,0,0.2)", padding: "12px", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--terracota-light)", marginBottom: 4 }}>{emp.nome}</p>
-                        <p style={{ fontSize: 11, color: "var(--gray-mid)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{linkPessoal}</p>
+                {(empreendimentosVisiveis && empreendimentosVisiveis.length > 0) ? (
+                  empreendimentosVisiveis.map(emp => {
+                    const linkPessoal = `${typeof window !== 'undefined' ? window.location.origin : ''}/${emp.slug}?ref=${userId}`;
+                    return (
+                      <div key={`link-${emp.slug}`} style={{ background: "rgba(0,0,0,0.2)", padding: "12px", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <p style={{ fontSize: 12, fontWeight: 700, color: "var(--terracota-light)", marginBottom: 4 }}>{emp.nome}</p>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{linkPessoal}</p>
+                        </div>
+                        <button
+                          onClick={() => copiarLink(linkPessoal)}
+                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, background: "var(--terracota)", color: "white", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}
+                        >
+                          <Copy size={14} /> Copiar Link
+                        </button>
                       </div>
-                      <button 
-                        onClick={() => copiarLink(linkPessoal)}
-                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, background: "var(--terracota)", color: "white", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}
-                      >
-                        <Copy size={14} /> Copiar Link
-                      </button>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                ) : (
+                  <p style={{ color: "var(--gray-mid)", padding: "12px", fontSize: 13 }}>
+                    Nenhum empreendimento liberado para divulgação.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1395,6 +1462,79 @@ export default function PainelCorretor() {
                   }}
                 >
                   Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          MODAL: HISTÓRICO DE ATENDIMENTO
+          ========================================================= */}
+      {modalHistoricoLeadId !== null && modalHistoricoLead && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) { setModalHistoricoLeadId(null); setNovoHistorico(""); } }}
+          style={{ position: "fixed", inset: 0, zIndex: 150, background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div style={{ background: "var(--bg-card)", width: "100%", maxWidth: 520, borderRadius: 24, border: "1px solid var(--border-subtle)", boxShadow: "0 20px 40px rgba(0,0,0,0.5)", overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+
+            {/* Header */}
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.2)" }}>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 10 }}>
+                <MessageSquare size={18} color="#38bdf8" /> Histórico de Atendimento
+              </h2>
+              <button onClick={() => { setModalHistoricoLeadId(null); setNovoHistorico(""); }} style={{ background: "transparent", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: "10px 24px", background: "rgba(56,189,248,0.05)", borderBottom: "1px solid var(--border-subtle)" }}>
+              <p style={{ fontSize: 13, color: "var(--gray-light)" }}>
+                Cliente: <strong style={{ color: "white" }}>{modalHistoricoLead.nome}</strong>
+                <span style={{ color: "var(--gray-dark)", marginLeft: 8 }}>• {modalHistoricoLead.empreendimentoNome}</span>
+              </p>
+            </div>
+
+            {/* Feed de entradas */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
+              {(modalHistoricoLead.historicoAtendimento || []).length === 0 ? (
+                <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                  <MessageSquare size={28} color="var(--gray-dark)" style={{ margin: "0 auto 12px" }} />
+                  <p style={{ color: "var(--gray-mid)", fontSize: 13 }}>Nenhuma anotação ainda.</p>
+                  <p style={{ color: "var(--gray-dark)", fontSize: 12, marginTop: 4 }}>Publique a primeira atualização sobre este cliente.</p>
+                </div>
+              ) : (
+                [...(modalHistoricoLead.historicoAtendimento || [])].reverse().map((entrada, idx) => (
+                  <div key={idx} style={{ padding: "14px 16px", background: "rgba(0,0,0,0.2)", borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#38bdf8" }}>{entrada.autorNome}</span>
+                      <span style={{ fontSize: 11, color: "var(--gray-dark)" }}>
+                        {new Date(entrada.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às")}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>{entrada.texto}</p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Input nova anotação */}
+            <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 10, background: "rgba(0,0,0,0.1)" }}>
+              <textarea
+                value={novoHistorico}
+                onChange={e => setNovoHistorico(e.target.value)}
+                placeholder="Ex: Cliente confirmou interesse, aguardando extrato bancário..."
+                style={{ width: "100%", minHeight: 72, padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 13, resize: "none", outline: "none", fontFamily: "inherit", lineHeight: 1.6 }}
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  onClick={publicarHistorico}
+                  disabled={!novoHistorico.trim() || salvandoHistorico}
+                  style={{ padding: "10px 20px", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 13, cursor: !novoHistorico.trim() || salvandoHistorico ? "not-allowed" : "pointer", transition: "0.2s", display: "flex", alignItems: "center", gap: 8, background: novoHistorico.trim() ? "#38bdf8" : "rgba(56,189,248,0.15)", color: novoHistorico.trim() ? "#082f49" : "#38bdf8" }}
+                >
+                  <MessageSquare size={14} />
+                  {salvandoHistorico ? "Publicando..." : "Publicar Anotação"}
                 </button>
               </div>
             </div>

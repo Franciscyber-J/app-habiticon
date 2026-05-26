@@ -11,7 +11,7 @@ import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, updateDoc, onSnaps
 import {
   Building2, Settings, Users, MapPin, Clock,
   ToggleLeft, ToggleRight, Plus, ExternalLink,
-  ArrowLeft, ChevronRight, Phone, MessageCircle,
+  ArrowLeft, ChevronRight, Phone, MessageCircle, MessageSquare,
   CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info, Printer, Wallet, UserCircle, Map as MapIcon, X, Menu, ShieldCheck, ToggleLeft as EyeOff, ToggleRight as EyeOn
 } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
@@ -59,6 +59,12 @@ interface Lead {
   correspondentesPermitidos?: string[]; // ← LISTA BRANCA (Tudo fechado por padrão)
   motivoReprovacao?: string;
   origemDesqualificacao?: string;
+  historicoAtendimento?: {
+    texto: string;
+    autorNome: string;
+    autorId: string;
+    timestamp: string;
+  }[];
 }
 
 interface DocumentoPadrao {
@@ -207,7 +213,13 @@ export default function AdminPage() {
   // Estado do Modal de Acesso de Correspondentes
   const [modalAcessoLead, setModalAcessoLead] = useState<Lead | null>(null);
   const [modalMotivoReprovacao, setModalMotivoReprovacao] = useState<Lead | null>(null);
+  const [modalHistoricoAdminId, setModalHistoricoAdminId] = useState<string | null>(null);
+  const modalHistoricoAdminLead = todosLeads.find(l => l.id === modalHistoricoAdminId) || null;
+  const [novoHistoricoAdmin, setNovoHistoricoAdmin] = useState("");
+  const [salvandoHistoricoAdmin, setSalvandoHistoricoAdmin] = useState(false);
   const [salvandoAcesso, setSalvandoAcesso] = useState(false);
+  const [modalAcessoCorretor, setModalAcessoCorretor] = useState<{corretor: any | null}>({ corretor: null });
+  const [salvandoAcessoCorretor, setSalvandoAcessoCorretor] = useState(false);
 
   // ← NOVO: Estado do Modal de Notificações do Telegram
   const [modalNotificacoes, setModalNotificacoes] = useState(false);
@@ -577,6 +589,54 @@ export default function AdminPage() {
     }
   };
 
+  const toggleEmpreendimentoCorretor = async (empSlug: string) => {
+    if (!modalAcessoCorretor.corretor) return;
+    setSalvandoAcessoCorretor(true);
+    try {
+      const corretor = modalAcessoCorretor.corretor;
+      const todosSlug = empreendimentos.map(e => e.slug);
+      const permitidosAtuais: string[] = corretor.empreendimentosPermitidos ?? todosSlug;
+      const jaPermitido = permitidosAtuais.includes(empSlug);
+      const novosPermitidos = jaPermitido
+        ? permitidosAtuais.filter(s => s !== empSlug)
+        : [...permitidosAtuais, empSlug];
+
+      await updateDoc(doc(db, "usuarios", corretor.id), {
+        empreendimentosPermitidos: novosPermitidos
+      });
+
+      const corretorAtualizado = { ...corretor, empreendimentosPermitidos: novosPermitidos };
+      setModalAcessoCorretor({ corretor: corretorAtualizado });
+      setListaCorretores(prev => prev.map(c => c.id === corretor.id ? corretorAtualizado : c));
+    } catch (error) {
+      alert("Erro ao salvar. Tente novamente.");
+    } finally {
+      setSalvandoAcessoCorretor(false);
+    }
+  };
+
+  const publicarHistoricoAdmin = async () => {
+    if (!modalHistoricoAdminLead || !novoHistoricoAdmin.trim()) return;
+    setSalvandoHistoricoAdmin(true);
+    try {
+      const entrada = {
+        texto: novoHistoricoAdmin.trim(),
+        autorNome: auth.currentUser?.displayName || "Administrador",
+        autorId: auth.currentUser?.uid || "admin",
+        timestamp: new Date().toISOString()
+      };
+      const historicoAtual = modalHistoricoAdminLead.historicoAtendimento || [];
+      await updateDoc(doc(db, "leads", modalHistoricoAdminLead.id), {
+        historicoAtendimento: [...historicoAtual, entrada]
+      });
+      setNovoHistoricoAdmin("");
+    } catch (error) {
+      alert("Erro ao publicar. Tente novamente.");
+    } finally {
+      setSalvandoHistoricoAdmin(false);
+    }
+  };
+
   // ← NOVO: Função para Ligar/Desligar os Alertas do Telegram no Banco de Dados
   const toggleAlerta = async (tipo: string) => {
     const novoValor = !alertasConfig[tipo as keyof typeof alertasConfig];
@@ -926,6 +986,19 @@ export default function AdminPage() {
                                           <Flame size={14} /> <span className="hidden sm:inline">Liberar</span>
                                         </button>
                                       )}
+                                      <button
+                                        onClick={() => setModalHistoricoAdminId(lead.id)}
+                                        title="Histórico de Atendimento"
+                                        style={{ position: "relative", padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, alignItems: "center", background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.25)", color: "#38bdf8", cursor: "pointer" }}
+                                      >
+                                        <MessageSquare size={15} />
+                                        <span className="hidden sm:inline">Histórico</span>
+                                        {(lead.historicoAtendimento || []).length > 0 && (
+                                          <span style={{ fontSize: 10, fontWeight: 800, background: "#38bdf8", color: "#082f49", padding: "1px 6px", borderRadius: 100 }}>
+                                            {(lead.historicoAtendimento || []).length}
+                                          </span>
+                                        )}
+                                      </button>
                                       <button onClick={() => setLeadDossieId(lead.id)} title={temDossie ? "Ver Documentos" : "Nenhum documento ainda"} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, background: temDossie ? "rgba(255,255,255,0.1)" : "transparent", border: temDossie ? "none" : "1px dashed var(--border-subtle)", color: temDossie ? "white" : "var(--gray-mid)", cursor: "pointer", transition: "0.2s" }}>
                                         <FolderOpen size={15} /> <span className="hidden sm:inline">Dossiê</span>
                                       </button>
@@ -1013,6 +1086,16 @@ export default function AdminPage() {
                                 </div>
                               )}
                             </div>
+
+                            {/* Botão gerir empreendimentos */}
+                            <button
+                              onClick={() => setModalAcessoCorretor({ corretor: corretor })}
+                              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px", borderRadius: 10, cursor: "pointer", background: "rgba(175,111,83,0.1)", border: "1px solid var(--border-active)", color: "var(--terracota)", fontSize: 12, fontWeight: 700 }}
+                            >
+                              <Building2 size={14} />
+                              Gerir Empreendimentos ({(corretor.empreendimentosPermitidos ?? empreendimentos.map(e => e.slug)).length}/{empreendimentos.length})
+                            </button>
+
                           </div>
                         </div>
                       ))}
@@ -1173,6 +1256,76 @@ export default function AdminPage() {
         )}
       </AnimatePresence>
 
+{/* MODAL: ACESSO DO CORRETOR AOS EMPREENDIMENTOS */}
+      <AnimatePresence>
+        {modalAcessoCorretor.corretor && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+            onClick={(e) => { if (e.target === e.currentTarget) setModalAcessoCorretor({ corretor: null }); }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 20, width: "100%", maxWidth: 480, overflow: "hidden", maxHeight: "90vh", display: "flex", flexDirection: "column" }}
+            >
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", background: "rgba(0,0,0,0.2)" }}>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
+                    <Building2 size={18} color="var(--terracota)" /> Empreendimentos do Corretor
+                  </h3>
+                  <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>
+                    Corretor: <strong style={{ color: "var(--gray-light)" }}>{modalAcessoCorretor.corretor.nome}</strong>
+                  </p>
+                </div>
+                <button onClick={() => setModalAcessoCorretor({ corretor: null })} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+              </div>
+
+              <div style={{ padding: "16px 24px", background: "rgba(175,111,83,0.06)", borderBottom: "1px solid var(--border-subtle)", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <Info size={15} color="var(--terracota)" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 12, color: "var(--gray-light)", lineHeight: 1.6 }}>
+                  Controle em quais empreendimentos este corretor vê leads na <strong style={{ color: "#ef4444" }}>Roleta</strong> e nos <strong style={{ color: "var(--terracota)" }}>Links de Divulgação</strong>. Os leads já na carteira dele <strong>não são afetados</strong>.
+                </p>
+              </div>
+
+              <div style={{ overflowY: "auto", flex: 1, padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+                {empreendimentos.map((emp) => {
+                  const todosSlug = empreendimentos.map(e => e.slug);
+                  const permitidos: string[] = modalAcessoCorretor.corretor.empreendimentosPermitidos ?? todosSlug;
+                  const temAcesso = permitidos.includes(emp.slug);
+
+                  return (
+                    <div key={emp.slug} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderRadius: 12, background: temAcesso ? "rgba(74,222,128,0.05)" : "rgba(239,68,68,0.05)", border: temAcesso ? "1px solid rgba(74,222,128,0.2)" : "1px solid rgba(239,68,68,0.2)", transition: "all 0.2s" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: temAcesso ? "rgba(74,222,128,0.15)" : "rgba(239,68,68,0.15)", color: temAcesso ? "#4ade80" : "#f87171", border: temAcesso ? "1px solid rgba(74,222,128,0.3)" : "1px solid rgba(239,68,68,0.3)" }}>
+                          <Building2 size={16} />
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 14, fontWeight: 700, color: "white" }}>{emp.nome}</p>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 2 }}>{emp.cidade} · {emp.estado}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => toggleEmpreendimentoCorretor(emp.slug)}
+                        disabled={salvandoAcessoCorretor}
+                        style={{ padding: "8px 16px", borderRadius: 10, cursor: salvandoAcessoCorretor ? "not-allowed" : "pointer", fontWeight: 800, fontSize: 12, border: "none", transition: "all 0.2s", background: temAcesso ? "rgba(74,222,128,0.2)" : "rgba(239,68,68,0.2)", color: temAcesso ? "#4ade80" : "#f87171", opacity: salvandoAcessoCorretor ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}
+                      >
+                        {temAcesso ? <><ToggleRight size={16} /> LIGADO</> : <><ToggleLeft size={16} /> DESLIGADO</>}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={() => setModalAcessoCorretor({ corretor: null })} style={{ padding: "10px 20px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
+                  Fechar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* MODAL DE CONTROLE DE ACESSO DOS CORRESPONDENTES */}
       <AnimatePresence>
         {modalAcessoLead && (
@@ -1317,6 +1470,76 @@ export default function AdminPage() {
               <button onClick={() => setModalMotivoReprovacao(null)} style={{ padding: "12px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
                 Fechar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: HISTÓRICO DE ATENDIMENTO (ADMIN) */}
+      {modalHistoricoAdminId !== null && modalHistoricoAdminLead && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) { setModalHistoricoAdminId(null); setNovoHistoricoAdmin(""); } }}
+          style={{ position: "fixed", inset: 0, zIndex: 210, background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div style={{ background: "var(--bg-card)", width: "100%", maxWidth: 540, borderRadius: 24, border: "1px solid var(--border-subtle)", boxShadow: "0 20px 40px rgba(0,0,0,0.5)", overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.2)" }}>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 10 }}>
+                <MessageSquare size={18} color="#38bdf8" /> Histórico de Atendimento
+              </h2>
+              <button onClick={() => { setModalHistoricoAdminId(null); setNovoHistoricoAdmin(""); }} style={{ background: "transparent", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: "10px 24px", background: "rgba(56,189,248,0.05)", borderBottom: "1px solid var(--border-subtle)" }}>
+              <p style={{ fontSize: 13, color: "var(--gray-light)" }}>
+                Cliente: <strong style={{ color: "white" }}>{modalHistoricoAdminLead.nome}</strong>
+                <span style={{ color: "var(--gray-dark)", marginLeft: 8 }}>• {modalHistoricoAdminLead.empreendimentoNome || modalHistoricoAdminLead.empreendimentoId}</span>
+                {modalHistoricoAdminLead.nomeCorretor && (
+                  <span style={{ color: "var(--gray-dark)", marginLeft: 8 }}>• Corretor: {modalHistoricoAdminLead.nomeCorretor}</span>
+                )}
+              </p>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
+              {(modalHistoricoAdminLead.historicoAtendimento || []).length === 0 ? (
+                <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                  <MessageSquare size={28} color="var(--gray-dark)" style={{ margin: "0 auto 12px" }} />
+                  <p style={{ color: "var(--gray-mid)", fontSize: 13 }}>Nenhuma anotação registrada para este cliente.</p>
+                </div>
+              ) : (
+                [...(modalHistoricoAdminLead.historicoAtendimento || [])].reverse().map((entrada, idx) => (
+                  <div key={idx} style={{ padding: "14px 16px", background: "rgba(0,0,0,0.2)", borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#38bdf8" }}>{entrada.autorNome}</span>
+                      <span style={{ fontSize: 11, color: "var(--gray-dark)" }}>
+                        {new Date(entrada.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às")}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>{entrada.texto}</p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 10, background: "rgba(0,0,0,0.1)" }}>
+              <textarea
+                value={novoHistoricoAdmin}
+                onChange={e => setNovoHistoricoAdmin(e.target.value)}
+                placeholder="Adicionar nota administrativa..."
+                style={{ width: "100%", minHeight: 72, padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 13, resize: "none", outline: "none", fontFamily: "inherit", lineHeight: 1.6 }}
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  onClick={publicarHistoricoAdmin}
+                  disabled={!novoHistoricoAdmin.trim() || salvandoHistoricoAdmin}
+                  style={{ padding: "10px 20px", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 13, cursor: !novoHistoricoAdmin.trim() || salvandoHistoricoAdmin ? "not-allowed" : "pointer", transition: "0.2s", display: "flex", alignItems: "center", gap: 8, background: novoHistoricoAdmin.trim() ? "#38bdf8" : "rgba(56,189,248,0.15)", color: novoHistoricoAdmin.trim() ? "#082f49" : "#38bdf8" }}
+                >
+                  <MessageSquare size={14} />
+                  {salvandoHistoricoAdmin ? "Publicando..." : "Publicar Nota"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
