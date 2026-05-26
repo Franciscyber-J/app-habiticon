@@ -200,6 +200,8 @@ export default function AdminPage() {
   // Estado da Venda Direta
   const [modalVendaDireta, setModalVendaDireta] = useState(false);
   const [novaVenda, setNovaVenda] = useState({ nome: "", whatsapp: "", empreendimentoId: "" });
+  const [modalLeadRoleta, setModalLeadRoleta] = useState(false);
+  const [novoLeadRoleta, setNovoLeadRoleta] = useState({ nome: "", whatsapp: "", whatsapp2: "", empreendimentoId: "" });
   const [leadParaContrato, setLeadParaContrato] = useState<any | null>(null);
 
   // Estado do Modal de Acesso de Correspondentes
@@ -520,6 +522,37 @@ export default function AdminPage() {
     } catch (err) { alert("Erro ao registrar cliente."); } finally { setUploadingGeral(false); }
   };
 
+  const handleCriarLeadRoleta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!novoLeadRoleta.nome || !novoLeadRoleta.whatsapp || !novoLeadRoleta.empreendimentoId) {
+      alert("Preencha nome, WhatsApp e empreendimento.");
+      return;
+    }
+    setUploadingGeral(true);
+    try {
+      const emp = empreendimentos.find(e => e.slug === novoLeadRoleta.empreendimentoId);
+      const novoId = `lead_roleta_${Date.now()}`;
+      await setDoc(doc(db, "leads", novoId), {
+        nome: novoLeadRoleta.nome,
+        whatsapp: novoLeadRoleta.whatsapp,
+        whatsapp2: novoLeadRoleta.whatsapp2 || "",
+        empreendimentoId: novoLeadRoleta.empreendimentoId,
+        empreendimentoNome: emp?.nome || "",
+        corretorId: "",
+        nomeCorretor: "",
+        status: "novo",
+        timestamp: new Date().toISOString(),
+        origem: "painel_admin_roleta"
+      });
+      setModalLeadRoleta(false);
+      setNovoLeadRoleta({ nome: "", whatsapp: "", whatsapp2: "", empreendimentoId: "" });
+    } catch (err) {
+      alert("Erro ao registrar lead na roleta.");
+    } finally {
+      setUploadingGeral(false);
+    }
+  };
+
   const toggleAcessoCorrespondente = async (correspondentId: string) => {
     if (!modalAcessoLead) return;
     setSalvandoAcesso(true);
@@ -752,6 +785,9 @@ export default function AdminPage() {
                     <div style={{ display: "flex", gap: 12 }}>
                       <button onClick={() => setModalVendaDireta(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "rgba(168,85,247,0.15)", color: "#c084fc", border: "1px solid rgba(168,85,247,0.3)", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                         <Plus size={16} /> Nova Venda Direta
+                      </button>
+                      <button onClick={() => setModalLeadRoleta(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "rgba(239,68,68,0.12)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                        <Flame size={16} /> Lead para Roleta
                       </button>
                       <button onClick={handlePrint} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "var(--terracota-glow)", color: "var(--terracota-light)", border: "1px solid var(--border-active)", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                         <Printer size={16} /> Relatório PDF
@@ -1072,6 +1108,64 @@ export default function AdminPage() {
                 <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
                   <button type="button" onClick={() => setModalVendaDireta(false)} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer" }}>Cancelar</button>
                   <button type="submit" disabled={uploadingGeral} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "var(--terracota)", border: "none", color: "white", fontWeight: 700, cursor: "pointer" }}>{uploadingGeral ? "Criando..." : "Criar Venda"}</button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+{/* MODAL: LEAD PARA ROLETA */}
+      <AnimatePresence>
+        {modalLeadRoleta && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} style={{ background: "var(--bg-card)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 20, width: "100%", maxWidth: 440, overflow: "hidden" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(239,68,68,0.2)", background: "rgba(239,68,68,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: "#ef4444", display: "flex", alignItems: "center", gap: 8 }}>
+                  <Flame size={18} /> Lead para Roleta
+                </h3>
+                <button onClick={() => setModalLeadRoleta(false)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+              </div>
+
+              <div style={{ padding: "16px 24px", background: "rgba(239,68,68,0.04)", borderBottom: "1px solid rgba(239,68,68,0.15)", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <Flame size={15} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 12, color: "var(--gray-light)", lineHeight: 1.6 }}>
+                  Este lead <strong style={{ color: "white" }}>não será vinculado a nenhum corretor</strong>. Ele aparecerá na aba <strong style={{ color: "#ef4444" }}>Leads Livres</strong> dos painéis de todos os corretores, disponível para quem assumir primeiro.
+                </p>
+              </div>
+
+              <form onSubmit={handleCriarLeadRoleta} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--gray-mid)", marginBottom: 8, textTransform: "uppercase" }}>Nome Completo *</label>
+                  <input type="text" required className="input-field" value={novoLeadRoleta.nome} onChange={e => setNovoLeadRoleta({ ...novoLeadRoleta, nome: e.target.value })} placeholder="Nome do cliente" />
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--gray-mid)", marginBottom: 8, textTransform: "uppercase" }}>WhatsApp *</label>
+                    <input type="text" required className="input-field" value={novoLeadRoleta.whatsapp} onChange={e => setNovoLeadRoleta({ ...novoLeadRoleta, whatsapp: e.target.value })} placeholder="(00) 00000-0000" />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--gray-mid)", marginBottom: 8, textTransform: "uppercase" }}>WhatsApp 2</label>
+                    <input type="text" className="input-field" value={novoLeadRoleta.whatsapp2} onChange={e => setNovoLeadRoleta({ ...novoLeadRoleta, whatsapp2: e.target.value })} placeholder="Opcional" />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--gray-mid)", marginBottom: 8, textTransform: "uppercase" }}>Empreendimento *</label>
+                  <select required className="input-field" value={novoLeadRoleta.empreendimentoId} onChange={e => setNovoLeadRoleta({ ...novoLeadRoleta, empreendimentoId: e.target.value })}>
+                    <option value="">Selecione o empreendimento...</option>
+                    {empreendimentos.map(e => <option key={e.slug} value={e.slug}>{e.nome}</option>)}
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                  <button type="button" onClick={() => setModalLeadRoleta(false)} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer" }}>
+                    Cancelar
+                  </button>
+                  <button type="submit" disabled={uploadingGeral} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#ef4444", border: "none", color: "white", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                    <Flame size={16} /> {uploadingGeral ? "Criando..." : "Jogar na Roleta"}
+                  </button>
                 </div>
               </form>
             </motion.div>
