@@ -33,6 +33,8 @@ interface LeadData {
   dossie?: any;
   documentosConstrutora?: any;
   correspondentesPermitidos?: string[]; // ← LISTA BRANCA (Tudo fechado por padrão)
+  motivoReprovacao?: string;
+  origemDesqualificacao?: string;
   simulacao?: {
     valorImovel: number;
     valorAvaliacao?: number;
@@ -433,7 +435,18 @@ export default function PainelCorrespondente() {
 
                         </div>
                       </div>
-                    </div>
+
+                        {/* Motivo inline quando reprovado/não qualificado */}
+                        {(lead.status === "nao_qualificado" || lead.status === "credito_reprovado") && lead.motivoReprovacao && (
+                          <div style={{ width: "100%", background: "rgba(239,68,68,0.08)", border: "1px dashed rgba(239,68,68,0.3)", borderRadius: 10, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+                            <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: lead.origemDesqualificacao === "corretor" ? "#fb923c" : "#f87171" }}>
+                              {lead.origemDesqualificacao === "corretor" ? "🔶 Desqualificado pelo Corretor" : "🔴 Reprovado pela Análise de Crédito"}
+                            </p>
+                            <p style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.5 }}>{lead.motivoReprovacao}</p>
+                          </div>
+                        )}
+
+                      </div>
                   );
                 })
               )}

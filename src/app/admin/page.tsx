@@ -174,6 +174,7 @@ export default function AdminPage() {
   const [listaCorrespondentes, setListaCorrespondentes] = useState<any[]>([]); // ← NOVO
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
+  const [filtroEmpreendimento, setFiltroEmpreendimento] = useState<string>("todos");
 
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
   const leadDossieSelecionado = todosLeads.find(l => l.id === leadDossieId) || null;
@@ -726,6 +727,16 @@ export default function AdminPage() {
                         <option value="interno">🏢 Vendas Diretas (House)</option>
                         {listaCorretores.map(c => <option key={c.id} value={c.id}>Corretor: {c.nome}</option>)}
                       </select>
+                      <select
+                        value={filtroEmpreendimento}
+                        onChange={(e) => setFiltroEmpreendimento(e.target.value)}
+                        style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 14, outline: "none", minWidth: 220, cursor: "pointer" }}
+                      >
+                        <option value="todos">Todos os Empreendimentos</option>
+                        {empreendimentos.map(e => (
+                          <option key={e.slug} value={e.slug}>{e.nome}</option>
+                        ))}
+                      </select>
                       <span style={{ fontSize: 13, color: "var(--gray-mid)" }}>{leadsFiltrados.length} resultado(s)</span>
                     <select
                         value={filtroStatus}
@@ -754,7 +765,7 @@ export default function AdminPage() {
                       <p style={{ fontSize: 14, color: "var(--gray-mid)" }}>Nenhum empreendimento cadastrado</p>
                     </div>
                   ) : (
-                    empreendimentos.map((emp) => {
+                    empreendimentos.filter(e => filtroEmpreendimento === "todos" || e.slug === filtroEmpreendimento).map((emp) => {
                       const leadsEmp = leadsFiltrados.filter(l => l.empreendimentoId === emp.slug).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
                       if (leadsEmp.length === 0 && filtroCorretor !== "todos") return null;
                       const linkLista = `${typeof window !== "undefined" ? window.location.origin : ""}/leads/${emp.slug}`;

@@ -1128,8 +1128,11 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
                   </div>
                   
                   {isReprovado && lead.motivoReprovacao && (
-                    <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "12px 16px", width: "100%", textAlign: "center" }}>
-                      <p style={{ fontSize: 13, color: "#fca5a5" }}>
+                    <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "14px 16px", width: "100%", display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: lead.origemDesqualificacao === "corretor" ? "#fb923c" : "#f87171" }}>
+                        {lead.origemDesqualificacao === "corretor" ? "🔶 Desqualificado pelo Corretor" : "🔴 Reprovado pela Análise de Crédito"}
+                      </p>
+                      <p style={{ fontSize: 13, color: "#fca5a5", textAlign: "center" }}>
                         <strong>Motivo:</strong> {lead.motivoReprovacao}
                       </p>
                     </div>
