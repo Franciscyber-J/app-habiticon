@@ -1119,97 +1119,104 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
               position: "sticky", bottom: 0, zIndex: 10, display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center"
             }}>
               {isDecidido ? (
-                <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12, alignItems: "center", padding: "8px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    {isAprovado ? <ThumbsUp size={20} color="#4ade80" /> : <ThumbsDown size={20} color="#f87171" />}
-                    <p style={{ color: isAprovado ? "#4ade80" : "#f87171", fontWeight: 800, fontSize: 16 }}>
-                      {isAprovado ? "Crédito Qualificado/Aprovado." : "Crédito Reprovado/Não Qualificado."}
-                    </p>
+                <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
+
+                  {/* STATUS + ORIGEM */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    {isAprovado
+                      ? <CheckCircle2 size={15} color="#4ade80" />
+                      : <AlertCircle size={15} color="#f87171" />
+                    }
+                    <span style={{ fontSize: 13, fontWeight: 700, color: isAprovado ? "#4ade80" : "#f87171" }}>
+                      {isAprovado ? "Crédito aprovado" : "Crédito reprovado"}
+                    </span>
+                    {isReprovado && lead.origemDesqualificacao && (
+                      <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 100, fontWeight: 600,
+                        background: lead.origemDesqualificacao === "corretor" ? "rgba(251,146,60,0.1)" : "rgba(239,68,68,0.08)",
+                        color: lead.origemDesqualificacao === "corretor" ? "#fb923c" : "#f87171",
+                        border: lead.origemDesqualificacao === "corretor" ? "1px solid rgba(251,146,60,0.2)" : "1px solid rgba(239,68,68,0.15)"
+                      }}>
+                        {lead.origemDesqualificacao === "corretor" ? "pelo Corretor" : "pela Análise de Crédito"}
+                      </span>
+                    )}
                   </div>
-                  
+
+                  {/* MOTIVO */}
                   {isReprovado && lead.motivoReprovacao && (
-                    <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "14px 16px", width: "100%", display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: lead.origemDesqualificacao === "corretor" ? "#fb923c" : "#f87171" }}>
-                        {lead.origemDesqualificacao === "corretor" ? "🔶 Desqualificado pelo Corretor" : "🔴 Reprovado pela Análise de Crédito"}
-                      </p>
-                      <p style={{ fontSize: 13, color: "#fca5a5", textAlign: "center" }}>
-                        <strong>Motivo:</strong> {lead.motivoReprovacao}
-                      </p>
+                    <div style={{ padding: "12px 14px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid var(--border-subtle)", borderLeft: "3px solid rgba(239,68,68,0.4)" }}>
+                      <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 6, letterSpacing: "0.04em" }}>Motivo registrado</p>
+                      <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>{lead.motivoReprovacao}</p>
                     </div>
                   )}
 
+                  {/* DETALHES DA APROVAÇÃO */}
                   {isAprovado && lead.creditoAprovadoInfo && (
-                    <div style={{ background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 12, padding: "16px", width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(74,222,128,0.1)", paddingBottom: 8 }}>
-                        <span style={{ fontSize: 12, color: "var(--gray-mid)" }}>Valor Aprovado Liberado:</span>
-                        <span style={{ fontSize: 14, fontWeight: 800, color: "white" }}>R$ {lead.creditoAprovadoInfo.valorAprovado?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <div style={{ background: "rgba(0,0,0,0.15)", border: "1px solid rgba(74,222,128,0.15)", borderRadius: 10, padding: "14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 8, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        <span style={{ fontSize: 12, color: "var(--gray-mid)" }}>Valor liberado</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: "white" }}>
+                          R$ {lead.creditoAprovadoInfo.valorAprovado?.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </span>
                       </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid rgba(74,222,128,0.1)", paddingBottom: 8 }}>
-                        <span style={{ fontSize: 12, color: "var(--gray-mid)" }}>Parcela Estimada:</span>
-                        <span style={{ fontSize: 14, fontWeight: 800, color: "white" }}>R$ {lead.creditoAprovadoInfo.valorParcela?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 12, color: "var(--gray-mid)" }}>Parcela estimada</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: "white" }}>
+                          R$ {lead.creditoAprovadoInfo.valorParcela?.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </span>
                       </div>
                       {lead.creditoAprovadoInfo.observacoes && (
-                        <div>
-                          <span style={{ fontSize: 11, color: "var(--gray-dark)", textTransform: "uppercase", fontWeight: 700 }}>Condicionantes:</span>
-                          <p style={{ fontSize: 13, color: "var(--gray-light)", marginTop: 4, lineHeight: 1.5 }}>{lead.creditoAprovadoInfo.observacoes}</p>
+                        <div style={{ paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Condicionantes</p>
+                          <p style={{ fontSize: 12, color: "var(--gray-light)", lineHeight: 1.5 }}>{lead.creditoAprovadoInfo.observacoes}</p>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* ── Documentos de Análise de Crédito (exclusivo correspondente/admin) ── */}
-                  {isDecidido && (
-                    <div style={{ width: "100%", background: "rgba(167,139,250,0.06)", border: "1px solid rgba(167,139,250,0.2)", borderRadius: 12, padding: "16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <FileCheck2 size={16} color="#a78bfa" />
-                          <p style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa" }}>Documentos de Análise de Crédito</p>
-                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 100, background: "rgba(167,139,250,0.15)", color: "#a78bfa", fontWeight: 600 }}>Uso interno</span>
-                        </div>
-                        <button
-                          onClick={() => fileInputAprovacaoRef.current?.click()}
-                          disabled={uploadingAprovacao}
-                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#a78bfa", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: uploadingAprovacao ? 0.5 : 1 }}
-                        >
-                          {uploadingAprovacao
-                            ? <><Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Enviando...</>
-                            : <><UploadCloud size={13} /> Anexar Documentos</>
-                          }
-                        </button>
+                  {/* DOCUMENTOS DE ANÁLISE */}
+                  <div style={{ border: "1px solid var(--border-subtle)", borderRadius: 10, overflow: "hidden" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "rgba(0,0,0,0.15)", borderBottom: "1px solid var(--border-subtle)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <FileCheck2 size={14} color="var(--gray-mid)" />
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gray-light)" }}>Documentos de Análise</span>
+                        <span style={{ fontSize: 10, padding: "1px 7px", borderRadius: 100, background: "rgba(255,255,255,0.05)", color: "var(--gray-dark)", fontWeight: 600 }}>Uso interno</span>
                       </div>
-
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {lead.documentosAnaliseCredito && lead.documentosAnaliseCredito.length > 0 ? (
-                          lead.documentosAnaliseCredito.map((docItem: any, index: number) => (
-                            <div key={index} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "rgba(0,0,0,0.2)", borderRadius: 8, border: "1px solid var(--border-subtle)" }}>
-                              <FileText size={16} color="#a78bfa" style={{ flexShrink: 0 }} />
-                              <p style={{ fontSize: 12, color: "var(--gray-light)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{docItem.nome}</p>
-                              
-                              <a href={docItem.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 6, background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#a78bfa", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
-                                <ExternalLink size={12} /> Abrir
-                              </a>
-                              <button onClick={() => removerDocumentoAnalise(index)} style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "5px 8px", borderRadius: 6, background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", cursor: "pointer" }} title="Remover Documento">
-                                <X size={12} />
-                              </button>
-                            </div>
-                          ))
-                        ) : (
-                          <p style={{ fontSize: 11, color: "var(--gray-dark)", marginTop: 4 }}>Nenhum documento anexado. Ficam visíveis apenas para o correspondente e a construtora.</p>
-                        )}
-                      </div>
+                      <button
+                        onClick={() => fileInputAprovacaoRef.current?.click()}
+                        disabled={uploadingAprovacao}
+                        style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 7, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)", fontSize: 11, fontWeight: 600, cursor: "pointer", opacity: uploadingAprovacao ? 0.5 : 1 }}
+                      >
+                        {uploadingAprovacao ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> Enviando</> : <><UploadCloud size={12} /> Anexar</>}
+                      </button>
                     </div>
-                  )}
+                    <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                      {lead.documentosAnaliseCredito && lead.documentosAnaliseCredito.length > 0 ? (
+                        lead.documentosAnaliseCredito.map((docItem: any, index: number) => (
+                          <div key={index} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: "rgba(0,0,0,0.15)", borderRadius: 7, border: "1px solid var(--border-subtle)" }}>
+                            <FileText size={13} color="var(--gray-mid)" style={{ flexShrink: 0 }} />
+                            <p style={{ fontSize: 12, color: "var(--gray-light)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{docItem.nome}</p>
+                            <a href={docItem.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, fontWeight: 600, color: "var(--gray-mid)", textDecoration: "none", padding: "3px 8px", borderRadius: 5, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                              <ExternalLink size={11} />
+                            </a>
+                            <button onClick={() => removerDocumentoAnalise(index)} style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "3px 6px", borderRadius: 5, background: "transparent", border: "none", color: "rgba(248,113,113,0.4)", cursor: "pointer" }}>
+                              <X size={11} />
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <p style={{ fontSize: 11, color: "var(--gray-dark)", padding: "4px 0" }}>Nenhum documento anexado.</p>
+                      )}
+                    </div>
+                  </div>
 
+                  {/* REVERTER */}
                   <button
                     onClick={reverterDecisao}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8, marginTop: 8,
-                      padding: "8px 16px", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)",
-                      borderRadius: 8, color: "var(--gray-light)", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "0.2s"
-                    }}
+                    style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "none", color: "var(--gray-dark)", fontSize: 12, cursor: "pointer", padding: "2px 0", alignSelf: "flex-start", transition: "0.2s" }}
                   >
-                    <RefreshCcw size={14} /> Reverter Decisão (Voltar para Análise)
+                    <RefreshCcw size={12} /> Reverter decisão (voltar para análise)
                   </button>
+
                 </div>
               ) : (
                 <>

@@ -252,23 +252,32 @@ export default function PainelCorrespondente() {
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {/* ESTATÍSTICAS */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 8 }}>
-              <div style={{ background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 16, padding: "16px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, color: "#38bdf8" }}>
-                  <Clock size={16} /> <span style={{ fontSize: 12, fontWeight: 700 }}>EM ANÁLISE</span>
+              <div style={{ padding: "18px 16px 16px", background: "rgba(56,189,248,0.08)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(56,189,248,0.15)", border: "1px solid rgba(56,189,248,0.3)" }}>
+                    <Clock size={16} color="#38bdf8" />
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Em Análise</span>
                 </div>
-                <p style={{ fontSize: 32, fontWeight: 800, color: "#38bdf8", lineHeight: 1 }}>{countAnalise}</p>
+                <p style={{ fontSize: 36, fontWeight: 800, color: "#38bdf8", lineHeight: 1 }}>{countAnalise}</p>
               </div>
-              <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 16, padding: "16px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, color: "#ef4444" }}>
-                  <AlertCircle size={16} /> <span style={{ fontSize: 12, fontWeight: 700 }}>PENDÊNCIAS</span>
+              <div style={{ padding: "18px 16px 16px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)" }}>
+                    <AlertCircle size={16} color="#ef4444" />
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Pendências</span>
                 </div>
-                <p style={{ fontSize: 32, fontWeight: 800, color: "#ef4444", lineHeight: 1 }}>{countPendencias}</p>
+                <p style={{ fontSize: 36, fontWeight: 800, color: "#ef4444", lineHeight: 1 }}>{countPendencias}</p>
               </div>
-              <div style={{ background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 16, padding: "16px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, color: "#4ade80" }}>
-                  <CheckCircle2 size={16} /> <span style={{ fontSize: 12, fontWeight: 700 }}>APROVADOS</span>
+              <div style={{ padding: "18px 16px 16px", background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(74,222,128,0.15)", border: "1px solid rgba(74,222,128,0.3)" }}>
+                    <CheckCircle2 size={16} color="#4ade80" />
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Aprovados</span>
                 </div>
-                <p style={{ fontSize: 32, fontWeight: 800, color: "#4ade80", lineHeight: 1 }}>{countAprovados}</p>
+                <p style={{ fontSize: 36, fontWeight: 800, color: "#4ade80", lineHeight: 1 }}>{countAprovados}</p>
               </div>
             </div>
 
@@ -326,125 +335,72 @@ export default function PainelCorrespondente() {
                     <div
                       key={lead.id}
                       style={{
-                        background: "var(--bg-card)", padding: "20px", borderRadius: 16,
+                        background: "var(--bg-card)", borderRadius: 16,
                         border: `1px solid ${statusBg.replace("0.1", "0.3")}`,
-                        display: "flex", flexWrap: "wrap", gap: 20,
-                        justifyContent: "space-between", alignItems: "center"
+                        display: "flex", flexDirection: "column"
                       }}
                     >
-                      {/* DADOS DO LEAD */}
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flex: "1 1 min-content", minWidth: 250 }}>
-                        <div style={{
-                          width: 48, height: 48, borderRadius: 12, flexShrink: 0,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontWeight: 800, fontSize: 18,
-                          background: statusBg, color: statusColor,
-                          border: `1px solid ${statusBg.replace("0.1", "0.2")}`
-                        }}>
-                          {(lead.nome || "?")[0].toUpperCase()}
-                        </div>
-                        <div style={{ minWidth: 0 }}>
-                          <p style={{ fontWeight: 800, color: "white", marginBottom: 6, fontSize: 16 }}>{lead.nome}</p>
-                          <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--gray-mid)", flexWrap: "wrap" }}>
-                            <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--gray-light)" }}>
-                              <Building2 size={12} /> {lead.empreendimentoNome}
-                            </span>
-                            
-                            {(lead.quartos || lead.area) && (
-                              <>
-                                {lead.quartos && (
-                                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                    <Bed size={12} /> {lead.quartos} Quartos
-                                  </span>
-                                )}
-                                {lead.area && (
-                                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                    <Maximize size={12} /> {lead.area} m²
-                                  </span>
-                                )}
-                              </>
-                            )}
-
-                            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                              <Phone size={12} /> {lead.whatsapp}
-                            </span>
-                            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                              <Calendar size={12} /> {new Date(lead.timestamp).toLocaleDateString()}
-                            </span>
+                      {/* LINHA 1: INFO + STATUS */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 20px" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: 1, minWidth: 0 }}>
+                          <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 15, background: statusBg, color: statusColor, border: `1px solid ${statusColor}22` }}>
+                            {(lead.nome || "?")[0].toUpperCase()}
                           </div>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10, padding: "4px 10px", background: "rgba(255,255,255,0.05)", borderRadius: 6, fontSize: 11, color: "var(--gray-mid)" }}>
-                            <UserIcon size={12} color="#93c5fd" />
-                            Corretor: <strong style={{ color: "var(--gray-light)" }}>{lead.nomeCorretor || "Não atribuído"}</strong>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ fontWeight: 700, color: "white", fontSize: 14, marginBottom: 4 }}>{lead.nome}</p>
+                            <div style={{ display: "flex", gap: 6, fontSize: 11, color: "var(--gray-mid)", flexWrap: "wrap", alignItems: "center" }}>
+                              <span style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--gray-light)" }}>
+                                <Building2 size={11} /> {lead.empreendimentoNome}
+                              </span>
+                              <span style={{ color: "var(--border-subtle)" }}>·</span>
+                              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                <Phone size={11} /> {lead.whatsapp}
+                              </span>
+                              <span style={{ color: "var(--border-subtle)" }}>·</span>
+                              <span>{new Date(lead.timestamp).toLocaleDateString()}</span>
+                              {lead.nomeCorretor && (
+                                <span style={{ fontSize: 10, color: "var(--gray-dark)", fontWeight: 600 }}>· {lead.nomeCorretor}</span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-
-                      {/* AÇÕES */}
-                      <div className="w-full sm:w-auto" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, flexShrink: 0 }}>
-
-                        {/* Badge de status */}
-                        <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 100, background: statusBg, color: statusColor, border: `1px solid ${statusColor}40` }}>
+                        <span style={{ padding: "4px 10px", borderRadius: 100, fontSize: 11, fontWeight: 700, flexShrink: 0, background: statusBg, color: statusColor, border: `1px solid ${statusColor}40` }}>
                           {statusLabel}
                         </span>
-
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-
-                          <button
-                            onClick={() => setLeadAnaliseId(lead.id)}
-                            style={{
-                              padding: "10px 18px", borderRadius: 10, fontSize: 13, fontWeight: 800,
-                              display: "flex", justifyContent: "center", gap: 8, alignItems: "center",
-                              border: "none", cursor: "pointer",
-                              background: "#38bdf8",
-                              color: "white",
-                              boxShadow: "0 4px 14px rgba(56,189,248,0.3)"
-                            }}
-                          >
-                            <ShieldCheck size={16} />
-                            Analisar Dossiê
-                          </button>
-
-                          {estaAprovado && (
-                            <button
-                              onClick={() => setLeadDocumentosId(lead.id)}
-                              style={{
-                                padding: "10px 18px", borderRadius: 10, fontSize: 13, fontWeight: 800,
-                                display: "flex", justifyContent: "center", gap: 8, alignItems: "center",
-                                  cursor: "pointer", position: "relative",
-                                background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)",
-                                color: "#a78bfa"
-                              } as any}
-                            >
-                              <FolderOpen size={16} />
-                              Documentos
-
-                              {naoLidos > 0 && (
-                                <span style={{
-                                  position: "absolute", top: -6, right: -6,
-                                  background: "#ef4444", color: "white",
-                                  fontSize: 10, fontWeight: 800,
-                                  width: 18, height: 18, borderRadius: "50%",
-                                  display: "flex", alignItems: "center", justifyContent: "center",
-                                  boxShadow: "0 0 0 2px var(--bg-base)"
-                                }}>
-                                  {naoLidos}
-                                </span>
-                              )}
-                            </button>
-                          )}
-
-                        </div>
                       </div>
 
-                        {/* Motivo inline quando reprovado/não qualificado */}
-                        {(lead.status === "nao_qualificado" || lead.status === "credito_reprovado") && lead.motivoReprovacao && (
-                          <div style={{ width: "100%", background: "rgba(239,68,68,0.08)", border: "1px dashed rgba(239,68,68,0.3)", borderRadius: 10, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
-                            <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: lead.origemDesqualificacao === "corretor" ? "#fb923c" : "#f87171" }}>
-                              {lead.origemDesqualificacao === "corretor" ? "🔶 Desqualificado pelo Corretor" : "🔴 Reprovado pela Análise de Crédito"}
-                            </p>
-                            <p style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.5 }}>{lead.motivoReprovacao}</p>
-                          </div>
+                      {/* LINHA 2: AÇÕES */}
+                      <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", padding: "9px 20px", display: "flex", alignItems: "center", gap: 5, justifyContent: "flex-end" }}>
+                        <button
+                          onClick={() => setLeadAnaliseId(lead.id)}
+                          style={{ padding: "5px 12px", borderRadius: 7, fontSize: 11, fontWeight: 700, display: "flex", gap: 5, alignItems: "center", border: "none", cursor: "pointer", background: "#38bdf8", color: "white" }}
+                        >
+                          <ShieldCheck size={12} /> Analisar Dossiê
+                        </button>
+                        {estaAprovado && (
+                          <button
+                            onClick={() => setLeadDocumentosId(lead.id)}
+                            style={{ position: "relative", padding: "5px 12px", borderRadius: 7, fontSize: 11, fontWeight: 700, display: "flex", gap: 5, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}
+                          >
+                            <FolderOpen size={12} /> Documentos
+                            {naoLidos > 0 && (
+                              <span style={{ position: "absolute", top: -5, right: -5, background: "#ef4444", color: "white", fontSize: 9, fontWeight: 800, width: 16, height: 16, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                {naoLidos}
+                              </span>
+                            )}
+                          </button>
                         )}
+                      </div>
+
+                      {/* Motivo inline quando reprovado */}
+                      {(lead.status === "nao_qualificado" || lead.status === "credito_reprovado") && lead.motivoReprovacao && (
+                        <div style={{ margin: "0 20px 14px", padding: "10px 14px", background: "rgba(0,0,0,0.2)", borderRadius: 8, border: "1px solid var(--border-subtle)", borderLeft: "3px solid rgba(239,68,68,0.4)", display: "flex", flexDirection: "column", gap: 4 }}>
+                          <p style={{ fontSize: 11, fontWeight: 600, color: lead.origemDesqualificacao === "corretor" ? "#fb923c" : "var(--gray-mid)" }}>
+                            {lead.origemDesqualificacao === "corretor" ? "Desqualificado pelo Corretor" : "Reprovado pela Análise de Crédito"}
+                          </p>
+                          <p style={{ fontSize: 12, color: "var(--gray-light)", lineHeight: 1.5 }}>{lead.motivoReprovacao}</p>
+                        </div>
+                      )}
 
                       </div>
                   );

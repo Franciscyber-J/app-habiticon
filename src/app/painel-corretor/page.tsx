@@ -713,137 +713,77 @@ const publicarHistorico = async () => {
 
                       return (
                         <div key={lead.id} style={{
-                          background: "var(--bg-card)", padding: "16px 20px", borderRadius: 14, 
+                          background: "var(--bg-card)", borderRadius: 14, 
                           border: borderColorCard,
-                          display: "flex", flexDirection: "column", gap: 16
+                          display: "flex", flexDirection: "column"
                         }}>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between", alignItems: "center" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 min-content", minWidth: 200 }}>
-                              <div style={{ width: 44, height: 44, borderRadius: 12, background: "var(--terracota-glow)", color: "var(--terracota)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, flexShrink: 0 }}>
+                          {/* LINHA 1: INFO + STATUS */}
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 20px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+                              <div style={{ width: 38, height: 38, borderRadius: 10, background: bgStatus.replace("0.15","0.1"), color: colorStatus, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 15, flexShrink: 0 }}>
                                 {(lead.nome || "?")[0].toUpperCase()}
                               </div>
                               <div style={{ minWidth: 0 }}>
-                                <p style={{ fontWeight: 700, color: "white", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 15 }}>{lead.nome}</p>
-                                <div style={{ display: "flex", gap: 8, fontSize: 12, color: "var(--gray-mid)", flexWrap: "wrap", alignItems: "center" }}>
-                                  
-                                  <span style={{ fontSize: 12, color: "var(--gray-mid)", display: "flex", alignItems: "center", gap: 4 }}>
-                                    <Phone size={12} /> {lead.whatsapp}
-                                    {lead.whatsapp2 && (
-                                      <>
-                                        <span style={{ margin: "0 4px", color: "var(--border-subtle)" }}>|</span>
-                                        <Phone size={12} /> {lead.whatsapp2}
-                                      </>
-                                    )}
+                                <p style={{ fontWeight: 700, color: "white", fontSize: 14, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.nome}</p>
+                                <div style={{ display: "flex", gap: 6, fontSize: 11, color: "var(--gray-mid)", flexWrap: "wrap", alignItems: "center" }}>
+                                  <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                    <Phone size={11} /> {lead.whatsapp}
+                                    {lead.whatsapp2 && (<><span style={{ margin: "0 3px", color: "var(--border-subtle)" }}>|</span><Phone size={11} /> {lead.whatsapp2}</>)}
                                   </span>
-
-                                  <span className="hidden sm:inline" style={{ color: "var(--border-subtle)" }}>•</span>
-                                  <span style={{ whiteSpace: "nowrap" }}>{lead.modelo}</span>
-                                  <span className="hidden sm:inline" style={{ color: "var(--border-subtle)" }}>•</span>
-                                  <span style={{ whiteSpace: "nowrap" }}>{lead.timestamp ? new Date(lead.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às") : "Data desconhecida"}</span>
+                                  <span style={{ color: "var(--border-subtle)" }}>·</span>
+                                  <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                    {lead.timestamp ? new Date(lead.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às") : ""}
+                                  </span>
+                                  {lead.modelo && (<><span style={{ color: "var(--border-subtle)" }}>·</span><span style={{ color: "var(--terracota-light)", fontWeight: 600 }}>{lead.modelo}</span></>)}
                                 </div>
                               </div>
                             </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0, width: "auto" }} className="w-full sm:w-auto justify-between sm:justify-end">
-                              <span style={{
-                                fontSize: 12, padding: "6px 10px", borderRadius: 8, fontWeight: 700, textTransform: "capitalize",
-                                background: bgStatus, border: borderStatus, color: colorStatus,
-                              }}>
-                                {lead.status ? lead.status.replace(/_/g, " ") : "Novo"}
-                              </span>
-                              
-                              {!estaSolto && !isReprovado && !isDesqualificado && !isAprovado && (
-                                <button
-                                  onClick={() => abrirMapaParaLead(lead)}
-                                  title="Abrir mapa para reserva de lote"
-                                  style={{
-                                    padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700,
-                                    display: "flex", gap: 6, alignItems: "center", border: "1px solid var(--border-active)", cursor: "pointer", transition: "0.2s",
-                                    background: "var(--terracota-glow)", color: "var(--terracota)"
-                                  }}
-                                >
-                                  <MapIcon size={15} /> <span className="hidden sm:inline">Mapa de Lotes</span>
-                                </button>
-                              )}
+                            <span style={{ padding: "4px 10px", borderRadius: 100, fontSize: 11, fontWeight: 700, flexShrink: 0, background: bgStatus, border: `1px solid ${borderStatus}`, color: colorStatus }}>
+                              {lead.status ? lead.status.replace(/_/g, " ") : "Novo"}
+                            </span>
+                          </div>
 
-                              <button
-                                onClick={() => setLeadDossieId(lead.id)}
-                                style={{
-                                  padding: "8px 14px", background: "rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 13, fontWeight: 700,
-                                  display: "flex", gap: 6, border: "none", color: "white", cursor: "pointer", transition: "0.2s"
-                                }}
-                              >
-                                <FolderOpen size={15} /> Dossiê
+                          {/* LINHA 2: AÇÕES */}
+                          <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", padding: "9px 20px", display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                            {!estaSolto && !isReprovado && !isDesqualificado && !isAprovado && (
+                              <button onClick={() => abrirMapaParaLead(lead)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
+                                <MapIcon size={12} /> Mapa de Lotes
                               </button>
-                              <button
-                                onClick={() => setModalHistoricoLeadId(lead.id)}
-                                title="Histórico de Atendimento"
-                                style={{ position: "relative", padding: "8px 14px", background: "rgba(56,189,248,0.1)", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, alignItems: "center", border: "1px solid rgba(56,189,248,0.25)", color: "#38bdf8", cursor: "pointer", transition: "0.2s" }}
-                              >
-                                <MessageSquare size={15} />
-                                <span className="hidden sm:inline">Histórico</span>
-                                {(lead.historicoAtendimento || []).length > 0 && (
-                                  <span style={{ fontSize: 10, fontWeight: 800, background: "#38bdf8", color: "#082f49", padding: "1px 6px", borderRadius: 100 }}>
-                                    {(lead.historicoAtendimento || []).length}
-                                  </span>
-                                )}
+                            )}
+                            <button onClick={() => setLeadDossieId(lead.id)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
+                              <FolderOpen size={12} /> Dossiê
+                            </button>
+                            <button onClick={() => setModalHistoricoLeadId(lead.id)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
+                              <MessageSquare size={12} /> Histórico
+                              {(lead.historicoAtendimento || []).length > 0 && (
+                                <span style={{ fontSize: 9, fontWeight: 800, background: "#38bdf8", color: "#082f49", padding: "1px 5px", borderRadius: 100 }}>
+                                  {(lead.historicoAtendimento || []).length}
+                                </span>
+                              )}
+                            </button>
+                            {lead.status === "em_atendimento" && !isAprovado && (
+                              <button onClick={() => { setModalNaoQualificado({ aberto: true, lead }); setMotivoNaoQualificado(""); }} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.15)", color: "#f87171" }}>
+                                <AlertOctagon size={12} /> Não Qualificado
                               </button>
-
-                              {lead.status === "em_atendimento" && !isAprovado && (
-                                <button
-                                  onClick={() => { setModalNaoQualificado({ aberto: true, lead }); setMotivoNaoQualificado(""); }}
-                                  title="Marcar lead como não qualificado"
-                                  style={{
-                                    padding: "8px 14px", background: "rgba(239,68,68,0.1)", borderRadius: 8, fontSize: 13, fontWeight: 700,
-                                    display: "flex", gap: 6, border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", cursor: "pointer", transition: "0.2s"
-                                  }}
-                                >
-                                  <AlertOctagon size={15} /> Não Qualificado
-                                </button>
-                              )}
-
-                              {lead.propostaUrl && (
-                                <a
-                                  href={lead.propostaUrl}
-                                  target="_blank" rel="noopener noreferrer"
-                                  title="Ver Simulação Guardada"
-                                  style={{
-                                    padding: "8px 14px", borderRadius: 8,
-                                    fontSize: 13, fontWeight: 700, display: "flex", gap: 6,
-                                    background: "rgba(56,189,248,0.1)",
-                                    border: "1px dashed rgba(56,189,248,0.3)",
-                                    color: "#38bdf8", cursor: "pointer", transition: "0.2s", textDecoration: "none"
-                                  }}
-                                >
-                                  <FileText size={15} />
-                                  <span className="hidden sm:inline">Simulação</span>
-                                </a>
-                              )}
-
-                              <div style={{ display: "flex", gap: 6 }}>
-                                <a
-                                  href={`https://wa.me/55${(lead.whatsapp || "").replace(/\D/g, "")}`}
-                                  target="_blank" rel="noopener noreferrer" className="btn-primary"
-                                  style={{ padding: "8px 16px", background: "#16a34a", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, textDecoration: "none", color: "white" }}
-                                >
-                                  <MessageCircle size={15} /> Chamar
-                                </a>
-                                
-                                {lead.whatsapp2 && lead.whatsapp2.replace(/\D/g, "").length >= 10 && (
-                                  <a
-                                    href={`https://wa.me/55${(lead.whatsapp2 || "").replace(/\D/g, "")}`}
-                                    target="_blank" rel="noopener noreferrer" className="btn-primary"
-                                    style={{ padding: "8px 16px", background: "#16a34a", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, textDecoration: "none", color: "white" }}
-                                    title="Chamar no WhatsApp Secundário"
-                                  >
-                                    <MessageCircle size={15} /> Whats 2
-                                  </a>
-                                )}
-                              </div>
-                            </div>
+                            )}
+                            {lead.propostaUrl && (
+                              <a href={lead.propostaUrl} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)", textDecoration: "none" }}>
+                                <FileText size={12} /> Simulação
+                              </a>
+                            )}
+                            <div style={{ flex: 1 }} />
+                            <a href={`https://wa.me/55${(lead.whatsapp || "").replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.15)", color: "#4ade80", textDecoration: "none" }}>
+                              <MessageCircle size={12} /> Chamar
+                            </a>
+                            {lead.whatsapp2 && lead.whatsapp2.replace(/\D/g, "").length >= 10 && (
+                              <a href={`https://wa.me/55${(lead.whatsapp2 || "").replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.15)", color: "#4ade80", textDecoration: "none" }}>
+                                <MessageCircle size={12} /> Wpp 2
+                              </a>
+                            )}
                           </div>
 
                           {lead.loteReserva && !isAprovado && !isReprovado && !isDesqualificado && (
-                            <div style={{ marginTop: 8, padding: "12px", background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div style={{ margin: "0 20px 14px", padding: "12px", background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <div>
                                 <p style={{ fontSize: 11, color: "#fb923c", fontWeight: 700, textTransform: "uppercase" }}>Lote Reservado</p>
                                 <p style={{ fontSize: 14, fontWeight: 700, color: "white" }}>Lote {lead.loteReserva.numero} — {lead.loteReserva.modeloCasa}</p>
@@ -860,7 +800,7 @@ const publicarHistorico = async () => {
                           )}
 
                           {isDesqualificado && (
-                            <div style={{ background: "rgba(239,68,68,0.08)", border: "1px dashed rgba(239,68,68,0.3)", borderRadius: 10, padding: "16px", display: "flex", flexDirection: "column", gap: 12, marginTop: "4px" }}>
+                            <div style={{ background: "rgba(239,68,68,0.08)", border: "1px dashed rgba(239,68,68,0.3)", borderRadius: 10, padding: "16px", display: "flex", flexDirection: "column", gap: 12, marginTop: "0 20px 14px" }}>
                               <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                                 <AlertOctagon size={18} color="#f87171" style={{ flexShrink: 0, marginTop: 2 }} />
                                 <div>
@@ -874,7 +814,7 @@ const publicarHistorico = async () => {
                           )}
 
                           {isReprovado && lead.motivoReprovacao && !isDesqualificado && (
-                            <div style={{ background: "rgba(239,68,68,0.08)", border: "1px dashed rgba(239,68,68,0.3)", borderRadius: 10, padding: "16px", display: "flex", flexDirection: "column", gap: 12, marginTop: "4px" }}>
+                            <div style={{ background: "rgba(239,68,68,0.08)", border: "1px dashed rgba(239,68,68,0.3)", borderRadius: 10, padding: "16px", display: "flex", flexDirection: "column", gap: 12, marginTop: "0 20px 14px" }}>
                               <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                                 <AlertOctagon size={18} color="#f87171" style={{ flexShrink: 0, marginTop: 2 }} />
                                 <div>
@@ -893,7 +833,7 @@ const publicarHistorico = async () => {
                           )}
 
                           {isAprovado && lead.creditoAprovadoInfo && !isDesqualificado && (
-                            <div style={{ background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 12, padding: "16px", display: "flex", flexDirection: "column", gap: 12, marginTop: "4px" }}>
+                            <div style={{ background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 12, padding: "16px", display: "flex", flexDirection: "column", gap: 12, marginTop: "0 20px 14px" }}>
                               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                 <ThumbsUp size={18} color="#4ade80" />
                                 <p style={{ fontSize: 14, fontWeight: 800, color: "#4ade80" }}>Crédito Aprovado!</p>

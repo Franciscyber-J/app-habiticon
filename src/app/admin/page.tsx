@@ -220,6 +220,7 @@ export default function AdminPage() {
   const [salvandoAcesso, setSalvandoAcesso] = useState(false);
   const [modalAcessoCorretor, setModalAcessoCorretor] = useState<{corretor: any | null}>({ corretor: null });
   const [salvandoAcessoCorretor, setSalvandoAcessoCorretor] = useState(false);
+  const [filtroEquipeEmp, setFiltroEquipeEmp] = useState<string>("todos");
 
   // ← NOVO: Estado do Modal de Notificações do Telegram
   const [modalNotificacoes, setModalNotificacoes] = useState(false);
@@ -665,6 +666,15 @@ export default function AdminPage() {
     });
   }, [todosLeads, filtroCorretor, filtroStatus]);
 
+  const corretoresFiltrados = useMemo(() => {
+      if (filtroEquipeEmp === "todos") return listaCorretores;
+      return listaCorretores.filter(c => {
+        const todosSlug = empreendimentos.map(e => e.slug);
+        const permitidos: string[] = c.empreendimentosPermitidos ?? todosSlug;
+        return permitidos.includes(filtroEquipeEmp);
+      });
+    }, [listaCorretores, filtroEquipeEmp, empreendimentos]);
+
   const ativos = empreendimentos.filter((e) => e.status === "ativo").length;
   const leadsNaRoletaCount = todosLeads.filter(l => !l.corretorId).length;
 
@@ -901,130 +911,119 @@ export default function AdminPage() {
                                 const qtdePermitidos = (lead.correspondentesPermitidos || []).length;
 
                                 return (
-                                  <motion.div key={lead.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ delay: i * 0.03 }} style={{ padding: "16px 20px", background: "var(--bg-card)", border: estaSolto ? "1px solid rgba(239,68,68,0.5)" : `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? "var(--border-subtle)"}`, borderRadius: 14, display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between", alignItems: "center", position: "relative", overflow: "hidden" }}>
-                                    {estaSolto && <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: "#ef4444" }} />}
-                                    
-                                    {/* LADO ESQUERDO */}
-                                    <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 min-content", minWidth: 200, paddingLeft: estaSolto ? 8 : 0 }}>
-                                      <div style={{ width: 44, height: 44, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: estaSolto ? "rgba(239,68,68,0.15)" : (STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? "var(--terracota-glow)"), border: `1px solid ${estaSolto ? "rgba(239,68,68,0.3)" : (STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? "var(--border-active)")}`, fontSize: 16, fontWeight: 800, color: estaSolto ? "#ef4444" : (STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? "var(--terracota)") }}>
-                                        {(lead.nome || "?")[0].toUpperCase()}
-                                      </div>
-                                      <div style={{ minWidth: 0 }}>
-                                        <p style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.nome}</p>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                          <span style={{ fontSize: 12, color: "var(--gray-mid)", display: "flex", alignItems: "center", gap: 4 }}>
-                                            <Phone size={12} /> {lead.whatsapp}
-                                            {lead.whatsapp2 && <><span style={{ margin: "0 4px", color: "var(--border-subtle)" }}>|</span><Phone size={12} /> {lead.whatsapp2}</>}
-                                          </span>
-                                          <span style={{ fontSize: 11, color: "var(--gray-dark)", display: "flex", alignItems: "center", gap: 4, border: "1px solid var(--border-subtle)", padding: "2px 8px", borderRadius: 6 }}>
-                                            <Clock size={11} /> 
-                                            {lead.timestamp ? new Date(lead.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às") : "Data indisponível"}
-                                          </span>
-                                          {lead.modelo && <span style={{ fontSize: 11, color: "var(--terracota-light)", fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(175,111,83,0.1)" }}>{lead.modelo}</span>}
-                                          {isInterno ? (
-                                            <span style={{ fontSize: 11, color: "#c084fc", fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "rgba(168,85,247,0.15)", display: "flex", alignItems: "center", gap: 4 }}><Building2 size={12} /> Venda Direta</span>
-                                          ) : estaSolto ? (
-                                            <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "rgba(239,68,68,0.15)", display: "flex", alignItems: "center", gap: 4 }}><Flame size={12} /> Lead Livre</span>
-                                          ) : (
-                                            <span style={{ fontSize: 11, color: "#93c5fd", fontWeight: 600, padding: "1px 8px", borderRadius: 5, background: "rgba(96,165,250,0.1)", display: "flex", alignItems: "center", gap: 4 }}><UserIcon size={12} /> {listaCorretores.find(c => c.id === lead.corretorId)?.nome || lead.nomeCorretor || "Não assumido"}</span>
-                                          )}
+                                  <motion.div key={lead.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ delay: i * 0.03 }} style={{ background: "var(--bg-card)", border: estaSolto ? "1px solid rgba(239,68,68,0.3)" : `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? "var(--border-subtle)"}`, borderRadius: 14, display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
+                                    {estaSolto && <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: "#ef4444" }} />}
+
+                                    {/* LINHA 1: INFO + STATUS */}
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 20px", paddingLeft: estaSolto ? 26 : 20 }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+                                        <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, background: estaSolto ? "rgba(239,68,68,0.12)" : (STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? "var(--terracota-glow)"), color: estaSolto ? "#ef4444" : (STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? "var(--terracota)") }}>
+                                          {(lead.nome || "?")[0].toUpperCase()}
+                                        </div>
+                                        <div style={{ minWidth: 0 }}>
+                                          <p style={{ fontSize: 14, fontWeight: 700, color: "white", marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.nome}</p>
+                                          <div style={{ display: "flex", gap: 6, fontSize: 11, color: "var(--gray-mid)", flexWrap: "wrap", alignItems: "center" }}>
+                                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                              <Phone size={11} /> {lead.whatsapp}
+                                              {lead.whatsapp2 && <><span style={{ margin: "0 3px", color: "var(--border-subtle)" }}>|</span><Phone size={11} /> {lead.whatsapp2}</>}
+                                            </span>
+                                            <span style={{ color: "var(--border-subtle)" }}>·</span>
+                                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                              <Clock size={10} />
+                                              {lead.timestamp ? new Date(lead.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às") : "—"}
+                                            </span>
+                                            {lead.modelo && <><span style={{ color: "var(--border-subtle)" }}>·</span><span style={{ color: "var(--terracota-light)", fontWeight: 600 }}>{lead.modelo}</span></>}
+                                            {isInterno && <span style={{ fontSize: 10, color: "#c084fc", fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(168,85,247,0.1)" }}>Venda Direta</span>}
+                                            {estaSolto && <span style={{ fontSize: 10, color: "#ef4444", fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(239,68,68,0.08)" }}>Lead Livre</span>}
+                                            {!isInterno && !estaSolto && <span style={{ fontSize: 10, color: "var(--gray-dark)", fontWeight: 600 }}>{listaCorretores.find(c => c.id === lead.corretorId)?.nome || lead.nomeCorretor || "Sem corretor"}</span>}
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
 
-                                    {/* LADO DIREITO */}
-                                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }} className="w-full sm:w-auto justify-between sm:justify-end">
+                                      {/* Status pill — direita */}
                                       {isDecidido ? (
-                                        <button
-                                          onClick={() => setModalMotivoReprovacao(lead)}
-                                          title={
-                                            lead.origemDesqualificacao === "corretor"
-                                              ? "Desqualificado pelo corretor — clique para ver o motivo"
-                                              : "Bloqueado após análise de crédito — clique para ver o motivo"
-                                          }
-                                          style={{ padding: "7px 12px", borderRadius: 8, display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, cursor: "pointer", border: "none", background: STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? STATUS_LEAD.em_atendimento.bg, color: STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? STATUS_LEAD.em_atendimento.cor, outline: `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? STATUS_LEAD.em_atendimento.border}` }}
-                                        >
-                                          {STATUS_LEAD[statusAjustado as LeadStatus]?.label ?? "Em atendimento"}
-                                          <Lock size={12} />
+                                        <button onClick={() => setModalMotivoReprovacao(lead)} title={lead.origemDesqualificacao === "corretor" ? "Ver motivo" : "Ver motivo"} style={{ padding: "4px 10px", borderRadius: 100, display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, cursor: "pointer", border: "none", flexShrink: 0, background: STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? STATUS_LEAD.em_atendimento.bg, color: STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? STATUS_LEAD.em_atendimento.cor, outline: `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? STATUS_LEAD.em_atendimento.border}` }}>
+                                          {STATUS_LEAD[statusAjustado as LeadStatus]?.label ?? "Em atendimento"} <Lock size={10} />
                                         </button>
                                       ) : (
-                                        <div title="Status atual do lead" style={{ padding: "7px 12px", borderRadius: 8, display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, background: STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? STATUS_LEAD.em_atendimento.bg, color: STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? STATUS_LEAD.em_atendimento.cor, outline: `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? STATUS_LEAD.em_atendimento.border}` }}>
+                                        <div style={{ padding: "4px 10px", borderRadius: 100, display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, flexShrink: 0, background: STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? STATUS_LEAD.em_atendimento.bg, color: STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? STATUS_LEAD.em_atendimento.cor, outline: `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? STATUS_LEAD.em_atendimento.border}` }}>
                                           {STATUS_LEAD[statusAjustado as LeadStatus]?.label ?? "Em atendimento"}
                                         </div>
                                       )}
+                                    </div>
 
+                                    {/* LINHA 2: AÇÕES */}
+                                    <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", padding: "9px 20px", paddingLeft: estaSolto ? 26 : 20, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+
+                                      {/* Acesso correspondentes */}
                                       {listaCorrespondentes.length > 0 && (
-                                        <button
-                                          onClick={() => {
-                                            const leadAtualizado = todosLeads.find(l => l.id === lead.id) || lead;
-                                            setModalAcessoLead(leadAtualizado);
-                                          }}
-                                          title="Gerir acesso dos correspondentes"
-                                          style={{
-                                            padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700,
-                                            display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
-                                            background: qtdePermitidos === 0 ? "rgba(239,68,68,0.1)" : "rgba(74,222,128,0.1)",
-                                            border: qtdePermitidos === 0 ? "1px solid rgba(239,68,68,0.3)" : "1px solid rgba(74,222,128,0.3)",
-                                            color: qtdePermitidos === 0 ? "#f87171" : "#4ade80",
-                                            transition: "0.2s"
-                                          }}
-                                        >
-                                          <ShieldCheck size={14} />
-                                          <span className="hidden sm:inline">
-                                            {qtdePermitidos > 0 ? `${qtdePermitidos} liberado${qtdePermitidos > 1 ? "s" : ""}` : "Acesso Fechado"}
-                                          </span>
+                                        <button onClick={() => { const leadAtualizado = todosLeads.find(l => l.id === lead.id) || lead; setModalAcessoLead(leadAtualizado); }} title="Gerir acesso dos correspondentes" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", background: qtdePermitidos === 0 ? "rgba(239,68,68,0.06)" : "rgba(74,222,128,0.06)", border: qtdePermitidos === 0 ? "1px solid rgba(239,68,68,0.15)" : "1px solid rgba(74,222,128,0.15)", color: qtdePermitidos === 0 ? "#f87171" : "#4ade80" }}>
+                                          <ShieldCheck size={12} />
+                                          {qtdePermitidos > 0 ? `${qtdePermitidos} lib.` : "Acesso fechado"}
                                         </button>
                                       )}
 
+                                      {/* Vincular Lote */}
                                       {isInterno && !lead.loteReserva?.numero && !isDecidido && (
-                                        <button onClick={() => iniciarReservaMapa(lead)} title="Vincular Lote via Mapa" style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, alignItems: "center", cursor: "pointer", transition: "all 0.2s", background: "rgba(168,85,247,0.15)", border: "1px solid rgba(168,85,247,0.3)", color: "#c084fc" }}>
-                                          <MapIcon size={15} /> <span className="hidden sm:inline">Vincular Lote</span>
+                                        <button onClick={() => iniciarReservaMapa(lead)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
+                                          <MapIcon size={12} /> Vincular Lote
                                         </button>
                                       )}
+
+                                      {/* Liberar para roleta */}
                                       {!estaSolto && !isInterno && !isDecidido && (
-                                        <button onClick={() => liberarLeadParaRoleta(lead)} title={`Remover vínculo com ${lead.nomeCorretor || "o corretor"} e liberar para a roleta`} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, display: "flex", gap: 6, alignItems: "center", cursor: "pointer", transition: "all 0.2s", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171" }}>
-                                          <Flame size={14} /> <span className="hidden sm:inline">Liberar</span>
+                                        <button onClick={() => liberarLeadParaRoleta(lead)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-mid)" }}>
+                                          <Flame size={12} /> Liberar
                                         </button>
                                       )}
-                                      <button
-                                        onClick={() => setModalHistoricoAdminId(lead.id)}
-                                        title="Histórico de Atendimento"
-                                        style={{ position: "relative", padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, alignItems: "center", background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.25)", color: "#38bdf8", cursor: "pointer" }}
-                                      >
-                                        <MessageSquare size={15} />
-                                        <span className="hidden sm:inline">Histórico</span>
+
+                                      {/* Histórico */}
+                                      <button onClick={() => setModalHistoricoAdminId(lead.id)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
+                                        <MessageSquare size={12} /> Histórico
                                         {(lead.historicoAtendimento || []).length > 0 && (
-                                          <span style={{ fontSize: 10, fontWeight: 800, background: "#38bdf8", color: "#082f49", padding: "1px 6px", borderRadius: 100 }}>
+                                          <span style={{ fontSize: 9, fontWeight: 800, background: "#38bdf8", color: "#082f49", padding: "1px 5px", borderRadius: 100 }}>
                                             {(lead.historicoAtendimento || []).length}
                                           </span>
                                         )}
                                       </button>
-                                      <button onClick={() => setLeadDossieId(lead.id)} title={temDossie ? "Ver Documentos" : "Nenhum documento ainda"} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, background: temDossie ? "rgba(255,255,255,0.1)" : "transparent", border: temDossie ? "none" : "1px dashed var(--border-subtle)", color: temDossie ? "white" : "var(--gray-mid)", cursor: "pointer", transition: "0.2s" }}>
-                                        <FolderOpen size={15} /> <span className="hidden sm:inline">Dossiê</span>
+
+                                      {/* Dossiê */}
+                                      <button onClick={() => setLeadDossieId(lead.id)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
+                                        <FolderOpen size={12} /> Dossiê
                                       </button>
+
+                                      {/* Simulação */}
                                       {lead.propostaUrl && (
-                                        <a href={lead.propostaUrl} target="_blank" rel="noopener noreferrer" title="Ver Simulação Guardada" style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, background: "rgba(56,189,248,0.1)", border: "1px dashed rgba(56,189,248,0.3)", color: "#38bdf8", cursor: "pointer", transition: "0.2s", textDecoration: "none" }}>
-                                          <FileText size={15} /> <span className="hidden sm:inline">Simulação</span>
+                                        <a href={lead.propostaUrl} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)", textDecoration: "none" }}>
+                                          <FileText size={12} /> Simulação
                                         </a>
                                       )}
+
+                                      {/* Documentos construtora */}
                                       {isAprovado && (
-                                        <button onClick={() => setLeadDocumentosId(lead.id)} style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, display: "flex", gap: 6, alignItems: "center", background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#a78bfa", cursor: "pointer" }} title="Documentos da Construtora">
-                                          <FolderOpen size={15} /> <span className="hidden sm:inline">Documentos</span>
+                                        <button onClick={() => setLeadDocumentosId(lead.id)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
+                                          <FolderOpen size={12} /> Documentos
                                         </button>
                                       )}
-                                      <div style={{ display: "flex", gap: 6 }}>
-                                        <a href={`https://wa.me/55${lead.whatsapp?.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px", borderRadius: 8, background: "rgba(22,163,74,0.15)", border: "1px solid rgba(22,163,74,0.3)", color: "#4ade80", fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
-                                          <MessageCircle size={15} /> WhatsApp
+
+                                      {/* Spacer */}
+                                      <div style={{ flex: 1 }} />
+
+                                      {/* WhatsApp */}
+                                      <a href={`https://wa.me/55${lead.whatsapp?.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.15)", color: "#4ade80", textDecoration: "none" }}>
+                                        <MessageCircle size={12} /> WhatsApp
+                                      </a>
+                                      {lead.whatsapp2 && lead.whatsapp2.replace(/\D/g, "").length >= 10 && (
+                                        <a href={`https://wa.me/55${lead.whatsapp2?.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.15)", color: "#4ade80", textDecoration: "none" }}>
+                                          <MessageCircle size={12} /> Wpp 2
                                         </a>
-                                        {lead.whatsapp2 && lead.whatsapp2.replace(/\D/g, "").length >= 10 && (
-                                          <a href={`https://wa.me/55${lead.whatsapp2?.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px", borderRadius: 8, background: "rgba(22,163,74,0.15)", border: "1px solid rgba(22,163,74,0.3)", color: "#4ade80", fontSize: 13, fontWeight: 700, textDecoration: "none" }} title="Chamar no WhatsApp Secundário">
-                                            <MessageCircle size={15} /> Whats 2
-                                          </a>
-                                        )}
-                                      </div>
-                                      <button onClick={() => deletarLead(lead.id)} title="Excluir lead" style={{ width: 36, height: 36, borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", cursor: "pointer" }}>
-                                        <Trash2 size={15} />
+                                      )}
+
+                                      {/* Lixeira */}
+                                      <button onClick={() => deletarLead(lead.id)} title="Excluir lead" style={{ width: 28, height: 28, borderRadius: 7, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "1px solid rgba(239,68,68,0.15)", color: "rgba(248,113,113,0.5)", cursor: "pointer" }}>
+                                        <Trash2 size={12} />
                                       </button>
+
                                     </div>
                                   </motion.div>
                                 );
@@ -1045,9 +1044,26 @@ export default function AdminPage() {
               {tab === "equipe" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                   <GestaoComissoes leads={todosLeads} empreendimentos={empreendimentos} corretores={listaCorretores} />
-                  <div style={{ background: "rgba(167,139,250,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(167,139,250,0.2)", display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-                    <Wallet size={18} color="#a78bfa" style={{ flexShrink: 0 }} />
-                    <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>Aqui você visualiza os dados cadastrais e financeiros (PIX/Bancários) que os corretores preencheram nos seus painéis.</p>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 8 }}>
+                    <div style={{ background: "rgba(167,139,250,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(167,139,250,0.2)", display: "flex", alignItems: "center", gap: 12, flex: "1 1 300px" }}>
+                      <Wallet size={18} color="#a78bfa" style={{ flexShrink: 0 }} />
+                      <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>Aqui você visualiza os dados cadastrais e financeiros (PIX/Bancários) que os corretores preencheram nos seus painéis.</p>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-card)", padding: "12px 16px", borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
+                      <Users size={16} color="var(--terracota)" />
+                      <select
+                        value={filtroEquipeEmp}
+                        onChange={e => setFiltroEquipeEmp(e.target.value)}
+                        style={{ background: "transparent", border: "none", color: "white", fontSize: 13, fontWeight: 600, outline: "none", cursor: "pointer" }}
+                      >
+                        <option value="todos" style={{ background: "#1a2e23" }}>Todos os Empreendimentos ({listaCorretores.length})</option>
+                        {empreendimentos.map(emp => (
+                          <option key={emp.slug} value={emp.slug} style={{ background: "#1a2e23" }}>
+                            {emp.nome} ({listaCorretores.filter(c => (c.empreendimentosPermitidos ?? empreendimentos.map(e => e.slug)).includes(emp.slug)).length})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   {listaCorretores.length === 0 ? (
                     <div style={{ padding: "64px 24px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.2)", border: "1px dashed var(--border-subtle)" }}>
@@ -1055,7 +1071,7 @@ export default function AdminPage() {
                     </div>
                   ) : (
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
-                      {listaCorretores.map((corretor) => (
+                      {corretoresFiltrados.map((corretor) => (
                         <div key={corretor.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
                           <div style={{ padding: "20px", borderBottom: "1px solid var(--border-subtle)", background: "rgba(0,0,0,0.15)", display: "flex", gap: 14, alignItems: "center" }}>
                             <div style={{ width: 46, height: 46, borderRadius: 12, background: "rgba(167,139,250,0.15)", color: "#a78bfa", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "1px solid rgba(167,139,250,0.3)" }}>

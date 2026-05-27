@@ -345,47 +345,46 @@ export default function PainelCoordenador() {
                   const nomeCorretor = listaCorretores.find(c => c.id === lead.corretorId)?.nome || lead.nomeCorretor || "Desconhecido";
                   
                   return (
-                    <div key={lead.id} style={{ background: "var(--bg-card)", padding: "16px 20px", borderRadius: 14, border: estaSolto ? "1px solid rgba(239,68,68,0.4)" : "1px solid var(--border-subtle)", display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 min-content", minWidth: 200 }}>
-                        <div style={{ width: 44, height: 44, borderRadius: 12, background: estaSolto ? "rgba(239,68,68,0.15)" : "var(--terracota-glow)", color: estaSolto ? "#ef4444" : "var(--terracota)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, flexShrink: 0 }}>
-                          {(lead.nome || "?")[0].toUpperCase()}
-                        </div>
-                        <div style={{ minWidth: 0 }}>
-                          <p style={{ fontWeight: 700, color: "white", marginBottom: 4, fontSize: 15 }}>{lead.nome}</p>
-                          <div style={{ display: "flex", gap: 8, fontSize: 12, color: "var(--gray-mid)", flexWrap: "wrap", alignItems: "center" }}>
-                            {estaSolto ? (
-                              <span style={{ color: "#ef4444", fontWeight: 700 }}>Sem Corretor</span>
-                            ) : (
-                              <span style={{ color: "#93c5fd", fontWeight: 600 }} title="Corretor responsável">{nomeCorretor}</span>
-                            )}
-                            <span style={{ color: "var(--border-subtle)" }}>•</span>
-                            <span>{lead.empreendimentoNome}</span>
-                            <span style={{ color: "var(--border-subtle)" }}>•</span>
-                            <span style={{ color: "var(--terracota-light)" }}>{lead.modelo}</span>
+                    <div key={lead.id} style={{ background: "var(--bg-card)", borderRadius: 14, border: estaSolto ? "1px solid rgba(239,68,68,0.3)" : "1px solid var(--border-subtle)", display: "flex", flexDirection: "column" }}>
+
+                      {/* LINHA 1: INFO + STATUS */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 20px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+                          <div style={{ width: 38, height: 38, borderRadius: 10, background: estaSolto ? "rgba(239,68,68,0.12)" : "var(--terracota-glow)", color: estaSolto ? "#ef4444" : "var(--terracota)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 15, flexShrink: 0 }}>
+                            {(lead.nome || "?")[0].toUpperCase()}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ fontWeight: 700, color: "white", fontSize: 14, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.nome}</p>
+                            <div style={{ display: "flex", gap: 6, fontSize: 11, color: "var(--gray-mid)", flexWrap: "wrap", alignItems: "center" }}>
+                              {estaSolto ? (
+                                <span style={{ color: "#ef4444", fontWeight: 700 }}>Sem Corretor</span>
+                              ) : (
+                                <span style={{ color: "#93c5fd", fontWeight: 600 }}>{nomeCorretor}</span>
+                              )}
+                              <span style={{ color: "var(--border-subtle)" }}>·</span>
+                              <span>{lead.empreendimentoNome}</span>
+                              {lead.modelo && <><span style={{ color: "var(--border-subtle)" }}>·</span><span style={{ color: "var(--terracota-light)", fontWeight: 600 }}>{lead.modelo}</span></>}
+                            </div>
                           </div>
                         </div>
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 11, padding: "6px 10px", borderRadius: 6, fontWeight: 700, textTransform: "uppercase", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "var(--gray-light)" }}>
+                        <span style={{ padding: "4px 10px", borderRadius: 100, fontSize: 11, fontWeight: 700, flexShrink: 0, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "var(--gray-light)" }}>
                           {lead.status ? lead.status.replace(/_/g, " ") : "Novo"}
                         </span>
-                        
-                        <button
-                          onClick={() => setLeadDossieId(lead.id)}
-                          style={{ padding: "6px 12px", background: "rgba(255,255,255,0.1)", borderRadius: 6, fontSize: 12, fontWeight: 700, display: "flex", gap: 6, border: "none", color: "white", cursor: "pointer" }}
-                        >
-                          <FolderOpen size={14} /> Ver Dossiê
+                      </div>
+
+                      {/* LINHA 2: AÇÕES */}
+                      <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", padding: "9px 20px", display: "flex", alignItems: "center", gap: 5 }}>
+                        <button onClick={() => setLeadDossieId(lead.id)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
+                          <FolderOpen size={12} /> Ver Dossiê
                         </button>
-
                         {lead.propostaUrl && (
-                           <a href={lead.propostaUrl} target="_blank" rel="noopener noreferrer" style={{ padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700, display: "flex", gap: 6, background: "rgba(56,189,248,0.1)", border: "1px dashed rgba(56,189,248,0.3)", color: "#38bdf8", textDecoration: "none" }}>
-                             <FileText size={14} /> PDF
-                           </a>
+                          <a href={lead.propostaUrl} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)", textDecoration: "none" }}>
+                            <FileText size={12} /> PDF
+                          </a>
                         )}
-
-                        <a href={`https://wa.me/55${(lead.whatsapp || "").replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" style={{ padding: "6px 12px", background: "rgba(22,163,74,0.15)", border: "1px solid rgba(22,163,74,0.3)", borderRadius: 6, fontSize: 12, fontWeight: 700, display: "flex", gap: 6, textDecoration: "none", color: "#4ade80" }}>
-                          <MessageCircle size={14} /> Wpp
+                        <div style={{ flex: 1 }} />
+                        <a href={`https://wa.me/55${(lead.whatsapp || "").replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.15)", color: "#4ade80", textDecoration: "none" }}>
+                          <MessageCircle size={12} /> WhatsApp
                         </a>
                       </div>
                     </div>
