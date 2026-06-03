@@ -5,7 +5,7 @@ import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs } from "firebase/firestore";
 import Image from "next/image";
-import { Users, LogOut, MessageCircle, Building2, MessageSquare, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw, FileText, ExternalLink, Info, ThumbsUp, Share2, Copy, UserCircle, Save, X, Map as MapIcon, Home, Phone } from "lucide-react";
+import { Users, ShieldCheck, LogOut, MessageCircle, Building2, MessageSquare, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw, FileText, ExternalLink, Info, ThumbsUp, Share2, Copy, UserCircle, Save, X, Map as MapIcon, Home, Phone, Lock, CheckCircle2 } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { MapaInterativo } from "@/components/mapa/MapaInterativo";
 import { formatBRL } from "@/lib/calculos";
@@ -47,6 +47,7 @@ interface LeadData {
     valorVenda: number;
   };
   propostaUrl?: string;
+  correspondentesInfo?: Array<{ id: string; nome: string }>;
 }
 
 interface GrupoLeads {
@@ -141,6 +142,7 @@ export default function PainelCorretor() {
 
   // ── MODAL NÃO QUALIFICADO ──
   const [modalNaoQualificado, setModalNaoQualificado] = useState<{aberto: boolean, lead: LeadData | null}>({aberto: false, lead: null});
+  const [modalStatusCorretor, setModalStatusCorretor] = useState<LeadData | null>(null);
   const [motivoNaoQualificado, setMotivoNaoQualificado] = useState("");
 
   // ── AUTENTICAÇÃO E VALIDAÇÃO DE ROLE ──
@@ -735,12 +737,24 @@ const publicarHistorico = async () => {
                                     {lead.timestamp ? new Date(lead.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às") : ""}
                                   </span>
                                   {lead.modelo && (<><span style={{ color: "var(--border-subtle)" }}>·</span><span style={{ color: "var(--terracota-light)", fontWeight: 600 }}>{lead.modelo}</span></>)}
+                                  {lead.correspondentesInfo && lead.correspondentesInfo.length > 0 && (
+                                    <><span style={{ color: "var(--border-subtle)" }}>·</span>
+                                    <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#38bdf8", fontWeight: 600 }}>
+                                      <ShieldCheck size={10} /> CB: {lead.correspondentesInfo.map((c: any) => c.nome).join(", ")}
+                                    </span></>
+                                  )}
                                 </div>
                               </div>
                             </div>
-                            <span style={{ padding: "4px 10px", borderRadius: 100, fontSize: 11, fontWeight: 700, flexShrink: 0, background: bgStatus, border: `1px solid ${borderStatus}`, color: colorStatus }}>
-                              {lead.status ? lead.status.replace(/_/g, " ") : "Novo"}
-                            </span>
+                            {(isAprovado || isReprovado) ? (
+                              <button onClick={() => setModalStatusCorretor(lead)} title={isAprovado ? "Ver detalhes da aprovação" : "Ver motivo da reprovação"} style={{ padding: "4px 10px", borderRadius: 100, fontSize: 11, fontWeight: 700, flexShrink: 0, background: bgStatus, border: `1px solid ${borderStatus}`, color: colorStatus, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                                {lead.status ? lead.status.replace(/_/g, " ") : "Novo"} <Lock size={9} />
+                              </button>
+                            ) : (
+                              <span style={{ padding: "4px 10px", borderRadius: 100, fontSize: 11, fontWeight: 700, flexShrink: 0, background: bgStatus, border: `1px solid ${borderStatus}`, color: colorStatus }}>
+                                {lead.status ? lead.status.replace(/_/g, " ") : "Novo"}
+                              </span>
+                            )}
                           </div>
 
                           {/* LINHA 2: AÇÕES */}
@@ -1477,6 +1491,67 @@ const publicarHistorico = async () => {
                   {salvandoHistorico ? "Publicando..." : "Publicar Anotação"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+{/* MODAL: STATUS DO LEAD (APROVADO / REPROVADO) */}
+      {modalStatusCorretor && (
+        <div onClick={(e) => { if (e.target === e.currentTarget) setModalStatusCorretor(null); }} style={{ position: "fixed", inset: 0, zIndex: 160, background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", width: "100%", maxWidth: 460, borderRadius: 20, overflow: "hidden", border: (modalStatusCorretor.status === "qualificado" || modalStatusCorretor.status === "credito_aprovado") ? "1px solid rgba(74,222,128,0.3)" : "1px solid rgba(239,68,68,0.3)" }}>
+            <div style={{ padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: (modalStatusCorretor.status === "qualificado" || modalStatusCorretor.status === "credito_aprovado") ? "1px solid rgba(74,222,128,0.2)" : "1px solid rgba(239,68,68,0.2)", background: (modalStatusCorretor.status === "qualificado" || modalStatusCorretor.status === "credito_aprovado") ? "rgba(74,222,128,0.06)" : "rgba(239,68,68,0.06)" }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, display: "flex", alignItems: "center", gap: 8, color: (modalStatusCorretor.status === "qualificado" || modalStatusCorretor.status === "credito_aprovado") ? "#4ade80" : "#f87171" }}>
+                  {(modalStatusCorretor.status === "qualificado" || modalStatusCorretor.status === "credito_aprovado")
+                    ? <><CheckCircle2 size={18} /> Crédito Aprovado</>
+                    : <><Lock size={18} /> Crédito Reprovado</>}
+                </h3>
+                <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>Cliente: <strong style={{ color: "var(--gray-light)" }}>{modalStatusCorretor.nome}</strong></p>
+              </div>
+              <button onClick={() => setModalStatusCorretor(null)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+            </div>
+            <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 14 }}>
+              {(modalStatusCorretor.status === "qualificado" || modalStatusCorretor.status === "credito_aprovado") ? (
+                modalStatusCorretor.creditoAprovadoInfo ? (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <div style={{ padding: "14px 16px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
+                        <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Valor Liberado</p>
+                        <p style={{ fontSize: 18, fontWeight: 800, color: "white" }}>R$ {modalStatusCorretor.creditoAprovadoInfo.valorAprovado?.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                      </div>
+                      <div style={{ padding: "14px 16px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
+                        <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Parcela Estimada</p>
+                        <p style={{ fontSize: 18, fontWeight: 800, color: "white" }}>R$ {modalStatusCorretor.creditoAprovadoInfo.valorParcela?.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                      </div>
+                    </div>
+                    {modalStatusCorretor.creditoAprovadoInfo.observacoes && (
+                      <div style={{ padding: "12px 14px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid var(--border-subtle)", borderLeft: "3px solid rgba(74,222,128,0.4)" }}>
+                        <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Condicionantes</p>
+                        <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>{modalStatusCorretor.creditoAprovadoInfo.observacoes}</p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ padding: "14px 16px", background: "rgba(74,222,128,0.06)", borderRadius: 10, border: "1px solid rgba(74,222,128,0.15)" }}>
+                    <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>Este lead foi <strong style={{ color: "#4ade80" }}>qualificado</strong> e está pronto para avançar no financiamento.</p>
+                  </div>
+                )
+              ) : (
+                modalStatusCorretor.motivoReprovacao ? (
+                  <div style={{ padding: "12px 14px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid var(--border-subtle)", borderLeft: "3px solid rgba(239,68,68,0.4)" }}>
+                    <p style={{ fontSize: 11, fontWeight: 600, marginBottom: 6, color: (modalStatusCorretor as any).origemDesqualificacao === "corretor" ? "#fb923c" : "var(--gray-mid)" }}>
+                      {(modalStatusCorretor as any).origemDesqualificacao === "corretor" ? "Desqualificado pelo Corretor" : "Reprovado pela Análise de Crédito"}
+                    </p>
+                    <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>{modalStatusCorretor.motivoReprovacao}</p>
+                  </div>
+                ) : (
+                  <div style={{ padding: "14px 16px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px dashed var(--border-subtle)" }}>
+                    <p style={{ fontSize: 13, color: "var(--gray-dark)", fontStyle: "italic" }}>Nenhum motivo foi registrado.</p>
+                  </div>
+                )
+              )}
+              <button onClick={() => setModalStatusCorretor(null)} style={{ padding: "12px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>Fechar</button>
             </div>
           </div>
         </div>

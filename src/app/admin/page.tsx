@@ -57,6 +57,7 @@ interface Lead {
   documentosConstrutora?: any;
   propostaUrl?: string;
   correspondentesPermitidos?: string[]; // ← LISTA BRANCA (Tudo fechado por padrão)
+  correspondentesInfo?: Array<{ id: string; nome: string }>;
   motivoReprovacao?: string;
   origemDesqualificacao?: string;
   historicoAtendimento?: {
@@ -213,6 +214,7 @@ export default function AdminPage() {
   // Estado do Modal de Acesso de Correspondentes
   const [modalAcessoLead, setModalAcessoLead] = useState<Lead | null>(null);
   const [modalMotivoReprovacao, setModalMotivoReprovacao] = useState<Lead | null>(null);
+  const [modalAprovacao, setModalAprovacao] = useState<Lead | null>(null);
   const [modalHistoricoAdminId, setModalHistoricoAdminId] = useState<string | null>(null);
   const modalHistoricoAdminLead = todosLeads.find(l => l.id === modalHistoricoAdminId) || null;
   const [novoHistoricoAdmin, setNovoHistoricoAdmin] = useState("");
@@ -577,11 +579,18 @@ export default function AdminPage() {
         ? permitidosAtuais.filter(id => id !== correspondentId)
         : [...permitidosAtuais, correspondentId];
 
+      const infoAtuais: Array<{ id: string; nome: string }> = (modalAcessoLead as any).correspondentesInfo || [];
+      const correspondente = listaCorrespondentes.find(c => c.id === correspondentId);
+      const novasInfos = jaPermitido
+        ? infoAtuais.filter(c => c.id !== correspondentId)
+        : [...infoAtuais, { id: correspondentId, nome: correspondente?.nome || correspondentId }];
+
       await updateDoc(doc(db, "leads", modalAcessoLead.id), {
-        correspondentesPermitidos: novosPermitidos
+        correspondentesPermitidos: novosPermitidos,
+        correspondentesInfo: novasInfos
       });
 
-      setModalAcessoLead(prev => prev ? { ...prev, correspondentesPermitidos: novosPermitidos } : null);
+      setModalAcessoLead(prev => prev ? { ...prev, correspondentesPermitidos: novosPermitidos, correspondentesInfo: novasInfos } : null);
     } catch (error) {
       console.error("Erro ao alterar acesso:", error);
       alert("Erro ao salvar. Tente novamente.");
@@ -936,14 +945,24 @@ export default function AdminPage() {
                                             {isInterno && <span style={{ fontSize: 10, color: "#c084fc", fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(168,85,247,0.1)" }}>Venda Direta</span>}
                                             {estaSolto && <span style={{ fontSize: 10, color: "#ef4444", fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(239,68,68,0.08)" }}>Lead Livre</span>}
                                             {!isInterno && !estaSolto && <span style={{ fontSize: 10, color: "var(--gray-dark)", fontWeight: 600 }}>{listaCorretores.find(c => c.id === lead.corretorId)?.nome || lead.nomeCorretor || "Sem corretor"}</span>}
+                                            {lead.correspondentesInfo && lead.correspondentesInfo.length > 0 && (
+                                              <><span style={{ color: "var(--border-subtle)" }}>·</span>
+                                              <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#38bdf8", fontWeight: 600 }}>
+                                                <ShieldCheck size={10} /> CB: {lead.correspondentesInfo.map(c => c.nome).join(", ")}
+                                              </span></>
+                                            )}
                                           </div>
                                         </div>
                                       </div>
 
                                       {/* Status pill — direita */}
-                                      {isDecidido ? (
+                                      {isReprovado ? (
                                         <button onClick={() => setModalMotivoReprovacao(lead)} title={lead.origemDesqualificacao === "corretor" ? "Ver motivo" : "Ver motivo"} style={{ padding: "4px 10px", borderRadius: 100, display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, cursor: "pointer", border: "none", flexShrink: 0, background: STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? STATUS_LEAD.em_atendimento.bg, color: STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? STATUS_LEAD.em_atendimento.cor, outline: `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? STATUS_LEAD.em_atendimento.border}` }}>
                                           {STATUS_LEAD[statusAjustado as LeadStatus]?.label ?? "Em atendimento"} <Lock size={10} />
+                                        </button>
+                                      ) : isAprovado ? (
+                                        <button onClick={() => setModalAprovacao(lead)} title="Ver detalhes da aprovação" style={{ padding: "4px 10px", borderRadius: 100, display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, cursor: "pointer", border: "none", flexShrink: 0, background: STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? STATUS_LEAD.em_atendimento.bg, color: STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? STATUS_LEAD.em_atendimento.cor, outline: `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? STATUS_LEAD.em_atendimento.border}` }}>
+                                          {STATUS_LEAD[statusAjustado as LeadStatus]?.label ?? "Em atendimento"}
                                         </button>
                                       ) : (
                                         <div style={{ padding: "4px 10px", borderRadius: 100, display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, flexShrink: 0, background: STATUS_LEAD[statusAjustado as LeadStatus]?.bg ?? STATUS_LEAD.em_atendimento.bg, color: STATUS_LEAD[statusAjustado as LeadStatus]?.cor ?? STATUS_LEAD.em_atendimento.cor, outline: `1px solid ${STATUS_LEAD[statusAjustado as LeadStatus]?.border ?? STATUS_LEAD.em_atendimento.border}` }}>
@@ -1556,6 +1575,54 @@ export default function AdminPage() {
                   {salvandoHistoricoAdmin ? "Publicando..." : "Publicar Nota"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+{/* MODAL: DETALHES DA APROVAÇÃO */}
+      {modalAprovacao && (
+        <div onClick={(e) => { if (e.target === e.currentTarget) setModalAprovacao(null); }} style={{ position: "fixed", inset: 0, zIndex: 260, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid rgba(74,222,128,0.3)", borderRadius: 20, width: "100%", maxWidth: 460, overflow: "hidden" }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(74,222,128,0.2)", background: "rgba(74,222,128,0.06)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: "#4ade80", display: "flex", alignItems: "center", gap: 8 }}>
+                  <CheckCircle2 size={18} /> Crédito Qualificado
+                </h3>
+                <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>
+                  Lead: <strong style={{ color: "var(--gray-light)" }}>{modalAprovacao.nome}</strong>
+                </p>
+              </div>
+              <button onClick={() => setModalAprovacao(null)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+            </div>
+            <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 14 }}>
+              {(modalAprovacao as any).creditoAprovadoInfo ? (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div style={{ padding: "14px 16px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
+                      <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Valor Liberado</p>
+                      <p style={{ fontSize: 18, fontWeight: 800, color: "white" }}>R$ {(modalAprovacao as any).creditoAprovadoInfo.valorAprovado?.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div style={{ padding: "14px 16px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
+                      <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Parcela Estimada</p>
+                      <p style={{ fontSize: 18, fontWeight: 800, color: "white" }}>R$ {(modalAprovacao as any).creditoAprovadoInfo.valorParcela?.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                  {(modalAprovacao as any).creditoAprovadoInfo.observacoes && (
+                    <div style={{ padding: "12px 14px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid var(--border-subtle)", borderLeft: "3px solid rgba(74,222,128,0.4)" }}>
+                      <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Condicionantes</p>
+                      <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>{(modalAprovacao as any).creditoAprovadoInfo.observacoes}</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ padding: "14px 16px", background: "rgba(74,222,128,0.06)", borderRadius: 10, border: "1px solid rgba(74,222,128,0.15)" }}>
+                  <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>
+                    Este lead foi <strong style={{ color: "#4ade80" }}>qualificado</strong> e está pronto para avançar no processo de financiamento.
+                  </p>
+                </div>
+              )}
+              <button onClick={() => setModalAprovacao(null)} style={{ padding: "12px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>Fechar</button>
             </div>
           </div>
         </div>

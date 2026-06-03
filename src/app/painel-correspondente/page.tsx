@@ -35,6 +35,7 @@ interface LeadData {
   correspondentesPermitidos?: string[]; // ← LISTA BRANCA (Tudo fechado por padrão)
   motivoReprovacao?: string;
   origemDesqualificacao?: string;
+  correspondentesInfo?: Array<{ id: string; nome: string }>;
   simulacao?: {
     valorImovel: number;
     valorAvaliacao?: number;
@@ -361,12 +362,24 @@ export default function PainelCorrespondente() {
                               {lead.nomeCorretor && (
                                 <span style={{ fontSize: 10, color: "var(--gray-dark)", fontWeight: 600 }}>· {lead.nomeCorretor}</span>
                               )}
+                              {(lead as any).correspondentesInfo && (lead as any).correspondentesInfo.length > 0 && (
+                                <><span style={{ color: "var(--border-subtle)" }}>·</span>
+                                <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#38bdf8", fontWeight: 600 }}>
+                                  <ShieldCheck size={10} /> CB: {(lead as any).correspondentesInfo.map((c: any) => c.nome).join(", ")}
+                                </span></>
+                              )}
                             </div>
                           </div>
                         </div>
-                        <span style={{ padding: "4px 10px", borderRadius: 100, fontSize: 11, fontWeight: 700, flexShrink: 0, background: statusBg, color: statusColor, border: `1px solid ${statusColor}40` }}>
-                          {statusLabel}
-                        </span>
+                        {(estaAprovado || lead.status === "nao_qualificado" || lead.status === "credito_reprovado") ? (
+                          <button onClick={() => setLeadAnaliseId(lead.id)} title="Ver detalhes" style={{ padding: "4px 10px", borderRadius: 100, fontSize: 11, fontWeight: 700, flexShrink: 0, background: statusBg, color: statusColor, border: `1px solid ${statusColor}40`, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                            {statusLabel} <span style={{ fontSize: 10, opacity: 0.7 }}>↗</span>
+                          </button>
+                        ) : (
+                          <span style={{ padding: "4px 10px", borderRadius: 100, fontSize: 11, fontWeight: 700, flexShrink: 0, background: statusBg, color: statusColor, border: `1px solid ${statusColor}40` }}>
+                            {statusLabel}
+                          </span>
+                        )}
                       </div>
 
                       {/* LINHA 2: AÇÕES */}
