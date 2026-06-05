@@ -985,7 +985,7 @@ export default function AdminPage() {
                                       )}
 
                                       {/* Vincular Lote */}
-                                      {!lead.loteReserva?.numero && !isDecidido && (
+                                      {!lead.loteReserva?.numero && !isReprovado && (
                                         <button onClick={() => iniciarReservaMapa(lead)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
                                           <MapIcon size={12} /> Vincular Lote
                                         </button>
