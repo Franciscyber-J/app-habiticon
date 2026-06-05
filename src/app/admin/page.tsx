@@ -180,7 +180,7 @@ export default function AdminPage() {
   const [listaCorretores, setListaCorretores] = useState<any[]>([]);
   const [listaCorrespondentes, setListaCorrespondentes] = useState<any[]>([]); // ← NOVO
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
-  const [filtroStatus, setFiltroStatus] = useState<string>("todos");
+  const [filtroStatus, setFiltroStatus] = useState<string>("ativos");
   const [filtroEmpreendimento, setFiltroEmpreendimento] = useState<string>("todos");
 
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
@@ -667,6 +667,7 @@ export default function AdminPage() {
       // Filtro de status
       const matchStatus =
         filtroStatus === "todos" ||
+        (filtroStatus === "ativos"         && lead.status !== "nao_qualificado" && lead.status !== "credito_reprovado") ||
         (filtroStatus === "em_atendimento" && (lead.status === "em_atendimento" || lead.status === "com_pendencia")) ||
         (filtroStatus === "qualificado"    && (lead.status === "qualificado"    || lead.status === "credito_aprovado")) ||
         (filtroStatus === "nao_qualificado"&& (lead.status === "nao_qualificado"|| lead.status === "credito_reprovado"));
@@ -855,6 +856,7 @@ export default function AdminPage() {
                         onChange={(e) => setFiltroStatus(e.target.value)}
                         style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 14, outline: "none", minWidth: 200, cursor: "pointer" }}
                       >
+                        <option value="ativos">🟢 Ativos (padrão)</option>
                         <option value="todos">Todos os Status</option>
                         <option value="em_atendimento">⏳ Em Atendimento</option>
                         <option value="qualificado">✅ Qualificado</option>
@@ -983,7 +985,7 @@ export default function AdminPage() {
                                       )}
 
                                       {/* Vincular Lote */}
-                                      {isInterno && !lead.loteReserva?.numero && !isDecidido && (
+                                      {!lead.loteReserva?.numero && !isDecidido && (
                                         <button onClick={() => iniciarReservaMapa(lead)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
                                           <MapIcon size={12} /> Vincular Lote
                                         </button>
