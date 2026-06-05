@@ -495,7 +495,7 @@ export default function AdminPage() {
       const loteRef = doc(db, "empreendimentos", mapaReserva.emp.slug, "quadras", loteReservaModal.quadraId, "lotes", loteReservaModal.id);
       await updateDoc(loteRef, {
         status: "vendido",
-        fila: arrayUnion({ leadId: mapaReserva.lead.id, nomeCliente: mapaReserva.lead.nome, nomeCorretor: "Venda Direta (House)", modeloCasa: modeloSelecionado.nome, valorVenda: formReserva.valor, timestamp: new Date().toISOString() })
+        fila: arrayUnion({ leadId: mapaReserva.lead.id, nomeCliente: mapaReserva.lead.nome, nomeCorretor: mapaReserva.lead.nomeCorretor || "Venda Direta (House)", modeloCasa: modeloSelecionado.nome, valorVenda: formReserva.valor, timestamp: new Date().toISOString() })
       });
       alert("Lote vinculado e Venda aprovada com sucesso! O cliente já consta na aba de Recebíveis.");
       setLoteReservaModal(null); setMapaReserva({ aberto: false, lead: null, emp: null });

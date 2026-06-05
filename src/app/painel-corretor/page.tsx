@@ -759,7 +759,7 @@ const publicarHistorico = async () => {
 
                           {/* LINHA 2: AÇÕES */}
                           <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", padding: "9px 20px", display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-                            {!estaSolto && !isReprovado && !isDesqualificado && !isAprovado && (
+                            {!estaSolto && !isReprovado && !isDesqualificado && !lead.loteReserva && (
                               <button onClick={() => abrirMapaParaLead(lead)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
                                 <MapIcon size={12} /> Mapa de Lotes
                               </button>
