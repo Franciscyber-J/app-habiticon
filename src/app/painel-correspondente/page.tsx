@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, query, where, onSnapshot, doc, getDoc, getDocs } from "firebase/firestore";
@@ -8,7 +8,7 @@ import Image from "next/image";
 import {
   LogOut, Building2, Phone, Calendar, Search, Filter,
   ShieldCheck, CheckCircle2, Clock, AlertCircle, User as UserIcon, FolderOpen,
-  Bed, Maximize, FileText, ExternalLink, Info
+  Bed, Maximize, FileText, ExternalLink, Info, Briefcase
 } from "lucide-react";
 import { AnaliseModal } from "@/components/correspondente/AnaliseModal";
 import { DocumentosConstrutorModal, SLOTS_FIXOS } from "@/components/admin/DocumentosConstrutorModal";
@@ -362,12 +362,26 @@ export default function PainelCorrespondente() {
                               {lead.nomeCorretor && (
                                 <span style={{ fontSize: 10, color: "var(--gray-dark)", fontWeight: 600 }}>· {lead.nomeCorretor}</span>
                               )}
-                              {(lead as any).correspondentesInfo && (lead as any).correspondentesInfo.length > 0 && (
-                                <><span style={{ color: "var(--border-subtle)" }}>·</span>
-                                <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#38bdf8", fontWeight: 600 }}>
-                                  <ShieldCheck size={10} /> CB: {(lead as any).correspondentesInfo.map((c: any) => c.nome).join(", ")}
-                                </span></>
-                              )}
+                              {(lead as any).correspondentesInfo && (lead as any).correspondentesInfo.length > 0 &&
+                                ((lead as any).correspondentesInfo as any[])
+                                  .filter((c: any) => (c.correspondencia ?? true) || (c.consultoria ?? false))
+                                  .map((c: any) => {
+                                    const hasCB = c.correspondencia ?? true;
+                                    const hasCons = c.consultoria ?? false;
+                                    return (
+                                      <Fragment key={c.id}>
+                                        <span style={{ color: "var(--border-subtle)" }}>·</span>
+                                        <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600 }}>
+                                          {hasCB && <ShieldCheck size={10} color="#38bdf8" />}
+                                          {hasCons && <Briefcase size={10} color="#a78bfa" />}
+                                          <span style={{ color: hasCB && hasCons ? "var(--gray-light)" : hasCB ? "#38bdf8" : "#a78bfa" }}>
+                                            {hasCB && hasCons ? `CB + Consultoria: ${c.nome}` : hasCB ? `CB: ${c.nome}` : `Consultoria: ${c.nome}`}
+                                          </span>
+                                        </span>
+                                      </Fragment>
+                                    );
+                                  })
+                              }
                             </div>
                           </div>
                         </div>

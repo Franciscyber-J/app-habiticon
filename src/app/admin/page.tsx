@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
@@ -12,7 +12,7 @@ import {
   Building2, Settings, Users, MapPin, Clock,
   ToggleLeft, ToggleRight, Plus, ExternalLink,
   ArrowLeft, ChevronRight, Phone, MessageCircle, MessageSquare,
-  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info, Printer, Wallet, UserCircle, Map as MapIcon, X, Menu, ShieldCheck, ToggleLeft as EyeOff, ToggleRight as EyeOn
+  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info, Printer, Wallet, UserCircle, Map as MapIcon, X, Menu, ShieldCheck, ToggleLeft as EyeOff, ToggleRight as EyeOn, Briefcase
 } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { DocumentosConstrutorModal } from "@/components/admin/DocumentosConstrutorModal";
@@ -568,31 +568,61 @@ export default function AdminPage() {
     }
   };
 
-  const toggleAcessoCorrespondente = async (correspondentId: string) => {
+  const toggleFuncaoCorrespondente = async (correspondentId: string, funcao: 'correspondencia' | 'consultoria', novoValor: boolean) => {
     if (!modalAcessoLead) return;
     setSalvandoAcesso(true);
     try {
-      const permitidosAtuais: string[] = modalAcessoLead.correspondentesPermitidos || [];
-      const jaPermitido = permitidosAtuais.includes(correspondentId);
-      
-      const novosPermitidos = jaPermitido
-        ? permitidosAtuais.filter(id => id !== correspondentId)
-        : [...permitidosAtuais, correspondentId];
-
-      const infoAtuais: Array<{ id: string; nome: string }> = (modalAcessoLead as any).correspondentesInfo || [];
       const correspondente = listaCorrespondentes.find(c => c.id === correspondentId);
-      const novasInfos = jaPermitido
-        ? infoAtuais.filter(c => c.id !== correspondentId)
-        : [...infoAtuais, { id: correspondentId, nome: correspondente?.nome || correspondentId }];
+      const permitidosAtuais = modalAcessoLead.correspondentesPermitidos || [];
+      const infoAtuais = (modalAcessoLead as any).correspondentesInfo || [];
 
+      // Normaliza todos os existentes (retrocompatibilidade: sem flags = CB=true)
+      const infoNormalizada: Array<{ id: string; nome: string; correspondencia: boolean; consultoria: boolean }> =
+        listaCorrespondentes
+          .filter(c => permitidosAtuais.includes(c.id))
+          .map(c => {
+            const ex = infoAtuais.find((i: any) => i.id === c.id);
+            return {
+              id: c.id,
+              nome: c.nome,
+              correspondencia: ex ? (ex.correspondencia ?? true) : true,
+              consultoria:     ex ? (ex.consultoria     ?? false) : false,
+            };
+          });
+
+      const entradaExistente = infoNormalizada.find(c => c.id === correspondentId);
+      let novasInfos: Array<{ id: string; nome: string; correspondencia: boolean; consultoria: boolean }>;
+
+      if (entradaExistente) {
+        const atualizada = { ...entradaExistente, [funcao]: novoValor };
+        if (!atualizada.correspondencia && !atualizada.consultoria) {
+          novasInfos = infoNormalizada.filter(c => c.id !== correspondentId);
+        } else {
+          novasInfos = infoNormalizada.map(c => c.id === correspondentId ? atualizada : c);
+        }
+      } else if (novoValor) {
+        novasInfos = [
+          ...infoNormalizada,
+          {
+            id:              correspondentId,
+            nome:            correspondente?.nome || correspondentId,
+            correspondencia: funcao === 'correspondencia',
+            consultoria:     funcao === 'consultoria',
+          },
+        ];
+      } else {
+        setSalvandoAcesso(false);
+        return;
+      }
+
+      const novosPermitidos = novasInfos.map(c => c.id);
       await updateDoc(doc(db, "leads", modalAcessoLead.id), {
         correspondentesPermitidos: novosPermitidos,
-        correspondentesInfo: novasInfos
+        correspondentesInfo:       novasInfos,
       });
-
-      setModalAcessoLead(prev => prev ? { ...prev, correspondentesPermitidos: novosPermitidos, correspondentesInfo: novasInfos } : null);
+      setModalAcessoLead(prev => prev ? { ...prev, correspondentesPermitidos: novosPermitidos, correspondentesInfo: novasInfos } as any : null);
     } catch (error) {
-      console.error("Erro ao alterar acesso:", error);
+      console.error("Erro ao alterar função:", error);
       alert("Erro ao salvar. Tente novamente.");
     } finally {
       setSalvandoAcesso(false);
@@ -947,12 +977,26 @@ export default function AdminPage() {
                                             {isInterno && <span style={{ fontSize: 10, color: "#c084fc", fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(168,85,247,0.1)" }}>Venda Direta</span>}
                                             {estaSolto && <span style={{ fontSize: 10, color: "#ef4444", fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(239,68,68,0.08)" }}>Lead Livre</span>}
                                             {!isInterno && !estaSolto && <span style={{ fontSize: 10, color: "var(--gray-dark)", fontWeight: 600 }}>{listaCorretores.find(c => c.id === lead.corretorId)?.nome || lead.nomeCorretor || "Sem corretor"}</span>}
-                                            {lead.correspondentesInfo && lead.correspondentesInfo.length > 0 && (
-                                              <><span style={{ color: "var(--border-subtle)" }}>·</span>
-                                              <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#38bdf8", fontWeight: 600 }}>
-                                                <ShieldCheck size={10} /> CB: {lead.correspondentesInfo.map(c => c.nome).join(", ")}
-                                              </span></>
-                                            )}
+                                            {lead.correspondentesInfo && lead.correspondentesInfo.length > 0 &&
+                                              (lead.correspondentesInfo as any[])
+                                                .filter((c: any) => (c.correspondencia ?? true) || (c.consultoria ?? false))
+                                                .map((c: any) => {
+                                                  const hasCB = c.correspondencia ?? true;
+                                                  const hasCons = c.consultoria ?? false;
+                                                  return (
+                                                    <Fragment key={c.id}>
+                                                      <span style={{ color: "var(--border-subtle)" }}>·</span>
+                                                      <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600 }}>
+                                                        {hasCB && <ShieldCheck size={10} color="#38bdf8" />}
+                                                        {hasCons && <Briefcase size={10} color="#a78bfa" />}
+                                                        <span style={{ color: hasCB && hasCons ? "var(--gray-light)" : hasCB ? "#38bdf8" : "#a78bfa" }}>
+                                                          {hasCB && hasCons ? `CB + Consultoria: ${c.nome}` : hasCB ? `CB: ${c.nome}` : `Consultoria: ${c.nome}`}
+                                                        </span>
+                                                      </span>
+                                                    </Fragment>
+                                                  );
+                                                })
+                                            }
                                           </div>
                                         </div>
                                       </div>
@@ -1378,7 +1422,7 @@ export default function AdminPage() {
               <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", background: "rgba(0,0,0,0.2)" }}>
                 <div>
                   <h3 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
-                    <ShieldCheck size={18} color="#38bdf8" /> Acesso de Correspondentes
+                    <ShieldCheck size={18} color="#38bdf8" /> Funções por Correspondente
                   </h3>
                   <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>
                     Lead: <strong style={{ color: "var(--gray-light)" }}>{modalAcessoLead.nome}</strong>
@@ -1390,7 +1434,10 @@ export default function AdminPage() {
               <div style={{ padding: "16px 24px", background: "rgba(56,189,248,0.06)", borderBottom: "1px solid var(--border-subtle)", display: "flex", gap: 10, alignItems: "flex-start" }}>
                 <Info size={15} color="#38bdf8" style={{ flexShrink: 0, marginTop: 1 }} />
                 <p style={{ fontSize: 12, color: "var(--gray-light)", lineHeight: 1.6 }}>
-                  Por padrão, os leads ficam <strong style={{ color: "#f87171" }}>ocultos</strong> para a equipe bancária. Você precisa <strong style={{ color: "#4ade80" }}>LIGAR</strong> a chave para delegar este lead a um correspondente específico.
+                  Defina a função de cada membro para este lead.
+                  <strong style={{ color: "#38bdf8" }}> CB</strong> = Correspondência bancária.
+                  <strong style={{ color: "#a78bfa" }}> Consultoria</strong> = Assessoria imobiliária.
+                  Desligar ambos remove o acesso.
                 </p>
               </div>
 
@@ -1401,55 +1448,42 @@ export default function AdminPage() {
                   </div>
                 ) : (
                   listaCorrespondentes.map((correspondente) => {
-                    const permitidos = modalAcessoLead.correspondentesPermitidos || [];
-                    const temAcesso = permitidos.includes(correspondente.id);
+                    const permitidosAtuais = modalAcessoLead.correspondentesPermitidos || [];
+                    const infoAtual = ((modalAcessoLead as any).correspondentesInfo || []).find((c: any) => c.id === correspondente.id);
+                    const estaPermitido = permitidosAtuais.includes(correspondente.id);
+                    const correspondenciaAtiva = estaPermitido ? (infoAtual?.correspondencia ?? true) : false;
+                    const consultoriaAtiva = infoAtual?.consultoria ?? false;
+                    const temAcesso = correspondenciaAtiva || consultoriaAtiva;
 
                     return (
-                      <div
-                        key={correspondente.id}
-                        style={{
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
-                          padding: "14px 16px", borderRadius: 12,
-                          background: temAcesso ? "rgba(74,222,128,0.05)" : "rgba(239,68,68,0.05)",
-                          border: temAcesso ? "1px solid rgba(74,222,128,0.2)" : "1px solid rgba(239,68,68,0.2)",
-                          transition: "all 0.2s"
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                          <div style={{
-                            width: 38, height: 38, borderRadius: 10,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontWeight: 800, fontSize: 15,
-                            background: temAcesso ? "rgba(74,222,128,0.15)" : "rgba(239,68,68,0.15)",
-                            color: temAcesso ? "#4ade80" : "#f87171",
-                            border: temAcesso ? "1px solid rgba(74,222,128,0.3)" : "1px solid rgba(239,68,68,0.3)"
-                          }}>
-                            {(correspondente.nome || "?")[0].toUpperCase()}
+                      <div key={correspondente.id} style={{ padding: "14px 16px", borderRadius: 12, background: temAcesso ? "rgba(56,189,248,0.04)" : "rgba(255,255,255,0.02)", border: temAcesso ? "1px solid rgba(56,189,248,0.2)" : "1px solid var(--border-subtle)", transition: "all 0.2s" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <div style={{ width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 15, background: temAcesso ? "rgba(56,189,248,0.15)" : "rgba(255,255,255,0.05)", color: temAcesso ? "#38bdf8" : "var(--gray-dark)", border: temAcesso ? "1px solid rgba(56,189,248,0.3)" : "1px solid var(--border-subtle)" }}>
+                              {(correspondente.nome || "?")[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <p style={{ fontSize: 14, fontWeight: 700, color: "white" }}>{correspondente.nome}</p>
+                              <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 2 }}>{correspondente.email}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p style={{ fontSize: 14, fontWeight: 700, color: "white" }}>{correspondente.nome}</p>
-                            <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 2 }}>{correspondente.email}</p>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button
+                              onClick={() => toggleFuncaoCorrespondente(correspondente.id, 'correspondencia', !correspondenciaAtiva)}
+                              disabled={salvandoAcesso}
+                              style={{ padding: "6px 12px", borderRadius: 8, cursor: salvandoAcesso ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 11, border: "none", transition: "all 0.2s", background: correspondenciaAtiva ? "rgba(56,189,248,0.2)" : "rgba(255,255,255,0.06)", color: correspondenciaAtiva ? "#38bdf8" : "var(--gray-dark)", opacity: salvandoAcesso ? 0.5 : 1, display: "flex", alignItems: "center", gap: 5 }}
+                            >
+                              <ShieldCheck size={12} /> CB: {correspondenciaAtiva ? "LIGADO" : "DESLIGADO"}
+                            </button>
+                            <button
+                              onClick={() => toggleFuncaoCorrespondente(correspondente.id, 'consultoria', !consultoriaAtiva)}
+                              disabled={salvandoAcesso}
+                              style={{ padding: "6px 12px", borderRadius: 8, cursor: salvandoAcesso ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 11, border: "none", transition: "all 0.2s", background: consultoriaAtiva ? "rgba(167,139,250,0.2)" : "rgba(255,255,255,0.06)", color: consultoriaAtiva ? "#a78bfa" : "var(--gray-dark)", opacity: salvandoAcesso ? 0.5 : 1, display: "flex", alignItems: "center", gap: 5 }}
+                            >
+                              <Briefcase size={12} /> Consultoria: {consultoriaAtiva ? "LIGADO" : "DESLIGADO"}
+                            </button>
                           </div>
                         </div>
-
-                        <button
-                          onClick={() => toggleAcessoCorrespondente(correspondente.id)}
-                          disabled={salvandoAcesso}
-                          style={{
-                            padding: "8px 16px", borderRadius: 10, cursor: salvandoAcesso ? "not-allowed" : "pointer",
-                            fontWeight: 800, fontSize: 12, border: "none", transition: "all 0.2s",
-                            background: temAcesso ? "rgba(74,222,128,0.2)" : "rgba(239,68,68,0.2)",
-                            color: temAcesso ? "#4ade80" : "#f87171",
-                            opacity: salvandoAcesso ? 0.5 : 1,
-                            display: "flex", alignItems: "center", gap: 6
-                          }}
-                        >
-                          {temAcesso ? (
-                            <><ToggleRight size={16} /> LIGADO</>
-                          ) : (
-                            <><ToggleLeft size={16} /> DESLIGADO</>
-                          )}
-                        </button>
                       </div>
                     );
                   })
