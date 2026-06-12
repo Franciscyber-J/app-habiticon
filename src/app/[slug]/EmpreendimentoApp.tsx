@@ -917,6 +917,7 @@ export default function EmpreendimentoApp({
                       onSelect={handleSelecionarModelo}
                       onVerPlanta={(url, nome) => setPlantaModal({ aberto: true, url, nome })}
                       onFachadaChange={(modeloId, f) => setFachadasPorModelo(prev => ({ ...prev, [modeloId]: f }))}
+                      medidaLoteSelecionada={(loteSelecionado || lotePadrao)?.medida || ""}
                     />
                   </div>
 

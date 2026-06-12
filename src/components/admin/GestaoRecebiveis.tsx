@@ -31,20 +31,11 @@ function PacoteAssinatura({ cliente, empreendimento }: { cliente: any, empreendi
   const [seletorMemorial, setSeletorMemorial] = useState(false);
 
   const documentosPadrao = empreendimento?.documentosPadrao || [];
-
-  const sugestaoMemorial = documentosPadrao.find((d: any) => {
-    const nomeArquivo = (d.nomeOriginal || "").toLowerCase();
-    const modelo = (cliente.modelo || "").toLowerCase();
-    return (
-      (modelo.includes("2q") && nomeArquivo.includes("2q")) ||
-      (modelo.includes("3q") && nomeArquivo.includes("3q")) ||
-      (modelo.includes("2 quart") && (nomeArquivo.includes("2q") || nomeArquivo.includes("2"))) ||
-      (modelo.includes("3 quart") && (nomeArquivo.includes("3q") || nomeArquivo.includes("3"))) ||
-      nomeArquivo.includes("memorial")
-    );
-  });
+  const fileMemorialRef = useRef<HTMLInputElement>(null);
+  const fileContratoHabRef = useRef<HTMLInputElement>(null);
 
   const importarMemorial = async (docItem: any) => {
+    if (pacote.memorialDescritivo && !confirm(`Já existe "${pacote.memorialDescritivo.nome}" no pacote. Substituir por "${docItem.nomeOriginal}"?`)) return;
     try {
       await updateDoc(doc(db, "leads", cliente.id), {
         "pacoteAssinatura.memorialDescritivo": {
@@ -62,6 +53,10 @@ function PacoteAssinatura({ cliente, empreendimento }: { cliente: any, empreendi
   const uploadContratoCaixa = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (pacote.contratoCaixa && !confirm(`Já existe "${pacote.contratoCaixa.nome}" no pacote. Substituir pelo novo arquivo?`)) {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
     setUploadando("caixa");
     try {
       const path = `leads/${cliente.id}/pacote/contrato_caixa_${Date.now()}.pdf`;
@@ -83,6 +78,62 @@ function PacoteAssinatura({ cliente, empreendimento }: { cliente: any, empreendi
     }
   };
 
+  const uploadMemorial = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (pacote.memorialDescritivo && !confirm(`Já existe "${pacote.memorialDescritivo.nome}" no pacote. Substituir pelo novo arquivo?`)) {
+      if (fileMemorialRef.current) fileMemorialRef.current.value = "";
+      return;
+    }
+    setUploadando("memorial");
+    try {
+      const path = `leads/${cliente.id}/pacote/memorial_descritivo_${Date.now()}.pdf`;
+      const storageRef = ref(storage, path);
+      const task = await uploadBytesResumable(storageRef, file);
+      const url = await getDownloadURL(task.ref);
+      await updateDoc(doc(db, "leads", cliente.id), {
+        "pacoteAssinatura.memorialDescritivo": {
+          url,
+          nome: file.name,
+          data: new Date().toISOString()
+        }
+      });
+    } catch (e) {
+      alert("Erro ao fazer upload do memorial descritivo.");
+    } finally {
+      setUploadando(null);
+      if (fileMemorialRef.current) fileMemorialRef.current.value = "";
+    }
+  };
+
+  const uploadContratoHabiticon = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (pacote.contratoHabiticon && !confirm(`Já existe "${pacote.contratoHabiticon.nome}" no pacote. Substituir pelo novo arquivo?`)) {
+      if (fileContratoHabRef.current) fileContratoHabRef.current.value = "";
+      return;
+    }
+    setUploadando("habiticon");
+    try {
+      const path = `leads/${cliente.id}/pacote/contrato_habiticon_${Date.now()}.pdf`;
+      const storageRef = ref(storage, path);
+      const task = await uploadBytesResumable(storageRef, file);
+      const url = await getDownloadURL(task.ref);
+      await updateDoc(doc(db, "leads", cliente.id), {
+        "pacoteAssinatura.contratoHabiticon": {
+          url,
+          nome: file.name,
+          data: new Date().toISOString()
+        }
+      });
+    } catch (e) {
+      alert("Erro ao fazer upload do contrato Habiticon.");
+    } finally {
+      setUploadando(null);
+      if (fileContratoHabRef.current) fileContratoHabRef.current.value = "";
+    }
+  };
+
   const removerDocumento = async (campo: string) => {
     if (!confirm("Remover este documento do pacote?")) return;
     await updateDoc(doc(db, "leads", cliente.id), {
@@ -95,25 +146,17 @@ function PacoteAssinatura({ cliente, empreendimento }: { cliente: any, empreendi
       id: "contratoHabiticon",
       label: "Contrato Habiticon",
       cor: "#fb923c",
-      descricao: "Gerado pelo botão 'Gerar Contrato' e importado automaticamente",
+      descricao: "Gere pelo botão 'Gerar Contrato' ou faça upload direto",
       dados: pacote.contratoHabiticon,
-      acaoManual: null as (() => void) | null,
+      acaoManual: (() => fileContratoHabRef.current?.click()) as (() => void) | null,
     },
     {
       id: "memorialDescritivo",
       label: "Memorial Descritivo",
       cor: "#a78bfa",
-      descricao: sugestaoMemorial
-        ? `Sugestão automática: ${sugestaoMemorial.nomeOriginal}`
-        : "Selecione da central de arquivos do empreendimento",
+      descricao: "Selecione da central de arquivos ou faça upload direto",
       dados: pacote.memorialDescritivo,
-      acaoManual: (() => {
-        if (sugestaoMemorial) {
-          importarMemorial(sugestaoMemorial);
-        } else {
-          setSeletorMemorial(true);
-        }
-      }) as (() => void) | null,
+      acaoManual: (() => setSeletorMemorial(true)) as (() => void) | null,
     },
     {
       id: "contratoCaixa",
@@ -132,6 +175,8 @@ function PacoteAssinatura({ cliente, empreendimento }: { cliente: any, empreendi
     <div style={{ borderTop: "1px solid var(--border-subtle)", padding: "20px 24px", background: "rgba(0,0,0,0.15)" }}>
       
       <input type="file" ref={fileInputRef} accept=".pdf" onChange={uploadContratoCaixa} style={{ display: "none" }} />
+      <input type="file" ref={fileMemorialRef} accept=".pdf" onChange={uploadMemorial} style={{ display: "none" }} />
+      <input type="file" ref={fileContratoHabRef} accept=".pdf" onChange={uploadContratoHabiticon} style={{ display: "none" }} />
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
         <h5 style={{ fontSize: 14, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
@@ -222,24 +267,43 @@ function PacoteAssinatura({ cliente, empreendimento }: { cliente: any, empreendi
                 </>
               ) : (
                 slot.acaoManual && (
-                  <button
-                    onClick={slot.acaoManual}
-                    disabled={uploadando === "caixa"}
-                    style={{
-                      padding: "6px 14px", borderRadius: 8,
-                      background: `${slot.cor}15`, border: `1px solid ${slot.cor}40`,
-                      color: slot.cor, fontSize: 11, fontWeight: 700,
-                      cursor: "pointer", display: "flex", alignItems: "center", gap: 6
-                    }}
-                  >
-                    <Upload size={12} />
-                    {slot.id === "contratoCaixa"
-                      ? (uploadando === "caixa" ? "Enviando..." : "Upload PDF")
-                      : (slot.id === "memorialDescritivo" && sugestaoMemorial
-                        ? "Importar Sugestão"
-                        : "Selecionar")
-                    }
-                  </button>
+                  <>
+                    {slot.id === "memorialDescritivo" && (
+                      <button
+                        onClick={() => fileMemorialRef.current?.click()}
+                        disabled={uploadando === "memorial"}
+                        style={{
+                          padding: "6px 14px", borderRadius: 8,
+                          background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)",
+                          color: "var(--gray-light)", fontSize: 11, fontWeight: 700,
+                          cursor: "pointer", display: "flex", alignItems: "center", gap: 6
+                        }}
+                      >
+                        <Upload size={12} />
+                        {uploadando === "memorial" ? "Enviando..." : "Upload PDF"}
+                      </button>
+                    )}
+                    <button
+                      onClick={slot.acaoManual}
+                      disabled={uploadando === "caixa" || uploadando === "habiticon"}
+                      style={{
+                        padding: "6px 14px", borderRadius: 8,
+                        background: `${slot.cor}15`, border: `1px solid ${slot.cor}40`,
+                        color: slot.cor, fontSize: 11, fontWeight: 700,
+                        cursor: "pointer", display: "flex", alignItems: "center", gap: 6
+                      }}
+                    >
+                      {slot.id === "contratoCaixa" && (
+                        <><Upload size={12} /> {uploadando === "caixa" ? "Enviando..." : "Upload PDF"}</>
+                      )}
+                      {slot.id === "contratoHabiticon" && (
+                        <><Upload size={12} /> {uploadando === "habiticon" ? "Enviando..." : "Upload PDF"}</>
+                      )}
+                      {slot.id === "memorialDescritivo" && (
+                        <><FileCheck2 size={12} /> Selecionar Memorial</>
+                      )}
+                    </button>
+                  </>
                 )
               )}
             </div>
@@ -262,7 +326,13 @@ function PacoteAssinatura({ cliente, empreendimento }: { cliente: any, empreendi
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {documentosPadrao.map((d: any, i: number) => (
+              {[...documentosPadrao]
+                .sort((a: any, b: any) => {
+                  const am = (a.nomeOriginal || "").toLowerCase().includes("memorial") ? 0 : 1;
+                  const bm = (b.nomeOriginal || "").toLowerCase().includes("memorial") ? 0 : 1;
+                  return am - bm || (a.nomeOriginal || "").localeCompare(b.nomeOriginal || "");
+                })
+                .map((d: any, i: number) => (
                 <button
                   key={i}
                   onClick={() => importarMemorial(d)}
@@ -428,7 +498,14 @@ export function GestaoRecebiveis({ leads, empreendimentos, onGerarContrato }: Ge
                         <h4 style={{ fontSize: 16, fontWeight: 800, color: "white" }}>{cliente.nome}</h4>
                         {onGerarContrato && (
                           <button 
-                            onClick={(e) => { e.stopPropagation(); onGerarContrato(cliente); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (cliente.pacoteAssinatura?.contratoHabiticon &&
+                                  !confirm(`Já existe "${cliente.pacoteAssinatura.contratoHabiticon.nome}" no Pacote de Assinatura. Gerar um novo contrato irá substituí-lo. Continuar?`)) {
+                                return;
+                              }
+                              onGerarContrato(cliente);
+                            }}
                             style={{ padding: "4px 10px", borderRadius: 6, background: "var(--terracota-glow)", color: "var(--terracota-light)", border: "1px solid var(--border-active)", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                           >
                             📄 Gerar Contrato
@@ -554,10 +631,10 @@ export function GestaoRecebiveis({ leads, empreendimentos, onGerarContrato }: Ge
                           </div>
 
                           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                            {fin.pls.length === 0 ? (
+                            {(fin.pls || []).length === 0 ? (
                               <p style={{ fontSize: 12, color: "var(--gray-dark)", textAlign: "center", padding: "20px 0" }}>Nenhuma medição prevista.</p>
                             ) : (
-                              fin.pls.map((m: any) => (
+                              (fin.pls || []).map((m: any) => (
                                 <div key={m.id} style={{ padding: "12px 16px", borderRadius: 10, border: m.pago ? "1px solid rgba(74,222,128,0.2)" : "1px solid var(--border-subtle)", background: m.pago ? "rgba(74,222,128,0.05)" : "rgba(0,0,0,0.2)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                                   <div>
                                     <p style={{ fontSize: 14, fontWeight: 800, color: m.pago ? "#4ade80" : "white" }}>{formatBRL(m.valor)}</p>

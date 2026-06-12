@@ -1126,6 +1126,7 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                         emp.modelos.forEach((m:any, i:number) => {
                           update(`modelos.${i}.valor`, (m.valorCasa ?? 0) + (lp?.valor || 0));
                           update(`modelos.${i}.valorLote`, lp?.valor || 0);
+                          update(`modelos.${i}.tamanhoLote`, lp?.medida || "");
                         });
                       }}
                     />

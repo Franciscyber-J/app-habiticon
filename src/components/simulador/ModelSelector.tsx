@@ -32,9 +32,10 @@ interface ModelSelectorProps {
   onSelect: (id: string) => void;
   onVerPlanta?: (url: string, nome: string) => void;
   onFachadaChange?: (modeloId: string, fachada: { id: string; nome: string; diferencaPreco: number }) => void;
+  medidaLoteSelecionada?: string;
 }
 
-export function ModelSelector({ modelos, selected, onSelect, onVerPlanta, onFachadaChange }: ModelSelectorProps) {
+export function ModelSelector({ modelos, selected, onSelect, onVerPlanta, onFachadaChange, medidaLoteSelecionada }: ModelSelectorProps) {
   return (
     <div className="grid gap-8" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
       {modelos.map((modelo) => {
@@ -138,7 +139,12 @@ export function ModelSelector({ modelos, selected, onSelect, onVerPlanta, onFach
                       letterSpacing: "0.03em",
                     }}
                   >
-                    {modelo.tamanhoLote ? `Lote ${modelo.tamanhoLote}` : "Lote não definido"}
+                    {(() => {
+                      const medida = (isSelected && medidaLoteSelecionada) ? medidaLoteSelecionada : (modelo.tamanhoLote || "");
+                      // Exibe só a área na pílula (corta o "(8m × 25m)" para não estourar)
+                      const curta = medida.split(" (")[0];
+                      return curta ? `Lote ${curta}` : "Lote não definido";
+                    })()}
                   </div>
                 </div>
               </div>
