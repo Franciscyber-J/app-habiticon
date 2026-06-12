@@ -3,24 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight, X, Check, Map as MapIcon } from "lucide-react";
+import { padraoDoModelo, lotesVisiveis, type LoteInfo } from "@/lib/lotes";
 
 // ─────────────────────────────────────────────────────────
 // TIPOS
 // ─────────────────────────────────────────────────────────
 
-interface Lote {
-  id: string;
-  nome: string;
-  tipo: "inteiro" | "fracao";
-  medida: string;
-  valor: number;
-  ativo: boolean;
-  isPadrao: boolean;
-  modelosVinculados?: string[];
-}
-
 interface LoteSelectorProps {
-  lotes: Lote[];
+  lotes: LoteInfo[];
   modeloId: string;
   onLoteChange: (lote: { id: string; nome: string; tipo: string; medida: string; valor: number }) => void;
   mapaUrl?: string;                  // imagem do mapa do loteamento (opcional)
@@ -29,7 +19,7 @@ interface LoteSelectorProps {
 
 const LIMITE_CARDS = 4; // até aqui mostra grid de cards; acima, modo compacto + modal
 
-function TipoBadge({ tipo }: { tipo: string }) {
+function TipoBadge({ tipo }: { tipo?: string }) {
   return (
     <span style={{
       fontSize: 9, fontWeight: 800, padding: "3px 7px", borderRadius: 6,
@@ -69,40 +59,32 @@ function BotaoVerMapa({ onClick, compacto = false }: { onClick: () => void; comp
 
 // ─────────────────────────────────────────────────────────
 // COMPONENTE — sempre exatamente 1 lote selecionado
+// Padrão por modelo resolvido pela hierarquia em lib/lotes.ts
 // ─────────────────────────────────────────────────────────
 
 export function LoteSelector({ lotes, modeloId, onLoteChange, mapaUrl, onVerMapa }: LoteSelectorProps) {
 
-  // Lotes visíveis para o modelo atual
-  const visiveis = useMemo(() => {
-    return lotes.filter(l => {
-      if (!l.ativo) return false;
-      const vinc = l.modelosVinculados ?? [];
-      return vinc.length === 0 || vinc.includes(modeloId);
-    });
-  }, [lotes, modeloId]);
-
-  const padrao = useMemo(() => {
-    return visiveis.find(l => l.isPadrao) || visiveis[0] || null;
-  }, [visiveis]);
+  // Lotes visíveis e padrão efetivo do modelo atual (hierarquia: específico > global > mais barato)
+  const visiveis = useMemo(() => lotesVisiveis(lotes, modeloId), [lotes, modeloId]);
+  const padrao = useMemo(() => padraoDoModelo(lotes, modeloId), [lotes, modeloId]);
 
   const [selId, setSelId] = useState<string | null>(padrao?.id ?? null);
   const [modalAberto, setModalAberto] = useState(false);
 
-  // Ao trocar modelo (ou lista mudar): volta ao padrão e emite
+  // Ao trocar modelo (ou lista mudar): volta ao padrão do modelo e emite
   useEffect(() => {
     if (!padrao) return;
     setSelId(padrao.id);
-    onLoteChange({ id: padrao.id, nome: padrao.nome, tipo: padrao.tipo, medida: padrao.medida, valor: padrao.valor });
+    onLoteChange({ id: padrao.id, nome: padrao.nome, tipo: padrao.tipo || "inteiro", medida: padrao.medida || "", valor: padrao.valor });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modeloId, padrao?.id, visiveis.length]);
 
   // Com 0 ou 1 opção não há escolha a fazer — não renderiza nada
   if (visiveis.length <= 1) return null;
 
-  const selecionar = (l: Lote) => {
+  const selecionar = (l: LoteInfo) => {
     setSelId(l.id);
-    onLoteChange({ id: l.id, nome: l.nome, tipo: l.tipo, medida: l.medida, valor: l.valor });
+    onLoteChange({ id: l.id, nome: l.nome, tipo: l.tipo || "inteiro", medida: l.medida || "", valor: l.valor });
   };
 
   const valorPadrao = padrao?.valor ?? 0;
@@ -249,6 +231,7 @@ export function LoteSelector({ lotes, modeloId, onLoteChange, mapaUrl, onVerMapa
                 {listaOrdenada.map(l => {
                   const isSel = selId === l.id;
                   const diff = l.valor - valorPadrao;
+                  const ehPadrao = padrao?.id === l.id;
                   return (
                     <button
                       key={l.id}
@@ -273,7 +256,7 @@ export function LoteSelector({ lotes, modeloId, onLoteChange, mapaUrl, onVerMapa
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <span style={{ fontSize: 13, fontWeight: 700, color: isSel ? "var(--terracota-light)" : "var(--gray-light)" }}>{l.nome}</span>
                           <TipoBadge tipo={l.tipo} />
-                          {l.isPadrao && (
+                          {ehPadrao && (
                             <span style={{ fontSize: 9, fontWeight: 800, padding: "3px 7px", borderRadius: 6, textTransform: "uppercase", background: "rgba(255,255,255,0.06)", color: "var(--gray-mid)" }}>
                               ★ Padrão
                             </span>

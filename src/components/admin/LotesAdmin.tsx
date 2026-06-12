@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Plus, Trash2, Star, Ruler } from "lucide-react";
+import { Plus, Trash2, Star, Ruler, Info } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────
 // TIPOS
@@ -99,15 +99,46 @@ export function LotesAdmin({ lotes, modelos, onUpdate }: LotesAdminProps) {
       return;
     }
     if (!confirm(`Remover "${alvo.nome}"?`)) return;
-    let novos = lotes.filter(l => l.id !== id);
-    if (!novos.some(l => l.isPadrao)) {
-      novos = novos.map((l, i) => ({ ...l, isPadrao: i === 0 }));
-    }
-    onUpdate(novos);
+    onUpdate(lotes.filter(l => l.id !== id));
   };
 
-  const setPadrao = (id: string) => {
-    onUpdate(lotes.map(l => ({ ...l, isPadrao: l.id === id })));
+  // ★ PADRÃO POR ESCOPO:
+  // - clicar numa estrela marcada = desmarca (pode ficar zero padrões → vale o mais barato)
+  // - marcar um lote global (✦ Todos) desmarca apenas outros globais
+  // - marcar um lote específico desmarca apenas específicos que compartilham modelo
+  // - global + específico convivem: o específico vence para o seu modelo (hierarquia)
+  const togglePadrao = (id: string) => {
+    const alvo = lotes.find(l => l.id === id);
+    if (!alvo) return;
+
+    // Desmarcar
+    if (alvo.isPadrao) {
+      onUpdate(lotes.map(l => l.id === id ? { ...l, isPadrao: false } : l));
+      return;
+    }
+
+    const vincAlvo = alvo.modelosVinculados ?? [];
+    const alvoGlobal = vincAlvo.length === 0;
+
+    const conflitantes = lotes.filter(l => {
+      if (l.id === id || !l.isPadrao) return false;
+      const v = l.modelosVinculados ?? [];
+      const lGlobal = v.length === 0;
+      if (alvoGlobal) return lGlobal;                  // global só conflita com global
+      if (lGlobal) return false;                       // específico não conflita com global
+      return v.some(mid => vincAlvo.includes(mid));    // específicos com modelo em comum
+    });
+
+    if (conflitantes.length > 0) {
+      const nomes = conflitantes.map(c => `"${c.nome}"`).join(", ");
+      if (!confirm(`Marcar "${alvo.nome}" como padrão vai desmarcar ${nomes} (mesmo escopo de modelos). Continuar?`)) return;
+    }
+
+    onUpdate(lotes.map(l => {
+      if (l.id === id) return { ...l, isPadrao: true };
+      if (conflitantes.some(c => c.id === l.id)) return { ...l, isPadrao: false };
+      return l;
+    }));
   };
 
   const toggleModelo = (loteId: string, modeloId: string) => {
@@ -183,10 +214,12 @@ export function LotesAdmin({ lotes, modelos, onUpdate }: LotesAdminProps) {
                 />
               </div>
 
-              {/* Padrão */}
+              {/* Padrão (por escopo — clique de novo para desmarcar) */}
               <button
-                onClick={() => setPadrao(lote.id)}
-                title="Lote padrão — selecionado automaticamente no simulador"
+                onClick={() => togglePadrao(lote.id)}
+                title={lote.isPadrao
+                  ? "Clique para desmarcar como padrão"
+                  : "Marcar como lote padrão do escopo (Todos = global; modelos específicos = padrão daquele(s) modelo(s))"}
                 style={{
                   display: "flex", alignItems: "center", gap: 4, flexShrink: 0,
                   padding: "7px 10px", borderRadius: 8, cursor: "pointer", border: "none",
@@ -196,7 +229,7 @@ export function LotesAdmin({ lotes, modelos, onUpdate }: LotesAdminProps) {
                 }}
               >
                 <Star size={12} fill={lote.isPadrao ? "currentColor" : "none"} />
-                {lote.isPadrao ? "Padrão" : ""}
+                {lote.isPadrao ? (todosModelos ? "Padrão Global" : "Padrão do Modelo") : ""}
               </button>
 
               {/* Ativo */}
@@ -320,6 +353,18 @@ export function LotesAdmin({ lotes, modelos, onUpdate }: LotesAdminProps) {
       >
         <Plus size={14} /> Adicionar Lote / Fração
       </button>
+
+      {/* Explicador da hierarquia de padrão */}
+      <div style={{ display: "flex", gap: 10, padding: "12px 14px", borderRadius: 10, background: "rgba(56,189,248,0.05)", border: "1px solid rgba(56,189,248,0.15)" }}>
+        <Info size={14} color="#38bdf8" style={{ flexShrink: 0, marginTop: 1 }} />
+        <p style={{ fontSize: 11, color: "var(--gray-mid)", lineHeight: 1.6 }}>
+          <strong style={{ color: "#38bdf8" }}>Como o padrão funciona no simulador:</strong>{" "}
+          cada modelo abre no seu <strong>★ Padrão do Modelo</strong> (lote marcado com vínculo específico).
+          Se não tiver, usa o <strong>★ Padrão Global</strong> (vínculo ✦ Todos).
+          Se nenhum estiver marcado, abre no <strong>lote mais barato</strong> visível para o modelo.
+          Pode haver 1 padrão global e 1 padrão por modelo ao mesmo tempo — o específico vence.
+        </p>
+      </div>
     </div>
   );
 }

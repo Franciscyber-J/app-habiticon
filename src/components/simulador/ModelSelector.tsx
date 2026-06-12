@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { Check } from "lucide-react";
 import { FachadaSelector } from "@/components/simulador/FachadaSelector";
+import { padraoDoModelo } from "@/lib/lotes";
 
 interface Fachada {
   id: string;
@@ -22,8 +23,15 @@ interface Model {
   imagem: string;
   planta: string;
   tamanhoLote?: string;
+  valorCasa?: number;
   fachadas?: Fachada[];
   exibirSeletorFachada?: boolean;
+}
+
+interface LoteCardInfo {
+  medida: string;
+  valor: number;
+  modelosVinculados?: string[];
 }
 
 interface ModelSelectorProps {
@@ -32,10 +40,22 @@ interface ModelSelectorProps {
   onSelect: (id: string) => void;
   onVerPlanta?: (url: string, nome: string) => void;
   onFachadaChange?: (modeloId: string, fachada: { id: string; nome: string; diferencaPreco: number }) => void;
-  medidaLoteSelecionada?: string;
+  loteAtivo?: LoteCardInfo;
+  lotes?: any[];
 }
 
-export function ModelSelector({ modelos, selected, onSelect, onVerPlanta, onFachadaChange, medidaLoteSelecionada }: ModelSelectorProps) {
+// Decide qual lote vale para o card: o selecionado (se vinculado ao modelo)
+// ou o padrão efetivo daquele modelo (hierarquia: específico > global > mais barato)
+function loteDoCard(modeloId: string, loteAtivo?: LoteCardInfo, lotes?: any[]) {
+  if (loteAtivo) {
+    const vinc = loteAtivo.modelosVinculados ?? [];
+    if (vinc.length === 0 || vinc.includes(modeloId)) return loteAtivo;
+  }
+  const p = padraoDoModelo(lotes || [], modeloId);
+  return p ? { medida: p.medida || "", valor: p.valor || 0 } : null;
+}
+
+export function ModelSelector({ modelos, selected, onSelect, onVerPlanta, onFachadaChange, loteAtivo, lotes }: ModelSelectorProps) {
   return (
     <div className="grid gap-8" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
       {modelos.map((modelo) => {
@@ -111,7 +131,14 @@ export function ModelSelector({ modelos, selected, onSelect, onVerPlanta, onFach
                 <div>
                   <div style={{ fontSize: 11, color: "var(--gray-dark)", marginBottom: 5 }}>Valor do imóvel</div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: isSelected ? "var(--terracota)" : "var(--gray-light)" }}>
-                    R$ {modelo.valor.toLocaleString("pt-BR")}
+                    {(() => {
+                      const lote = loteDoCard(modelo.id, loteAtivo, lotes);
+                      const padraoCard = padraoDoModelo(lotes || [], modelo.id);
+                      const valorCard = lote
+                        ? (modelo.valorCasa ?? Math.max(0, modelo.valor - (padraoCard?.valor || 0))) + lote.valor
+                        : modelo.valor;
+                      return `R$ ${valorCard.toLocaleString("pt-BR")}`;
+                    })()}
                   </div>
                 </div>
 
@@ -140,7 +167,8 @@ export function ModelSelector({ modelos, selected, onSelect, onVerPlanta, onFach
                     }}
                   >
                     {(() => {
-                      const medida = (isSelected && medidaLoteSelecionada) ? medidaLoteSelecionada : (modelo.tamanhoLote || "");
+                      const lote = loteDoCard(modelo.id, loteAtivo, lotes);
+                      const medida = lote?.medida || modelo.tamanhoLote || "";
                       // Exibe só a área na pílula (corta o "(8m × 25m)" para não estourar)
                       const curta = medida.split(" (")[0];
                       return curta ? `Lote ${curta}` : "Lote não definido";

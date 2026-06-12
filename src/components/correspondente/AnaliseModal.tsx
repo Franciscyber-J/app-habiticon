@@ -59,6 +59,7 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
   // ── EDIÇÃO DE FICHA ──
   const [editandoFicha, setEditandoFicha] = useState(false);
   const [fichaForm, setFichaForm] = useState<any>({});
+  const [empreendimento, setEmpreendimento] = useState<any>(null);
 
   // ── BUSCA TELEFONE DO CORRETOR QUANDO O MODAL ABRE ──
   useEffect(() => {
@@ -70,6 +71,15 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
       .then(snap => { if (snap.exists()) setTelefoneCorretor(snap.data().telefone || ""); })
       .catch(() => {});
   }, [isOpen, lead?.corretorId]);
+
+  // ── BUSCA O EMPREENDIMENTO PARA LISTAR OS MODELOS NA EDIÇÃO DA FICHA ──
+  useEffect(() => {
+    if (isOpen && lead?.empreendimentoId) {
+      getDoc(doc(db, "empreendimentos", lead.empreendimentoId)).then(snap => {
+        if (snap.exists()) setEmpreendimento(snap.data());
+      });
+    }
+  }, [isOpen, lead?.empreendimentoId]);
 
   if (!isOpen || !lead) return null;
 
@@ -97,13 +107,28 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
   };
 
   const iniciarEdicaoFicha = () => {
-    setFichaForm(lead.preCadastro || {});
+    setFichaForm({ ...(lead.preCadastro || {}), modelo: lead.modelo || "" });
     setEditandoFicha(true);
   };
 
   const salvarFicha = async () => {
     try {
-      await updateDoc(doc(db, "leads", lead.id), { preCadastro: fichaForm });
+      const { modelo, ...restoPreCadastro } = fichaForm;
+      const updates: any = { preCadastro: restoPreCadastro };
+
+      if (modelo && modelo !== lead.modelo) {
+        const modeloCompleto = empreendimento?.modelos?.find((m: any) => m.nome === modelo);
+        if (modeloCompleto) {
+          updates.modelo = modeloCompleto.nome;
+          updates.valorImovel = modeloCompleto.valor || 0;
+          updates.area = modeloCompleto.area || 0;
+          updates.quartos = modeloCompleto.quartos || 0;
+        } else {
+          updates.modelo = modelo;
+        }
+      }
+
+      await updateDoc(doc(db, "leads", lead.id), updates);
       setEditandoFicha(false);
       mostrarToast("Ficha atualizada com sucesso!", "sucesso");
     } catch (error) {
@@ -880,6 +905,19 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
                           <option value="quitado">Já quitado</option>
                         </select>
                       </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Modelo da Casa</label>
+                        <select
+                          value={fichaForm.modelo || ""}
+                          onChange={e => setFichaForm({...fichaForm, modelo: e.target.value})}
+                          style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }}
+                        >
+                          <option value="">Selecione um modelo...</option>
+                          {empreendimento?.modelos?.map((m: any) => (
+                            <option key={m.id} value={m.nome}>{m.nome} — R$ {m.valor?.toLocaleString('pt-BR')}</option>
+                          ))}
+                        </select>
+                      </div>
                       <div style={{ gridColumn: "1 / -1" }}>
                         <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Observações do Corretor / Analista</label>
                         <textarea value={fichaForm.observacoesCorretor || ""} onChange={e => setFichaForm({...fichaForm, observacoesCorretor: e.target.value})} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, minHeight: 60, outline: "none" }} />
@@ -915,6 +953,10 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
                         <div>
                           <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Financ. Caixa</p>
                           <p style={{ fontSize: 13, color: "white", fontWeight: 600, textTransform: "capitalize" }}>{lead.preCadastro?.temFinanciamentoCaixa || "-"}</p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Modelo Escolhido</p>
+                          <p style={{ fontSize: 13, color: "#38bdf8", fontWeight: 700 }}>{lead.modelo || "Ainda não definido"}</p>
                         </div>
                       </div>
 

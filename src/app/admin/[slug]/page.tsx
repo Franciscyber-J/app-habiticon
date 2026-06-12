@@ -14,6 +14,7 @@ import { ConfiguracoesSBPE } from "@/components/admin/ConfiguracoesSBPE";
 import { ItensAdicionaisAdmin } from "@/components/admin/ItensAdicionaisAdmin";
 import { FachadaAdmin } from "@/components/admin/FachadaAdmin";
 import { LotesAdmin } from "@/components/admin/LotesAdmin";
+import { padraoDoModelo } from "@/lib/lotes";
 
 type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao" | "mapa" | "comissoes" | "atendimento" | "adicionais";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -760,7 +761,7 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const totalItens = itensMCMV.reduce((acc: number, item: any) => acc + (Number(item.valor) || 0), 0);
     const cubEquivalente = cubVigente + (totalItens / m.area);
     
-    const lote = (((emp.lotes||[]).find((l:any)=>l.isPadrao) || (emp.lotes||[])[0])?.valor) || emp.modelos[0]?.valorLote || 48000;
+    const lote = ((padraoDoModelo((emp.lotes||[]) as any, emp.modelos[0]?.id || "") || (emp.lotes||[])[0])?.valor) || emp.modelos[0]?.valorLote || 48000;
     const laudo = lote + m.area * cubEquivalente * (1+bdi);
     const maxFin = laudo * 0.80; // MCMV sempre permite 80%
 
@@ -1059,15 +1060,15 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                             <div>
                               <FieldLabel hint="Apenas a construção, sem o lote">Valor da Casa (R$)</FieldLabel>
                               <NumInput value={m.valorCasa ?? 0} prefix="R$" onChange={v=>{
-                                const lp = (emp.lotes||[]).find((l:any)=>l.isPadrao) || (emp.lotes||[])[0];
+                                const lp = padraoDoModelo((emp.lotes||[]) as any, m.id) || (emp.lotes||[])[0];
                                 update(`modelos.${idx}.valorCasa`, v);
                                 update(`modelos.${idx}.valor`, v + (lp?.valor || 0));
                               }}/>
                             </div>
                             <div>
-                              <FieldLabel hint="Casa + lote padrão (calculado)">Preço Final Padrão</FieldLabel>
+                              <FieldLabel hint="Casa + lote padrão deste modelo">Preço Final Padrão</FieldLabel>
                               <div style={{ padding: "13px 14px", borderRadius: 10, background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.2)", fontSize: 15, fontWeight: 800, color: "#4ade80" }}>
-                                R$ {(((m.valorCasa ?? 0) + (((emp.lotes||[]).find((l:any)=>l.isPadrao) || (emp.lotes||[])[0])?.valor || 0))).toLocaleString("pt-BR")}
+                                R$ {(((m.valorCasa ?? 0) + ((padraoDoModelo((emp.lotes||[]) as any, m.id) || (emp.lotes||[])[0])?.valor || 0))).toLocaleString("pt-BR")}
                               </div>
                             </div>
                           </Two>
@@ -1121,9 +1122,9 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                       modelos={emp.modelos}
                       onUpdate={(novosLotes) => {
                         update("lotes", novosLotes);
-                        // Re-sincroniza preço final + valorLote legado de todos os modelos
-                        const lp = novosLotes.find((l:any)=>l.isPadrao) || novosLotes[0];
+                        // Re-sincroniza legados usando o padrão efetivo de CADA modelo
                         emp.modelos.forEach((m:any, i:number) => {
+                          const lp = padraoDoModelo(novosLotes as any, m.id) || (novosLotes as any)[0];
                           update(`modelos.${i}.valor`, (m.valorCasa ?? 0) + (lp?.valor || 0));
                           update(`modelos.${i}.valorLote`, lp?.valor || 0);
                           update(`modelos.${i}.tamanhoLote`, lp?.medida || "");

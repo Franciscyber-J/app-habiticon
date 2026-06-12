@@ -14,6 +14,7 @@ import { ModelSelector } from "@/components/simulador/ModelSelector";
 import { PlantaModal } from "@/components/simulador/PlantaModal";
 import { ItensAdicionaisSimulador } from "@/components/simulador/ItensAdicionaisSimulador";
 import { LoteSelector } from "@/components/simulador/LoteSelector";
+import { padraoDoModelo } from "@/lib/lotes";
 import { EntradaSlider } from "@/components/simulador/EntradaSlider";
 import { ResultCards } from "@/components/simulador/ResultCards";
 import { ComparadorSacPrice } from "@/components/simulador/ComparadorSacPrice";
@@ -214,7 +215,7 @@ export default function EmpreendimentoApp({
         valor: empFresh.modelos[0]?.valorLote ?? 48000,
         ativo: true, isPadrao: true, modelosVinculados: [],
       }];
-  const lotePadrao = lotesDisponiveis.find((l: any) => l.isPadrao) || lotesDisponiveis[0];
+  const lotePadrao: any = padraoDoModelo(lotesDisponiveis as any, modeloSelecionado) || lotesDisponiveis[0];
   const valorLoteEmpreendimento = loteSelecionado?.valor ?? (lotePadrao?.valor ?? 48000);
 
   const modelo = empFresh.modelos.find((m) => m.id === modeloSelecionado) || empFresh.modelos[0];
@@ -917,7 +918,13 @@ export default function EmpreendimentoApp({
                       onSelect={handleSelecionarModelo}
                       onVerPlanta={(url, nome) => setPlantaModal({ aberto: true, url, nome })}
                       onFachadaChange={(modeloId, f) => setFachadasPorModelo(prev => ({ ...prev, [modeloId]: f }))}
-                      medidaLoteSelecionada={(loteSelecionado || lotePadrao)?.medida || ""}
+                      loteAtivo={(() => {
+                        const sel = loteSelecionado
+                          ? lotesDisponiveis.find((l: any) => l.id === loteSelecionado.id)
+                          : null;
+                        return sel ? { medida: sel.medida || "", valor: sel.valor || 0, modelosVinculados: sel.modelosVinculados ?? [] } : undefined;
+                      })()}
+                      lotes={lotesDisponiveis}
                     />
                   </div>
 
