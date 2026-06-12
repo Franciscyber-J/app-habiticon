@@ -11,8 +11,11 @@ import {
   Info, Save, AlertCircle, MapPin, ExternalLink, LogOut, Menu, X, Map, Layers, Wallet, Plus, AlertTriangle, Phone
 } from "lucide-react";
 import { ConfiguracoesSBPE } from "@/components/admin/ConfiguracoesSBPE";
+import { ItensAdicionaisAdmin } from "@/components/admin/ItensAdicionaisAdmin";
+import { FachadaAdmin } from "@/components/admin/FachadaAdmin";
+import { LotesAdmin } from "@/components/admin/LotesAdmin";
 
-type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao" | "mapa" | "comissoes" | "atendimento";
+type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao" | "mapa" | "comissoes" | "atendimento" | "adicionais";
 type SaveState = "idle" | "saving" | "saved" | "error";
 interface Params { params: Promise<{ slug: string }> }
 
@@ -155,6 +158,186 @@ function AmbienteUpload({ amb, fotos, slug, onAdd, onAddMulti, onRemove }: {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Upload de Planta Baixa por Modelo ───────────────────
+function PlantaUpload({ modelo, idx, slug, update, listaVitrine, updateVitrine }: {
+  modelo: any; idx: number; slug: string;
+  update: (field: string, value: any) => void;
+  listaVitrine: any[];
+  updateVitrine: (nova: any[]) => void;
+}) {
+  const [uploading, setUploading] = React.useState(false);
+  const ref = React.useRef<HTMLInputElement>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file); fd.append("slug", slug);
+      fd.append("tipo", "plantas"); fd.append("titulo", `Planta Baixa — ${modelo.nome}`);
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.url) {
+        // 1. Atualiza estado local
+        update(`modelos.${idx}.planta`, data.url);
+        const novasVitrine = [
+          ...listaVitrine.filter((p: any) => p.url !== modelo.planta),
+          { url: data.url, titulo: `Planta Baixa — ${modelo.nome}` }
+        ];
+        updateVitrine(novasVitrine);
+
+        // 2. Persiste vitrine.plantas imediatamente (igual à galeria)
+        await fetch("/api/empreendimentos", {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slug, field: "vitrine.plantas", value: novasVitrine }),
+        });
+
+        // 3. Persiste modelos[i].planta imediatamente via PATCH dos modelos
+        const modelos = await fetch("/api/empreendimentos")
+          .then(r => r.json())
+          .then((lista: any[]) => lista.find((e: any) => e.slug === slug)?.modelos || []);
+        const modelosAtualizados = modelos.map((m: any) => m.id === modelo.id ? { ...m, planta: data.url } : m);
+        await fetch("/api/empreendimentos", {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slug, field: "modelos", value: modelosAtualizados }),
+        });
+      }
+    } finally { setUploading(false); if (ref.current) ref.current.value = ""; }
+  };
+
+  const remover = () => {
+    if (!modelo.planta || !confirm("Remover planta baixa deste modelo?")) return;
+    update(`modelos.${idx}.planta`, "");
+    updateVitrine(listaVitrine.filter((p: any) => p.url !== modelo.planta));
+  };
+
+  return (
+    <div>
+      <FieldLabel hint="Exibida no card do simulador e na aba Plantas da vitrine">
+        Planta Baixa
+      </FieldLabel>
+      {modelo.planta ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.2)" }}>
+          <img src={modelo.planta} alt="" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, flexShrink: 0, background: "white" }} />
+          <p style={{ fontSize: 12, color: "#4ade80", fontWeight: 700, flex: 1 }}>✓ Planta cadastrada</p>
+          <a href={modelo.planta} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 10px", borderRadius: 7, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-subtle)", color: "var(--gray-light)", fontSize: 11, fontWeight: 600, textDecoration: "none" }}>
+            Ver
+          </a>
+          <button onClick={() => ref.current?.click()} disabled={uploading} style={{ padding: "5px 10px", borderRadius: 7, background: "var(--terracota-glow)", border: "1px solid var(--border-active)", color: "var(--terracota)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            {uploading ? "..." : "Trocar"}
+          </button>
+          <button onClick={remover} style={{ padding: "5px 10px", borderRadius: 7, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            Remover
+          </button>
+          <input ref={ref} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+        </div>
+      ) : (
+        <div style={{ padding: "16px", borderRadius: 10, background: "rgba(0,0,0,0.15)", border: "1px dashed var(--border-subtle)", textAlign: "center" }}>
+          <p style={{ fontSize: 12, color: "var(--gray-dark)", marginBottom: 10 }}>Nenhuma planta cadastrada para este modelo</p>
+          <input ref={ref} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+          <button onClick={() => ref.current?.click()} disabled={uploading} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, cursor: "pointer", background: "var(--terracota-glow)", border: "1px solid var(--border-active)", color: "var(--terracota)", fontSize: 12, fontWeight: 700 }}>
+            <ImageIcon size={14} /> {uploading ? "Enviando..." : "Upload Planta Baixa"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Mapa do Loteamento (imagem exibida no simulador) ────
+function MapaLotesUpload({ emp, slug, update }: {
+  emp: any; slug: string;
+  update: (field: string, value: any) => void;
+}) {
+  const [uploading, setUploading] = React.useState(false);
+  const ref = React.useRef<HTMLInputElement>(null);
+
+  const persistir = async (field: string, value: any) => {
+    update(field, value);
+    await fetch("/api/empreendimentos", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug, field, value }),
+    });
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file); fd.append("slug", slug);
+      fd.append("tipo", "mapa_lotes"); fd.append("titulo", "Mapa do Loteamento");
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.url) await persistir("mapaLotesUrl", data.url);
+    } finally { setUploading(false); if (ref.current) ref.current.value = ""; }
+  };
+
+  const remover = async () => {
+    if (!emp.mapaLotesUrl || !confirm("Remover a imagem do mapa do loteamento?")) return;
+    await fetch("/api/upload", {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug, url: emp.mapaLotesUrl, tipo: "mapa_lotes" }),
+    }).catch(() => {});
+    await persistir("mapaLotesUrl", "");
+    await persistir("exibirMapaLotes", false);
+  };
+
+  const ativo = emp.exibirMapaLotes ?? false;
+
+  return (
+    <div style={{ marginTop: 20, padding: "16px", borderRadius: 12, background: "rgba(0,0,0,0.15)", border: "1px dashed var(--border-subtle)", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 700, color: "var(--gray-light)", marginBottom: 4 }}>🗺️ Mapa do Loteamento no Simulador</p>
+          <p style={{ fontSize: 11, color: "var(--gray-mid)", lineHeight: 1.5 }}>
+            Exibe o botão "Ver Mapa" para o cliente junto da escolha de lotes. Carregue uma imagem (JPG/PNG) do loteamento.
+          </p>
+        </div>
+        <button
+          onClick={() => persistir("exibirMapaLotes", !ativo)}
+          disabled={!emp.mapaLotesUrl && !ativo}
+          title={!emp.mapaLotesUrl && !ativo ? "Carregue a imagem primeiro" : ""}
+          style={{
+            padding: "8px 16px", borderRadius: 10, cursor: (!emp.mapaLotesUrl && !ativo) ? "not-allowed" : "pointer",
+            border: "none", fontWeight: 800, fontSize: 12, flexShrink: 0, transition: "0.2s",
+            background: ativo ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.08)",
+            color: ativo ? "#4ade80" : "var(--gray-mid)",
+            boxShadow: ativo ? "0 0 0 1px rgba(74,222,128,0.3)" : "none",
+            opacity: (!emp.mapaLotesUrl && !ativo) ? 0.5 : 1,
+          }}
+        >
+          {ativo ? "EXIBINDO" : "OCULTO"}
+        </button>
+      </div>
+
+      <input ref={ref} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+
+      {emp.mapaLotesUrl ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.2)" }}>
+          <img src={emp.mapaLotesUrl} alt="" style={{ width: 72, height: 56, objectFit: "cover", borderRadius: 8, flexShrink: 0, background: "white" }} />
+          <p style={{ fontSize: 12, color: "#4ade80", fontWeight: 700, flex: 1 }}>✓ Mapa carregado</p>
+          <a href={emp.mapaLotesUrl} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 10px", borderRadius: 7, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-subtle)", color: "var(--gray-light)", fontSize: 11, fontWeight: 600, textDecoration: "none" }}>
+            Ver
+          </a>
+          <button onClick={() => ref.current?.click()} disabled={uploading} style={{ padding: "5px 10px", borderRadius: 7, background: "var(--terracota-glow)", border: "1px solid var(--border-active)", color: "var(--terracota)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            {uploading ? "..." : "Trocar"}
+          </button>
+          <button onClick={remover} style={{ padding: "5px 10px", borderRadius: 7, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            Remover
+          </button>
+        </div>
+      ) : (
+        <button onClick={() => ref.current?.click()} disabled={uploading} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "12px 16px", borderRadius: 8, cursor: "pointer", background: "var(--terracota-glow)", border: "1px solid var(--border-active)", color: "var(--terracota)", fontSize: 12, fontWeight: 700, width: "100%" }}>
+          <ImageIcon size={14} /> {uploading ? "Enviando..." : "Upload da Imagem do Mapa"}
+        </button>
       )}
     </div>
   );
@@ -307,6 +490,37 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
             { id: "ic4", descricao: "Muro de Arrimo", valor: 0 }
           ];
         }
+        // ── MODELO B: lotes separados da casa (migração automática) ──
+        if (!f.lotes || f.lotes.length === 0) {
+          f.lotes = [{
+            id: "lote_padrao",
+            nome: "Lote Padrão",
+            tipo: "inteiro",
+            medida: f.modelos[0]?.tamanhoLote || "",
+            valor: f.modelos[0]?.valorLote ?? 48000,
+            ativo: true,
+            isPadrao: true,
+            modelosVinculados: [],
+          }];
+        }
+        const lotePadraoMig = f.lotes.find((l: any) => l.isPadrao) || f.lotes[0];
+
+        // Normaliza fachadas + valorCasa nos modelos (retrocompatibilidade)
+        // valorCasa = valor antigo − lote padrão → preço final permanece IDÊNTICO
+        f.modelos = f.modelos.map((m: any) => ({
+          ...m,
+          fachadas: m.fachadas ?? [],
+          exibirSeletorFachada: m.exibirSeletorFachada ?? false,
+          valorCasa: m.valorCasa ?? Math.max(0, (m.valor || 0) - (lotePadraoMig?.valor || 0)),
+        }));
+
+        // Normaliza campos do simulador em itens existentes (retrocompatibilidade)
+        f.simulador.cub.itensComplementares = f.simulador.cub.itensComplementares.map((item: any) => ({
+          ...item,
+          ativoNoSimulador: item.ativoNoSimulador ?? false,
+          modelosVinculados: item.modelosVinculados ?? [],
+        }));
+
         if (!f.simulador.itensComplementaresSBPE || f.simulador.itensComplementaresSBPE.length === 0) {
           f.simulador.itensComplementaresSBPE = [
             { id: "ic1_sbpe", descricao: "Muros Divisa do Imovel (2,5m altura)", valor: 0 },
@@ -546,7 +760,7 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const totalItens = itensMCMV.reduce((acc: number, item: any) => acc + (Number(item.valor) || 0), 0);
     const cubEquivalente = cubVigente + (totalItens / m.area);
     
-    const lote = emp.modelos[0]?.valorLote||48000;
+    const lote = (((emp.lotes||[]).find((l:any)=>l.isPadrao) || (emp.lotes||[])[0])?.valor) || emp.modelos[0]?.valorLote || 48000;
     const laudo = lote + m.area * cubEquivalente * (1+bdi);
     const maxFin = laudo * 0.80; // MCMV sempre permite 80%
 
@@ -573,6 +787,7 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
     {id:"mapa"        as Section, label:"Mapa & Lotes",   icon:Map,        hint:"SVG, quadras e lotes"}, 
     {id:"comissoes"   as Section, label:"Comissões",      icon:Wallet,     hint:"Regras de repasse"},
     {id:"atendimento" as Section, label:"Atendimento",    icon:Phone,      hint:"Contatos e presencial"},
+    {id:"adicionais"  as Section, label:"Adicionais",     icon:Plus,       hint:"Itens opcionais no simulador"},
   ];
 
   const saveCfg = {
@@ -665,7 +880,8 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                 Alterações não salvas
               </motion.p>
             )}
-          </AnimatePresence>
+
+            </AnimatePresence>
           <button onClick={salvar} disabled={saveState === "saving"} style={{
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
             padding: "11px 16px", borderRadius: 10, border: "none", cursor: "pointer",
@@ -840,8 +1056,20 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                           </div>
 
                           <Two>
-                            <div><FieldLabel hint="Preço final ao comprador">Valor do Imóvel (R$)</FieldLabel><NumInput value={m.valor} prefix="R$" onChange={v=>update(`modelos.${idx}.valor`,v)}/></div>
-                            <div><FieldLabel hint="Único para todos os modelos">Valor do Lote (R$)</FieldLabel><NumInput value={m.valorLote||48000} prefix="R$" onChange={v=>emp.modelos.forEach((_:any,i:number)=>update(`modelos.${i}.valorLote`,v))}/></div>
+                            <div>
+                              <FieldLabel hint="Apenas a construção, sem o lote">Valor da Casa (R$)</FieldLabel>
+                              <NumInput value={m.valorCasa ?? 0} prefix="R$" onChange={v=>{
+                                const lp = (emp.lotes||[]).find((l:any)=>l.isPadrao) || (emp.lotes||[])[0];
+                                update(`modelos.${idx}.valorCasa`, v);
+                                update(`modelos.${idx}.valor`, v + (lp?.valor || 0));
+                              }}/>
+                            </div>
+                            <div>
+                              <FieldLabel hint="Casa + lote padrão (calculado)">Preço Final Padrão</FieldLabel>
+                              <div style={{ padding: "13px 14px", borderRadius: 10, background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.2)", fontSize: 15, fontWeight: 800, color: "#4ade80" }}>
+                                R$ {(((m.valorCasa ?? 0) + (((emp.lotes||[]).find((l:any)=>l.isPadrao) || (emp.lotes||[])[0])?.valor || 0))).toLocaleString("pt-BR")}
+                              </div>
+                            </div>
                           </Two>
                           <Two>
                             <div><FieldLabel>Área (m²)</FieldLabel><NumInput value={m.area} suffix="m²" onChange={v=>update(`modelos.${idx}.area`,v)}/></div>
@@ -865,10 +1093,44 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                               <Info size={13} color="var(--terracota)" style={{flexShrink:0,marginTop:1}}/><p style={{fontSize:11,color:"var(--gray-mid)",lineHeight:1.5}}>Lote único — alterar aqui atualiza todos os modelos.</p>
                             </div>
                           )}
+                          <Hr />
+                          <PlantaUpload
+                            modelo={m}
+                            idx={idx}
+                            slug={slug}
+                            update={update}
+                            listaVitrine={emp.vitrine.plantas || []}
+                            updateVitrine={(nova) => update("vitrine.plantas", nova)}
+                          />
+                          <Hr />
+                          <FachadaAdmin
+                            modelo={m}
+                            idx={idx}
+                            slug={slug}
+                            update={update}
+                          />
                         </div>
                       </Card>
                     </div>
                   ))}
+
+                  {/* ── CARD: LOTES & FRAÇÕES ── */}
+                  <Card title="📐 Lotes & Frações" subtitle="O cliente escolhe o lote no simulador. O valor compõe o preço final (casa + lote) e o laudo CUB. Marque ★ o lote padrão.">
+                    <LotesAdmin
+                      lotes={emp.lotes || []}
+                      modelos={emp.modelos}
+                      onUpdate={(novosLotes) => {
+                        update("lotes", novosLotes);
+                        // Re-sincroniza preço final + valorLote legado de todos os modelos
+                        const lp = novosLotes.find((l:any)=>l.isPadrao) || novosLotes[0];
+                        emp.modelos.forEach((m:any, i:number) => {
+                          update(`modelos.${i}.valor`, (m.valorCasa ?? 0) + (lp?.valor || 0));
+                          update(`modelos.${i}.valorLote`, lp?.valor || 0);
+                        });
+                      }}
+                    />
+                    <MapaLotesUpload emp={emp} slug={slug} update={update} />
+                  </Card>
 
                   {/* BOTÃO ADICIONAR NOVO MODELO */}
                   <button
@@ -1838,6 +2100,23 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                     </div>
                   </Card>
 
+                </motion.div>
+              )}
+
+              {/* ═══ ADICIONAIS NO SIMULADOR ══════════════════════════════ */}
+              {section === "adicionais" && (
+                <motion.div key="adicionais" initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:"flex",flexDirection:"column",gap:32}}>
+                  <div>
+                    <h2 className="text-title" style={{marginBottom:8}}>Itens Opcionais no Simulador</h2>
+                    <p className="text-body">Defina quais obras complementares aparecem como opcionais para o cliente no simulador. Valores são gerenciados em Valores → CUB.</p>
+                  </div>
+                  <Card title="🛒 Itens Disponíveis" subtitle="Ative o item e selecione para quais modelos de casa ele será oferecido.">
+                    <ItensAdicionaisAdmin
+                      itens={emp.simulador.cub?.itensComplementares || []}
+                      modelos={emp.modelos}
+                      onUpdate={(novos) => update("simulador.cub.itensComplementares", novos)}
+                    />
+                  </Card>
                 </motion.div>
               )}
 

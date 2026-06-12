@@ -9,13 +9,14 @@ import { Shield, Info } from "lucide-react";
 interface ObrasChartProps {
   valorFinanciado: number;
   taxaAnual: number;
-  etapasObra?: { descricao: string; percentual: number }[]; // <- Atualizado para o formato novo
+  etapasObra?: { descricao: string; percentual: number }[];
   titulo?: string;
   descricao?: string;
   valorLote: number;
   parcelaSAC: number;
   parcelaPRICE: number;
   sacAprovado?: boolean;
+  itensAdicionaisAtivos?: { id: string; nome: string; valor: number }[];
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -49,12 +50,13 @@ export function ObrasEscadaChart({
   valorFinanciado,
   taxaAnual,
   etapasObra,
-  titulo = "Evolução dos Juros de Obra",
+  titulo = "Evolução de Obra (PCI)",
   descricao = "Você só paga pelo que a Caixa já vistoriou e liberou na sua obra.",
   valorLote,
   parcelaSAC,
   parcelaPRICE,
   sacAprovado = true,
+  itensAdicionaisAtivos = [],
 }: ObrasChartProps) {
   const [mesSelecionado, setMesSelecionado] = useState<number>(0);
 
@@ -92,6 +94,27 @@ export function ObrasEscadaChart({
           <p style={{ fontSize: 13, color: "var(--gray-mid)", lineHeight: 1.6 }}>{descricao}</p>
         </div>
       </motion.div>
+
+      {/* Itens opcionais ativos — exibe só quando há itens */}
+      {itensAdicionaisAtivos.length > 0 && (
+        <div style={{ padding: "16px 20px", borderRadius: 14, background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.2)" }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: "#4ade80", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>
+            ✦ Itens Opcionais incluídos neste financiamento
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {itensAdicionaisAtivos.map(item => (
+              <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                <span style={{ fontSize: 12, color: "var(--gray-mid)" }}>{item.nome}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#4ade80" }}>+ {formatBRL(item.valor)}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(74,222,128,0.2)" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gray-light)" }}>Total financiado (com adicionais)</span>
+            <span style={{ fontSize: 15, fontWeight: 800, color: "#4ade80" }}>{formatBRL(valorFinanciado)}</span>
+          </div>
+        </div>
+      )}
 
       {/* Alerta: 80% liberado de imediato */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "16px 20px", borderRadius: 14, background: "rgba(74,222,128,0.07)", border: "1px solid rgba(74,222,128,0.2)" }}>

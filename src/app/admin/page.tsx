@@ -9,10 +9,10 @@ import { db, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, updateDoc, onSnapshot, query, where, arrayUnion } from "firebase/firestore";
 import {
-  Building2, Settings, Users, MapPin, Clock,
+  Building2, Settings, Users, MapPin, Clock, Briefcase,
   ToggleLeft, ToggleRight, Plus, ExternalLink,
   ArrowLeft, ChevronRight, Phone, MessageCircle, MessageSquare,
-  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info, Printer, Wallet, UserCircle, Map as MapIcon, X, Menu, ShieldCheck, ToggleLeft as EyeOff, ToggleRight as EyeOn, Briefcase
+  CheckCircle2, Copy, Check, Link2, Trash2, LogOut, Flame, User as UserIcon, Share2, FolderOpen, Lock, FileText, UploadCloud, Info, Printer, Wallet, UserCircle, Map as MapIcon, X, Menu, ShieldCheck, ToggleLeft as EyeOff, ToggleRight as EyeOn,
 } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { DocumentosConstrutorModal } from "@/components/admin/DocumentosConstrutorModal";
@@ -26,6 +26,7 @@ import { GeradorContratoModal } from "@/components/admin/GeradorContratoModal";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AbaEmpreendimentos } from "@/components/admin/AbaEmpreendimentos";
 import { notificarTelegram } from "@/lib/notificacoes"; // ← IMPORT DO TELEGRAM
+import { CorrespondenteTag } from "@/components/shared/CorrespondenteTag";
 
 // ─────────────────────────────────────────────────────────
 // TIPAGENS E CONSTANTES
@@ -57,7 +58,7 @@ interface Lead {
   documentosConstrutora?: any;
   propostaUrl?: string;
   correspondentesPermitidos?: string[]; // ← LISTA BRANCA (Tudo fechado por padrão)
-  correspondentesInfo?: Array<{ id: string; nome: string }>;
+  correspondentesInfo?: Array<{ id: string; nome: string; telefone?: string; correspondencia?: boolean; consultoria?: boolean }>;
   motivoReprovacao?: string;
   origemDesqualificacao?: string;
   historicoAtendimento?: {
@@ -577,21 +578,22 @@ export default function AdminPage() {
       const infoAtuais = (modalAcessoLead as any).correspondentesInfo || [];
 
       // Normaliza todos os existentes (retrocompatibilidade: sem flags = CB=true)
-      const infoNormalizada: Array<{ id: string; nome: string; correspondencia: boolean; consultoria: boolean }> =
+      const infoNormalizada: Array<{ id: string; nome: string; telefone?: string; correspondencia: boolean; consultoria: boolean }> =
         listaCorrespondentes
           .filter(c => permitidosAtuais.includes(c.id))
           .map(c => {
             const ex = infoAtuais.find((i: any) => i.id === c.id);
             return {
-              id: c.id,
-              nome: c.nome,
-              correspondencia: ex ? (ex.correspondencia ?? true) : true,
-              consultoria:     ex ? (ex.consultoria     ?? false) : false,
-            };
+  id: c.id,
+  nome: c.nome,
+  telefone: ex?.telefone || c.telefone || "",
+  correspondencia: ex ? (ex.correspondencia ?? true) : true,
+  consultoria:     ex ? (ex.consultoria     ?? false) : false,
+};
           });
 
       const entradaExistente = infoNormalizada.find(c => c.id === correspondentId);
-      let novasInfos: Array<{ id: string; nome: string; correspondencia: boolean; consultoria: boolean }>;
+      let novasInfos: Array<{ id: string; nome: string; telefone?: string; correspondencia: boolean; consultoria: boolean }>;
 
       if (entradaExistente) {
         const atualizada = { ...entradaExistente, [funcao]: novoValor };
@@ -602,14 +604,15 @@ export default function AdminPage() {
         }
       } else if (novoValor) {
         novasInfos = [
-          ...infoNormalizada,
-          {
-            id:              correspondentId,
-            nome:            correspondente?.nome || correspondentId,
-            correspondencia: funcao === 'correspondencia',
-            consultoria:     funcao === 'consultoria',
-          },
-        ];
+  ...infoNormalizada,
+  {
+    id:              correspondentId,
+    nome:            correspondente?.nome || correspondentId,
+    telefone:        correspondente?.telefone || "",
+    correspondencia: funcao === 'correspondencia',
+    consultoria:     funcao === 'consultoria',
+  },
+];
       } else {
         setSalvandoAcesso(false);
         return;
@@ -981,20 +984,8 @@ export default function AdminPage() {
                                               (lead.correspondentesInfo as any[])
                                                 .filter((c: any) => (c.correspondencia ?? true) || (c.consultoria ?? false))
                                                 .map((c: any) => {
-                                                  const hasCB = c.correspondencia ?? true;
-                                                  const hasCons = c.consultoria ?? false;
-                                                  return (
-                                                    <Fragment key={c.id}>
-                                                      <span style={{ color: "var(--border-subtle)" }}>·</span>
-                                                      <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600 }}>
-                                                        {hasCB && <ShieldCheck size={10} color="#38bdf8" />}
-                                                        {hasCons && <Briefcase size={10} color="#a78bfa" />}
-                                                        <span style={{ color: hasCB && hasCons ? "var(--gray-light)" : hasCB ? "#38bdf8" : "#a78bfa" }}>
-                                                          {hasCB && hasCons ? `CB + Consultoria: ${c.nome}` : hasCB ? `CB: ${c.nome}` : `Consultoria: ${c.nome}`}
-                                                        </span>
-                                                      </span>
-                                                    </Fragment>
-                                                  );
+                                                  const dadosFrescos = listaCorrespondentes.find(cb => cb.id === c.id);
+                                                  return <CorrespondenteTag key={c.id} c={{ ...c, telefone: c.telefone || dadosFrescos?.telefone || "" }} />;
                                                 })
                                             }
                                           </div>

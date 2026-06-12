@@ -1,8 +1,17 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
-import Image from "next/image";
+import { motion } from "framer-motion";
 import { Check } from "lucide-react";
+import { FachadaSelector } from "@/components/simulador/FachadaSelector";
+
+interface Fachada {
+  id: string;
+  nome: string;
+  imagemUrl: string;
+  diferencaPreco: number;
+  ativo: boolean;
+  isPadrao: boolean;
+}
 
 interface Model {
   id: string;
@@ -12,22 +21,26 @@ interface Model {
   valor: number;
   imagem: string;
   planta: string;
-  tamanhoLote?: string; // NOVO CAMPO ADICIONADO AQUI
+  tamanhoLote?: string;
+  fachadas?: Fachada[];
+  exibirSeletorFachada?: boolean;
 }
 
 interface ModelSelectorProps {
   modelos: Model[];
   selected: string;
   onSelect: (id: string) => void;
+  onVerPlanta?: (url: string, nome: string) => void;
+  onFachadaChange?: (modeloId: string, fachada: { id: string; nome: string; diferencaPreco: number }) => void;
 }
 
-export function ModelSelector({ modelos, selected, onSelect }: ModelSelectorProps) {
+export function ModelSelector({ modelos, selected, onSelect, onVerPlanta, onFachadaChange }: ModelSelectorProps) {
   return (
     <div className="grid gap-8" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
       {modelos.map((modelo) => {
         const isSelected = selected === modelo.id;
         return (
-          <motion.button
+          <motion.div
             key={modelo.id}
             onClick={() => onSelect(modelo.id)}
             whileHover={{ scale: 1.02 }}
@@ -42,22 +55,33 @@ export function ModelSelector({ modelos, selected, onSelect }: ModelSelectorProp
               transition: "all 300ms ease",
             }}
           >
-            {/* Imagem */}
-            <div className="relative h-48 w-full overflow-hidden" style={{ borderRadius: "14px 14px 0 0" }}>
-              <div
-                className="absolute inset-0 flex-center"
-                style={{ background: "linear-gradient(135deg, var(--green-dark), var(--green-darker))" }}
-              >
-                <div className="text-center">
-                  <div className="text-6xl mb-2">🏠</div>
-                  <div className="text-sm" style={{ color: "var(--gray-mid)" }}>{modelo.nome}</div>
-                </div>
-              </div>
-              {/* Overlay gradiente */}
-              <div
-                className="absolute bottom-0 left-0 right-0 h-16"
-                style={{ background: "linear-gradient(to top, rgba(0,0,0,0.5), transparent)" }}
-              />
+            {/* Imagem / Seletor de Fachada */}
+            <div className="relative h-48 w-full overflow-hidden" style={{ borderRadius: "14px 14px 0 0", background: "linear-gradient(135deg, var(--green-dark), var(--green-darker))" }}>
+              {modelo.exibirSeletorFachada && onFachadaChange && (modelo.fachadas ?? []).filter(f => f.ativo).length > 0 ? (
+                <FachadaSelector
+                  modeloId={modelo.id}
+                  modeloNome={modelo.nome}
+                  fachadas={modelo.fachadas ?? []}
+                  onFachadaChange={onFachadaChange}
+                  onZoom={onVerPlanta}
+                />
+              ) : (
+                <>
+                  <div
+                    className="absolute inset-0 flex-center"
+                    style={{ background: "linear-gradient(135deg, var(--green-dark), var(--green-darker))" }}
+                  >
+                    <div className="text-center">
+                      <div className="text-6xl mb-2">🏠</div>
+                      <div className="text-sm" style={{ color: "var(--gray-mid)" }}>{modelo.nome}</div>
+                    </div>
+                  </div>
+                  <div
+                    className="absolute bottom-0 left-0 right-0 h-16"
+                    style={{ background: "linear-gradient(to top, rgba(0,0,0,0.5), transparent)" }}
+                  />
+                </>
+              )}
             </div>
 
             {/* Conteúdo */}
@@ -89,25 +113,37 @@ export function ModelSelector({ modelos, selected, onSelect }: ModelSelectorProp
                     R$ {modelo.valor.toLocaleString("pt-BR")}
                   </div>
                 </div>
-                
-                {/* CAMPO DINÂMICO DO LOTE */}
-                <div
-                  style={{
-                    fontSize: 11,
-                    padding: "5px 10px",
-                    borderRadius: 8,
-                    background: isSelected ? "var(--terracota-glow)" : "rgba(0,0,0,0.3)",
-                    color: isSelected ? "var(--terracota-light)" : "var(--gray-mid)",
-                    border: `1px solid ${isSelected ? "var(--border-active)" : "var(--border-subtle)"}`,
-                    letterSpacing: "0.03em",
-                  }}
-                >
-                  {modelo.tamanhoLote ? `Lote ${modelo.tamanhoLote}` : "Lote não definido"}
-                </div>
 
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {modelo.planta && onVerPlanta && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onVerPlanta(modelo.planta, modelo.nome); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 5,
+                        padding: "5px 10px", borderRadius: 8, cursor: "pointer",
+                        background: "rgba(56,189,248,0.08)",
+                        border: "1px solid rgba(56,189,248,0.2)",
+                        color: "#38bdf8", fontSize: 11, fontWeight: 700,
+                      }}
+                    >
+                      📐 Planta
+                    </button>
+                  )}
+                  <div
+                    style={{
+                      fontSize: 11, padding: "5px 10px", borderRadius: 8,
+                      background: isSelected ? "var(--terracota-glow)" : "rgba(0,0,0,0.3)",
+                      color: isSelected ? "var(--terracota-light)" : "var(--gray-mid)",
+                      border: `1px solid ${isSelected ? "var(--border-active)" : "var(--border-subtle)"}`,
+                      letterSpacing: "0.03em",
+                    }}
+                  >
+                    {modelo.tamanhoLote ? `Lote ${modelo.tamanhoLote}` : "Lote não definido"}
+                  </div>
+                </div>
               </div>
             </div>
-          </motion.button>
+          </motion.div>
         );
       })}
     </div>

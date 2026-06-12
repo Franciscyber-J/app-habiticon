@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo, Fragment } from "react";
+import { UserCircle } from "lucide-react";
+import { PerfilCorrespondente } from "@/components/correspondente/PerfilCorrespondente";
+import { CorrespondenteTag } from "@/components/shared/CorrespondenteTag";
+import { useState, useEffect, useMemo } from "react";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, query, where, onSnapshot, doc, getDoc, getDocs } from "firebase/firestore";
@@ -8,7 +11,7 @@ import Image from "next/image";
 import {
   LogOut, Building2, Phone, Calendar, Search, Filter,
   ShieldCheck, CheckCircle2, Clock, AlertCircle, User as UserIcon, FolderOpen,
-  Bed, Maximize, FileText, ExternalLink, Info, Briefcase
+  Bed, Maximize, FileText, ExternalLink, Info
 } from "lucide-react";
 import { AnaliseModal } from "@/components/correspondente/AnaliseModal";
 import { DocumentosConstrutorModal, SLOTS_FIXOS } from "@/components/admin/DocumentosConstrutorModal";
@@ -33,6 +36,7 @@ interface LeadData {
   dossie?: any;
   documentosConstrutora?: any;
   correspondentesPermitidos?: string[]; // ← LISTA BRANCA (Tudo fechado por padrão)
+  propostaUrl?: string;
   motivoReprovacao?: string;
   origemDesqualificacao?: string;
   correspondentesInfo?: Array<{ id: string; nome: string }>;
@@ -92,14 +96,15 @@ export default function PainelCorrespondente() {
 
   const [leadDocumentosId, setLeadDocumentosId] = useState<string | null>(null);
   const leadDocumentosSelecionado = leadsParaAnalise.find(l => l.id === leadDocumentosId) || null;
+  const [perfilAberto, setPerfilAberto] = useState(false);
+  const [dadosPerfil, setDadosPerfil] = useState({ nome: "", email: "", telefone: "" });
 
   // ── AUTENTICAÇÃO E BUSCA DE LEADS ──
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
       if (!user) { window.location.href = "/login"; return; }
 
-      setUserName(user.displayName || "Correspondente");
-      setMeuUid(user.uid); // ← Armazena o UID do correspondente
+      setMeuUid(user.uid);
 
       const userDoc = await getDoc(doc(db, "usuarios", user.uid));
       if (userDoc.exists()) {
@@ -108,6 +113,12 @@ export default function PainelCorrespondente() {
           window.location.href = "/login";
           return;
         }
+        setUserName(userDoc.data().nome || user.displayName || "Correspondente");
+        setDadosPerfil({
+          nome:     userDoc.data().nome     || user.displayName || "",
+          email:    userDoc.data().email    || user.email       || "",
+          telefone: userDoc.data().telefone || "",
+        });
       }
 
       const qLeads = query(collection(db, "leads"), where("status", "!=", "novo"));
@@ -201,6 +212,14 @@ export default function PainelCorrespondente() {
           <span style={{ fontSize: 13, color: "var(--gray-light)" }} className="hidden sm:inline">
             Olá, <strong>{userName}</strong>
           </span>
+          <button
+            onClick={() => setPerfilAberto(true)}
+            title="Meu Perfil"
+            className="btn-ghost"
+            style={{ color: "var(--gray-light)", padding: 8 }}
+          >
+            <UserCircle size={18} />
+          </button>
           <button onClick={() => auth.signOut()} className="btn-ghost" style={{ color: "#f87171" }}>
             <LogOut size={16} />
           </button>
@@ -362,26 +381,11 @@ export default function PainelCorrespondente() {
                               {lead.nomeCorretor && (
                                 <span style={{ fontSize: 10, color: "var(--gray-dark)", fontWeight: 600 }}>· {lead.nomeCorretor}</span>
                               )}
-                              {(lead as any).correspondentesInfo && (lead as any).correspondentesInfo.length > 0 &&
-                                ((lead as any).correspondentesInfo as any[])
-                                  .filter((c: any) => (c.correspondencia ?? true) || (c.consultoria ?? false))
-                                  .map((c: any) => {
-                                    const hasCB = c.correspondencia ?? true;
-                                    const hasCons = c.consultoria ?? false;
-                                    return (
-                                      <Fragment key={c.id}>
-                                        <span style={{ color: "var(--border-subtle)" }}>·</span>
-                                        <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600 }}>
-                                          {hasCB && <ShieldCheck size={10} color="#38bdf8" />}
-                                          {hasCons && <Briefcase size={10} color="#a78bfa" />}
-                                          <span style={{ color: hasCB && hasCons ? "var(--gray-light)" : hasCB ? "#38bdf8" : "#a78bfa" }}>
-                                            {hasCB && hasCons ? `CB + Consultoria: ${c.nome}` : hasCB ? `CB: ${c.nome}` : `Consultoria: ${c.nome}`}
-                                          </span>
-                                        </span>
-                                      </Fragment>
-                                    );
-                                  })
-                              }
+                              {lead.correspondentesInfo && lead.correspondentesInfo.length > 0 &&
+  (lead.correspondentesInfo as any[])
+    .filter((c: any) => (c.correspondencia ?? true) || (c.consultoria ?? false))
+    .map((c: any) => <CorrespondenteTag key={c.id} c={c} />)
+}
                             </div>
                           </div>
                         </div>
@@ -398,6 +402,11 @@ export default function PainelCorrespondente() {
 
                       {/* LINHA 2: AÇÕES */}
                       <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", padding: "9px 20px", display: "flex", alignItems: "center", gap: 5, justifyContent: "flex-end" }}>
+                        {lead.propostaUrl && (
+                          <a href={lead.propostaUrl} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 12px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 5, alignItems: "center", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)", textDecoration: "none" }}>
+                            <FileText size={12} /> Simulação
+                          </a>
+                        )}
                         <button
                           onClick={() => setLeadAnaliseId(lead.id)}
                           style={{ padding: "5px 12px", borderRadius: 7, fontSize: 11, fontWeight: 700, display: "flex", gap: 5, alignItems: "center", border: "none", cursor: "pointer", background: "#38bdf8", color: "white" }}
@@ -512,6 +521,17 @@ export default function PainelCorrespondente() {
         onClose={() => setLeadDocumentosId(null)}
         lead={leadDocumentosSelecionado}
         isAdmin={false}
+      />
+
+      <PerfilCorrespondente
+        isOpen={perfilAberto}
+        onClose={() => setPerfilAberto(false)}
+        userId={meuUid}
+        dadosAtuais={dadosPerfil}
+        onSalvo={({ nome, telefone }) => {
+          setUserName(nome);
+          setDadosPerfil(prev => ({ ...prev, nome, telefone }));
+        }}
       />
 
     </div>

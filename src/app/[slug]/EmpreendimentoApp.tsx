@@ -11,6 +11,9 @@ import {
 } from "lucide-react";
 
 import { ModelSelector } from "@/components/simulador/ModelSelector";
+import { PlantaModal } from "@/components/simulador/PlantaModal";
+import { ItensAdicionaisSimulador } from "@/components/simulador/ItensAdicionaisSimulador";
+import { LoteSelector } from "@/components/simulador/LoteSelector";
 import { EntradaSlider } from "@/components/simulador/EntradaSlider";
 import { ResultCards } from "@/components/simulador/ResultCards";
 import { ComparadorSacPrice } from "@/components/simulador/ComparadorSacPrice";
@@ -54,6 +57,8 @@ interface Modelo {
   imagem: string;
   planta: string;
   valorLote?: number;
+  tamanhoLote?: string;
+  valorCasa?: number;
 }
 
 interface FaixaMCMV {
@@ -128,7 +133,7 @@ interface Empreendimento {
 const MODULOS = [
   { id: "renda",     label: "1. Renda & Subsídio", shortLabel: "Renda",    icon: TrendingUp, hint: "Identifique o enquadramento MCMV" },
   { id: "simulador", label: "2. Simulador",        shortLabel: "Simulador",icon: Home,       hint: "Motor 50/50 com SAC e PRICE" },
-  { id: "obra",      label: "3. Obra PCI",         shortLabel: "Obra",     icon: HardHat,    hint: "Juros durante a construção" },
+  { id: "obra",      label: "3. Obra PCI",         shortLabel: "Obra",     icon: HardHat,    hint: "Evolução de obra durante a construção" },
   { id: "proposta",  label: "4. Proposta PDF",     shortLabel: "Proposta", icon: FileText,   hint: "Gere o documento personalizado" },
   { id: "vitrine",   label: "5. Vitrine",          shortLabel: "Vitrine",  icon: ImageIcon,  hint: "Fotos, plantas e localização" },
 ];
@@ -166,7 +171,12 @@ export default function EmpreendimentoApp({
 }) {
   const [moduloAtivo,       setModuloAtivo]       = useState("renda");
   const [empFresh, setEmpFresh] = useState(emp);
-  const [linkCopiado, setLinkCopiado] = useState(false); 
+  const [linkCopiado, setLinkCopiado] = useState(false);
+  const [plantaModal, setPlantaModal] = useState<{ aberto: boolean; url: string; nome: string }>({ aberto: false, url: "", nome: "" });
+  const [itensAdicionaisTotal, setItensAdicionaisTotal] = useState(0);
+  const [itensAdicionaisAtivos, setItensAdicionaisAtivos] = useState<{ id: string; nome: string; valor: number }[]>([]);
+  const [fachadasPorModelo, setFachadasPorModelo] = useState<Record<string, { id: string; nome: string; diferencaPreco: number }>>({});
+  const [loteSelecionado, setLoteSelecionado] = useState<{ id: string; nome: string; tipo: string; medida: string; valor: number } | null>(null); 
 
   useEffect(() => {
     fetch("/api/empreendimentos")
@@ -179,6 +189,12 @@ export default function EmpreendimentoApp({
   }, [emp.slug]);
 
   const [modeloSelecionado, setModeloSelecionado] = useState(empFresh.modelos[0]?.id || "");
+  const handleSelecionarModelo = (id: string) => {
+    setModeloSelecionado(id);
+    setItensAdicionaisTotal(0);
+    setItensAdicionaisAtivos([]);
+    setLoteSelecionado(null); // LoteSelector re-emite o padrão do novo modelo
+  };
   const [entrada,           setEntrada]           = useState(empFresh.simulador.entradaMin);
   const [subsidio,          setSubsidio]          = useState(0);
   const [taxaAtual,         setTaxaAtual]         = useState(empFresh.simulador.taxaFaixa12);
@@ -189,8 +205,23 @@ export default function EmpreendimentoApp({
   const [sidebarOpen,       setSidebarOpen]       = useState(false);
   const [usarSubsidio,      setUsarSubsidio]      = useState(true);
 
-  const valorLoteEmpreendimento = empFresh.modelos[0]?.valorLote ?? 48000;
+  // ── MODELO B: lotes separados da casa ──
+  const lotesDisponiveis: any[] = ((empFresh as any).lotes && (empFresh as any).lotes.length > 0)
+    ? (empFresh as any).lotes
+    : [{
+        id: "lote_padrao", nome: "Lote Padrão", tipo: "inteiro",
+        medida: empFresh.modelos[0]?.tamanhoLote || "",
+        valor: empFresh.modelos[0]?.valorLote ?? 48000,
+        ativo: true, isPadrao: true, modelosVinculados: [],
+      }];
+  const lotePadrao = lotesDisponiveis.find((l: any) => l.isPadrao) || lotesDisponiveis[0];
+  const valorLoteEmpreendimento = loteSelecionado?.valor ?? (lotePadrao?.valor ?? 48000);
+
   const modelo = empFresh.modelos.find((m) => m.id === modeloSelecionado) || empFresh.modelos[0];
+  const valorCasaModelo = (modelo as any)?.valorCasa ?? Math.max(0, (modelo?.valor || 0) - (lotePadrao?.valor || 0));
+  const fachadaSelecionada = fachadasPorModelo[modeloSelecionado] || null;
+  const fachadaDiff = fachadaSelecionada?.diferencaPreco || 0;
+  const valorEfetivo = valorCasaModelo + valorLoteEmpreendimento + fachadaDiff + itensAdicionaisTotal;
 
   const tetoRendaMCMV = useMemo(() => Math.max(...empFresh.mcmv.faixas.map((f: any) => f.rendaMax), 13000), [empFresh.mcmv.faixas]);
   
@@ -265,14 +296,14 @@ export default function EmpreendimentoApp({
       const laudoCalculado = getLaudoSBPE(modelo);
 
       const info = calcularEntradaEmbutidaSBPE(
-        modelo.valor,
+        valorEfetivo,
         0,
         SBPE_COTA_MAXIMA_SAC,
         laudoCalculado
       );
 
       const sim = simularSBPE({
-        valorImovel: modelo.valor,
+        valorImovel: valorEfetivo,
         entrada: 0,
         prazoMeses: empFresh.simulador.prazoMeses,
         taxaAnual: taxaSBPE,
@@ -284,7 +315,7 @@ export default function EmpreendimentoApp({
       const maxFinCUB = info.cotaCaixa;
       
       const maxFinEfetivo = Math.min(maxFinCUB, maxFinRenda);
-      const entradaFinal = Math.max(empFresh.simulador.entradaMin, modelo.valor - maxFinEfetivo);
+      const entradaFinal = Math.max(empFresh.simulador.entradaMin, valorEfetivo - maxFinEfetivo);
 
       let limitador: LimitadorEntrada = "cota_80";
       let detalhe = "Teto SBPE — Máximo 80% (SAC)";
@@ -300,7 +331,7 @@ export default function EmpreendimentoApp({
         detalhe = `A renda limita o financiamento SBPE a R$ ${maxFinRenda.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} (Trava de 30% na SAC).`;
       }
 
-      const financiamentoPadraoSemCUB = modelo.valor * SBPE_COTA_MAXIMA_SAC;
+      const financiamentoPadraoSemCUB = valorEfetivo * SBPE_COTA_MAXIMA_SAC;
       const ganhoReal = Math.max(0, maxFinEfetivo - financiamentoPadraoSemCUB);
 
       return {
@@ -313,19 +344,19 @@ export default function EmpreendimentoApp({
         maxFinCota80: financiamentoPadraoSemCUB,
         maxFinCUB: maxFinCUB,
         ganhoEntradaEmbutida: ganhoReal, 
-        cubCobre: maxFinEfetivo >= (modelo.valor - empFresh.simulador.entradaMin),
-        pctFinanciadoSobreVenda: maxFinEfetivo / modelo.valor
+        cubCobre: maxFinEfetivo >= (valorEfetivo - empFresh.simulador.entradaMin),
+        pctFinanciadoSobreVenda: maxFinEfetivo / valorEfetivo
       };
     }
 
     // --- MCMV ---
     const subsidioEfetivo = usarSubsidio ? subsidio : 0;
-    const valorVenda = modelo.valor - subsidioEfetivo;
+    const valorVenda = valorEfetivo - subsidioEfetivo;
 
     let maxFinRenda = Infinity;
     if (rendaFamiliar > 0) {
       const sim = simular({
-        valorImovel: modelo.valor,
+        valorImovel: valorEfetivo,
         entrada: 0,
         prazoMeses: empFresh.simulador.prazoMeses,
         taxaAnual: taxaAtual,
@@ -363,7 +394,8 @@ export default function EmpreendimentoApp({
   }, [
     modelo, rendaFamiliar, empFresh.simulador.entradaMin, empFresh.simulador.prazoMeses, 
     empFresh.simulador.cub, empFresh.simulador.taxaSBPE, 
-    taxaAtual, subsidio, usarSubsidio, tetoEfetivo, valorLoteEmpreendimento, isSBPE, getLaudoSBPE, getLaudoMCMV
+    taxaAtual, subsidio, usarSubsidio, tetoEfetivo, valorLoteEmpreendimento, isSBPE, getLaudoSBPE, getLaudoMCMV,
+    itensAdicionaisTotal, fachadaDiff, valorEfetivo
   ]);
 
   const laudoCUBAtual = useMemo(() => {
@@ -411,7 +443,7 @@ export default function EmpreendimentoApp({
     
     if (isSBPE) {
       return simularSBPE({
-        valorImovel: modelo.valor,
+        valorImovel: valorEfetivo,
         entrada,
         prazoMeses: empFresh.simulador.prazoMeses,
         taxaAnual: empFresh.simulador.taxaSBPE || 11.38,
@@ -421,7 +453,7 @@ export default function EmpreendimentoApp({
     }
 
     return simular({
-      valorImovel: modelo.valor,
+      valorImovel: valorEfetivo,
       entrada,
       prazoMeses: empFresh.simulador.prazoMeses,
       taxaAnual: taxaAtual,
@@ -430,7 +462,7 @@ export default function EmpreendimentoApp({
       rendaFamiliar,
       tetoImovel: tetoEfetivo,
     });
-  }, [modelo, entrada, empFresh.simulador.prazoMeses, taxaAtual, subsidio, usarSubsidio, rendaFamiliar, tetoEfetivo, empFresh.simulador.taxaSBPE, isSBPE, getLaudoSBPE]);
+  }, [modelo, entrada, empFresh.simulador.prazoMeses, taxaAtual, subsidio, usarSubsidio, rendaFamiliar, tetoEfetivo, empFresh.simulador.taxaSBPE, isSBPE, getLaudoSBPE, itensAdicionaisTotal, fachadaDiff, valorEfetivo]);
 
   // ─────────────────────────────────────────────────────
   // DADOS DA PROPOSTA PDF E API
@@ -445,7 +477,7 @@ export default function EmpreendimentoApp({
     
     const sacPrimeiraSobrePrice = isSBPE 
       ? (resultadoSimulacao.parcelaSACPrimeira || 0)
-      : (amort + pv * i + saldoAposAmort * 0.000108 + modelo.valor * 0.000071018 + 25);
+      : (amort + pv * i + saldoAposAmort * 0.000108 + valorEfetivo * 0.000071018 + 25);
 
     const sacAprovadoPDF = rendaFamiliar > 0
       ? sacPrimeiraSobrePrice <= rendaFamiliar * 0.30
@@ -462,7 +494,13 @@ export default function EmpreendimentoApp({
       modelo: modelo.nome,
       area: modelo.area,
       quartos: modelo.quartos, 
-      valorImovel: modelo.valor,
+      valorImovel: valorEfetivo,
+      valorBase: valorCasaModelo,
+      valorCasa: valorCasaModelo,
+      loteSelecionado: loteSelecionado || (lotePadrao ? { id: lotePadrao.id, nome: lotePadrao.nome, tipo: lotePadrao.tipo, medida: lotePadrao.medida, valor: lotePadrao.valor } : null),
+      itensAdicionaisAtivos,
+      fachadaSelecionada,
+      valorLote: valorLoteEmpreendimento,
       valorAvaliacao: valorLaudo, 
       entrada,
       ato: entrada * atoPercent,
@@ -479,7 +517,7 @@ export default function EmpreendimentoApp({
       corretorId: corretorIdUrl, 
       origem: origemUrl,
     };
-  }, [modelo, resultadoSimulacao, empFresh, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent, rendaFamiliar, corretorIdUrl, origemUrl, isSBPE, getLaudoSBPE]);
+  }, [modelo, resultadoSimulacao, empFresh, entrada, subsidio, usarSubsidio, taxaAtual, atoPercent, rendaFamiliar, corretorIdUrl, origemUrl, isSBPE, getLaudoSBPE, itensAdicionaisTotal, itensAdicionaisAtivos, fachadaSelecionada, loteSelecionado, valorEfetivo]);
 
   const getModuloStatus = (modId: string) => {
     if (modId === "renda")     return rendaPreenchida ? "done" : "active";
@@ -873,8 +911,31 @@ export default function EmpreendimentoApp({
                     <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 20 }}>
                       Escolha o Modelo
                     </h3>
-                    <ModelSelector modelos={empFresh.modelos} selected={modeloSelecionado} onSelect={setModeloSelecionado} />
+                    <ModelSelector
+                      modelos={empFresh.modelos}
+                      selected={modeloSelecionado}
+                      onSelect={handleSelecionarModelo}
+                      onVerPlanta={(url, nome) => setPlantaModal({ aberto: true, url, nome })}
+                      onFachadaChange={(modeloId, f) => setFachadasPorModelo(prev => ({ ...prev, [modeloId]: f }))}
+                    />
                   </div>
+
+                  <LoteSelector
+                    lotes={lotesDisponiveis}
+                    modeloId={modeloSelecionado}
+                    onLoteChange={(l) => setLoteSelecionado(l)}
+                    mapaUrl={(empFresh as any).exibirMapaLotes ? ((empFresh as any).mapaLotesUrl || "") : ""}
+                    onVerMapa={(url) => setPlantaModal({ aberto: true, url, nome: "Mapa do Loteamento" })}
+                  />
+
+                  <ItensAdicionaisSimulador
+                    itens={empFresh.simulador?.cub?.itensComplementares || []}
+                    modeloId={modeloSelecionado}
+                    onTotalChange={(total, lista) => {
+                      setItensAdicionaisTotal(total);
+                      setItensAdicionaisAtivos(lista);
+                    }}
+                  />
 
                   {modelo && (
                     <div className="glass-card-nohover">
@@ -965,12 +1026,13 @@ export default function EmpreendimentoApp({
                           Composição da Entrada
                         </h3>
                         <ResultCards
-                          valorImovel={modelo.valor}
+                          valorImovel={valorEfetivo}
                           entrada={entrada}
                           subsidio={usarSubsidio && !isSBPE ? subsidio : 0}
                           atoPercent={atoPercent}
                           onAtoPercentChange={setAtoPercent}
                           laudoCUB={laudoCUBAtual}
+                          itensAdicionaisAtivos={itensAdicionaisAtivos}
                         />
 
                       </div>
@@ -1013,7 +1075,7 @@ export default function EmpreendimentoApp({
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
                       {propostaData && <PDFGenerator proposta={propostaData} />}
                       <button onClick={() => setModuloAtivo("obra")} className="btn-secondary">
-                        Ver Juros de Obra <ChevronRight size={16} />
+                        Ver Evolução de Obra <ChevronRight size={16} />
                       </button>
                     </div>
                   )}
@@ -1034,13 +1096,14 @@ export default function EmpreendimentoApp({
                       <ObrasEscadaChart
                         valorFinanciado={resultadoSimulacao.finLiberadoPRICE}
                         taxaAnual={isSBPE ? (empFresh.simulador.taxaSBPE || 11.38) : taxaAtual}
-                        etapasObra={empFresh.simulador.etapasObra} // <- A variável NOVA E DINÂMICA
+                        etapasObra={empFresh.simulador.etapasObra}
                         titulo={empFresh.textos.tituloObra}
                         descricao={empFresh.textos.descricaoObra}
                         valorLote={valorLoteEmpreendimento}
                         parcelaSAC={propostaData?.parcelaSACPrimeira ?? 0}
                         parcelaPRICE={propostaData?.parcelaPRICE ?? resultadoSimulacao.parcelaPricePrimeira}
                         sacAprovado={propostaData?.sacAprovadoPDF ?? true}
+                        itensAdicionaisAtivos={itensAdicionaisAtivos}
                       />
                     </div>
                   ) : (
@@ -1076,8 +1139,12 @@ export default function EmpreendimentoApp({
                           {[
                             ["Empreendimento",                       empFresh.nome],
                             ["Modelo sugerido",                      `${modelo?.nome} · ${modelo?.area}m²`],
-                            ["Valor do Contrato",                    formatBRL(modelo?.valor || 0)],
-                            ["Valor de Avaliação Estimado (Laudo)",  formatBRL(propostaData.valorAvaliacao || 0)], 
+                            ["Casa (construção)",                    formatBRL(valorCasaModelo)],
+                            [`Lote: ${(loteSelecionado || lotePadrao)?.nome || "Padrão"}${(loteSelecionado || lotePadrao)?.medida ? ` (${(loteSelecionado || lotePadrao).medida})` : ""}`, formatBRL(valorLoteEmpreendimento)],
+                            ...(fachadaDiff !== 0 ? [[`✦ Fachada: ${fachadaSelecionada?.nome}`, `${fachadaDiff > 0 ? "+" : "−"} ${formatBRL(Math.abs(fachadaDiff))}`]] : []),
+                            ...itensAdicionaisAtivos.map(item => [`✦ ${item.nome}`, `+ ${formatBRL(item.valor)}`]),
+                            ["Valor do Contrato",                    formatBRL(valorEfetivo)],
+                            ["Valor de Avaliação Estimado (Laudo)",  formatBRL(propostaData.valorAvaliacao || 0)],
                             ["Valor do Lote",                        formatBRL(valorLoteEmpreendimento)],
                             ["Entrada Real Exigida",                 formatBRL(entrada)],
                             ["  ↳ Ato mínimo no contrato",           formatBRL(entrada * atoPercent)],
@@ -1211,6 +1278,12 @@ export default function EmpreendimentoApp({
           </div>
         </main>
       </div>
+    <PlantaModal
+        isOpen={plantaModal.aberto}
+        onClose={() => setPlantaModal(prev => ({ ...prev, aberto: false }))}
+        plantaUrl={plantaModal.url}
+        modeloNome={plantaModal.nome}
+      />
     </div>
   );
 }

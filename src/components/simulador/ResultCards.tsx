@@ -20,7 +20,8 @@ interface ResultCardsProps {
   subsidio: number;
   atoPercent: number;
   onAtoPercentChange: (v: number) => void;
-  laudoCUB?: number; // ← NOVO: laudo real calculado via calcularLaudoCUB() no pai
+  laudoCUB?: number;
+  itensAdicionaisAtivos?: { id: string; nome: string; valor: number }[];
 }
 
 // ─────────────────────────────────────────────────────────
@@ -60,6 +61,7 @@ export function ResultCards({
   valorImovel, entrada, subsidio,
   atoPercent, onAtoPercentChange,
   laudoCUB = 0,
+  itensAdicionaisAtivos = [],
 }: ResultCardsProps) {
   const [tabAtiva, setTabAtiva] = useState<"cartao" | "boleto">("cartao");
   const [qtdParcelas, setQtdParcelas] = useState<number>(5);
@@ -76,6 +78,9 @@ export function ResultCards({
 
   // Mostra entrada embutida somente quando laudoCUB foi fornecido e há ganho real
   const temEntradaEmbutida = laudoCUB > 0 && embutida.entradaEmbutida > 0;
+  const itensTotal = itensAdicionaisAtivos.reduce((acc, i) => acc + i.valor, 0);
+  const valorBase  = valorImovel - itensTotal;
+  const temItens   = itensAdicionaisAtivos.length > 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -275,11 +280,33 @@ export function ResultCards({
           Composição do Financiamento Caixa
         </p>
 
-        {/* Valor contratual */}
-        <InfoLine
-          label="Valor contratual (imóvel)"
-          value={formatBRL(embutida.valorContratual)}
-        />
+        {/* Valor contratual — com breakdown quando há adicionais */}
+        {temItens ? (
+          <>
+            <InfoLine
+              label="Valor base do modelo"
+              value={formatBRL(valorBase)}
+            />
+            {itensAdicionaisAtivos.map(item => (
+              <InfoLine
+                key={item.id}
+                label={`✦ ${item.nome}`}
+                value={`+ ${formatBRL(item.valor)}`}
+                valueColor="#4ade80"
+              />
+            ))}
+            <InfoLine
+              label="Valor contratual (com adicionais)"
+              value={formatBRL(embutida.valorContratual)}
+              valueColor="var(--terracota-light)"
+            />
+          </>
+        ) : (
+          <InfoLine
+            label="Valor contratual (imóvel)"
+            value={formatBRL(embutida.valorContratual)}
+          />
+        )}
 
         {/* Laudo CUB — exibe só se foi fornecido, senão esconde a linha para não confundir */}
         {laudoCUB > 0 && (

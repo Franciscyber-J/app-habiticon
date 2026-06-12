@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo, Fragment } from "react";
+import { CorrespondenteTag } from "@/components/shared/CorrespondenteTag";
+import { useState, useEffect, useMemo } from "react";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs } from "firebase/firestore";
 import Image from "next/image";
-import { Users, ShieldCheck, LogOut, MessageCircle, Building2, MessageSquare, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw, FileText, ExternalLink, Info, ThumbsUp, Share2, Copy, UserCircle, Save, X, Map as MapIcon, Home, Phone, Lock, CheckCircle2, Briefcase } from "lucide-react";
+import { Users, ShieldCheck, LogOut, MessageCircle, Building2, MessageSquare, UserPlus, Flame, FolderOpen, AlertOctagon, RefreshCcw, FileText, ExternalLink, Info, ThumbsUp, Share2, Copy, UserCircle, Save, X, Map as MapIcon, Home, Phone, Lock, CheckCircle2 } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { MapaInterativo } from "@/components/mapa/MapaInterativo";
 import { formatBRL } from "@/lib/calculos";
@@ -738,25 +739,10 @@ const publicarHistorico = async () => {
                                   </span>
                                   {lead.modelo && (<><span style={{ color: "var(--border-subtle)" }}>·</span><span style={{ color: "var(--terracota-light)", fontWeight: 600 }}>{lead.modelo}</span></>)}
                                   {lead.correspondentesInfo && lead.correspondentesInfo.length > 0 &&
-                                    (lead.correspondentesInfo as any[])
-                                      .filter((c: any) => (c.correspondencia ?? true) || (c.consultoria ?? false))
-                                      .map((c: any) => {
-                                        const hasCB = c.correspondencia ?? true;
-                                        const hasCons = c.consultoria ?? false;
-                                        return (
-                                          <Fragment key={c.id}>
-                                            <span style={{ color: "var(--border-subtle)" }}>·</span>
-                                            <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600 }}>
-                                              {hasCB && <ShieldCheck size={10} color="#38bdf8" />}
-                                              {hasCons && <Briefcase size={10} color="#a78bfa" />}
-                                              <span style={{ color: hasCB && hasCons ? "var(--gray-light)" : hasCB ? "#38bdf8" : "#a78bfa" }}>
-                                                {hasCB && hasCons ? `CB + Consultoria: ${c.nome}` : hasCB ? `CB: ${c.nome}` : `Consultoria: ${c.nome}`}
-                                              </span>
-                                            </span>
-                                          </Fragment>
-                                        );
-                                      })
-                                  }
+  (lead.correspondentesInfo as any[])
+    .filter((c: any) => (c.correspondencia ?? true) || (c.consultoria ?? false))
+    .map((c: any) => <CorrespondenteTag key={c.id} c={c} />)
+}
                                 </div>
                               </div>
                             </div>

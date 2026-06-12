@@ -24,7 +24,13 @@ interface PropostaData {
   quartos?: number;       
   area: number;
   valorImovel: number;
-  valorAvaliacao?: number; 
+  valorBase?: number;
+  valorLote?: number;
+  valorAvaliacao?: number;
+  itensAdicionaisAtivos?: { id: string; nome: string; valor: number }[];
+  fachadaSelecionada?: { id: string; nome: string; diferencaPreco: number } | null;
+  valorCasa?: number;
+  loteSelecionado?: { id: string; nome: string; tipo?: string; medida?: string; valor: number } | null;
   entrada: number;
   ato: number;
   valorFinanciado: number;
@@ -151,7 +157,10 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
               entrada: proposta.entrada,
               valorFinanciado: proposta.valorFinanciado,
               rendaFamiliar: proposta.rendaFamiliar || 0,
-              subsidio: proposta.subsidio
+              subsidio: proposta.subsidio,
+              loteSelecionado: proposta.loteSelecionado || null,
+              fachadaSelecionada: proposta.fachadaSelecionada || null,
+              itensAdicionaisAtivos: proposta.itensAdicionaisAtivos || [],
             },
             timestamp: new Date().toISOString(),
           }),
@@ -244,25 +253,44 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       pdfDoc.text("COMPOSIÇÃO FINANCEIRA", 20, y);
       y += 8;
 
+      const fachadaDiffPDF = proposta.fachadaSelecionada?.diferencaPreco || 0;
+      const lotePDF = proposta.loteSelecionado;
+      const temItens = !!lotePDF || (proposta.itensAdicionaisAtivos || []).length > 0 || fachadaDiffPDF !== 0;
+
       const linhas = [
+        ...(temItens ? [
+          ["Casa (construção)", formatBRL(proposta.valorCasa ?? proposta.valorBase ?? proposta.valorImovel)],
+          ...(lotePDF ? [[`Lote: ${lotePDF.nome}${lotePDF.medida ? ` (${lotePDF.medida})` : ""}`, formatBRL(lotePDF.valor)]] : []),
+          ...(fachadaDiffPDF !== 0 ? [[`✦ Fachada: ${proposta.fachadaSelecionada!.nome}`, `${fachadaDiffPDF > 0 ? "+" : "-"} ${formatBRL(Math.abs(fachadaDiffPDF))}`]] : []),
+          ...(proposta.itensAdicionaisAtivos || []).map(item => [`✦ ${item.nome}`, `+ ${formatBRL(item.valor)}`]),
+          ["Valor contratual", formatBRL(proposta.valorImovel)],
+        ] : []),
+        ...(proposta.valorAvaliacao ? [["Laudo de Avaliação estimado (CUB)", formatBRL(proposta.valorAvaliacao)]] : []),
+        ...(proposta.valorLote ? [["Valor do Lote", formatBRL(proposta.valorLote)]] : []),
         ["Entrada Total", formatBRL(proposta.entrada)],
         ["→ Ato Mínimo (50% — na assinatura)", formatBRL(proposta.ato)],
         ["→ Parcelamento (50% — 5x)", formatBRL(proposta.entrada - proposta.ato)],
         ...(proposta.subsidio > 0 ? [["Subsídio MCMV estimado", formatBRL(proposta.subsidio)]] : []),
         ["Saldo a financiar na Caixa", formatBRL(proposta.valorFinanciado)],
         ["Prazo do financiamento", `${proposta.prazoMeses / 12} anos (${proposta.prazoMeses} meses)`],
-        ["Taxa de juros MCMV", `${proposta.taxa}% a.a.`],
+        ["Taxa de juros", `${proposta.taxa}% a.a.`],
       ];
 
       linhas.forEach((linha, i) => {
         const isAlt = i % 2 === 0;
+        const isSubitem = linha[0].startsWith("→");
+        const isItemAdicional = linha[0].startsWith("✦");
         pdfDoc.setFillColor(isAlt ? 23 : 33, isAlt ? 39 : 57, isAlt ? 28 : 43);
         pdfDoc.rect(15, y - 4, pageW - 30, 10, "F");
-        pdfDoc.setFont("helvetica", linha[0].startsWith("→") ? "normal" : "bold");
+        pdfDoc.setFont("helvetica", (isSubitem || isItemAdicional) ? "normal" : "bold");
         pdfDoc.setFontSize(9);
-        pdfDoc.setTextColor(linha[0].startsWith("→") ? 154 : 216, linha[0].startsWith("→") ? 154 : 216, linha[0].startsWith("→") ? 153 : 215);
+        if (isItemAdicional) {
+          pdfDoc.setTextColor(74, 222, 128);
+        } else {
+          pdfDoc.setTextColor(isSubitem ? 154 : 216, isSubitem ? 154 : 216, isSubitem ? 153 : 215);
+        }
         pdfDoc.text(linha[0], 20, y + 2);
-        pdfDoc.setTextColor(175, 111, 83);
+        pdfDoc.setTextColor(isItemAdicional ? 74 : 175, isItemAdicional ? 222 : 111, isItemAdicional ? 128 : 83);
         pdfDoc.text(linha[1], pageW - 20, y + 2, { align: "right" });
         y += 10;
       });
