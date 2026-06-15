@@ -191,7 +191,6 @@ export default function AdminPage() {
   const leadDocumentosSelecionado = todosLeads.find(l => l.id === leadDocumentosId) || null;
 
   const [uploadingGeral, setUploadingGeral] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isPrinting, setIsPrinting] = useState(false);
 
@@ -402,6 +401,7 @@ export default function AdminPage() {
   const handleUploadDocumentoPadrao = async (e: React.ChangeEvent<HTMLInputElement>, empSlug: string) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
+    e.target.value = "";
     setUploadingGeral(true);
     try {
       let listaAtual = [...(empreendimentos.find(e => e.slug === empSlug)?.documentosPadrao || [])];
@@ -414,7 +414,7 @@ export default function AdminPage() {
       }
       await updateDoc(doc(db, "empreendimentos", empSlug), { documentosPadrao: listaAtual });
       setEmpreendimentos((prev) => prev.map((e) => (e.slug === empSlug ? { ...e, documentosPadrao: listaAtual } : e)));
-    } catch (error) { alert("Falha no upload do arquivo."); } finally { setUploadingGeral(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
+    } catch (error) { alert("Falha no upload do arquivo."); } finally { setUploadingGeral(false); }
   };
 
   const deletarDocumentoPadrao = async (url: string, empSlug: string) => {
@@ -1199,10 +1199,19 @@ export default function AdminPage() {
                             <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>{emp.nome}</h3>
                           </div>
                           <div>
-                            <input ref={fileInputRef} type="file" multiple accept="application/pdf,image/*" className="hidden" onChange={(e) => handleUploadDocumentoPadrao(e, emp.slug)} />
-                            <button onClick={() => fileInputRef.current?.click()} disabled={uploadingGeral} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, cursor: "pointer", background: "var(--terracota-glow)", border: "1px solid var(--border-active)", color: "var(--terracota)", fontSize: 12, fontWeight: 700, opacity: uploadingGeral ? 0.5 : 1 }}>
+                            <label
+                              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, cursor: uploadingGeral ? "not-allowed" : "pointer", background: "var(--terracota-glow)", border: "1px solid var(--border-active)", color: "var(--terracota)", fontSize: 12, fontWeight: 700, opacity: uploadingGeral ? 0.5 : 1 }}
+                            >
                               <UploadCloud size={14} /> {uploadingGeral ? "A enviar..." : "Adicionar Arquivo"}
-                            </button>
+                              <input
+                                type="file"
+                                multiple
+                                accept="application/pdf,image/*"
+                                className="hidden"
+                                disabled={uploadingGeral}
+                                onChange={(e) => handleUploadDocumentoPadrao(e, emp.slug)}
+                              />
+                            </label>
                           </div>
                         </div>
                         <div style={{ padding: "16px 20px" }}>
