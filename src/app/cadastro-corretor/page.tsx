@@ -62,6 +62,8 @@ export default function CadastroCorretorPage() {
          role: "corretor",
          status: "ativo",
          dataCriacao: new Date().toISOString(),
+         empreendimentosPermitidos: [],
+         acessoConfigurado: false,
          dadosBancarios: {
            cpf: cpf.trim(),
            chavePix: chavePix.trim(),

@@ -70,7 +70,20 @@ export default function HomePage() {
               />
             </div>
 
-            
+            <Link
+              href="/login"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "10px 20px", borderRadius: 10,
+                background: "var(--terracota-glow)",
+                border: "1px solid var(--border-active)",
+                color: "var(--terracota-light)",
+                fontSize: 14, fontWeight: 700, textDecoration: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Entrar <ArrowRight size={15} />
+            </Link>
           </div>
         </div>
       </header>

@@ -209,6 +209,13 @@ function CadastroForm() {
           >
             {loading ? "A criar conta..." : <>Criar Conta <ArrowRight size={16} /></>}
           </button>
+
+          <div style={{ textAlign: "center", marginTop: 8 }}>
+            <span style={{ fontSize: 13, color: "var(--gray-mid)" }}>Já tem conta? </span>
+            <a href="/login" style={{ fontSize: 13, fontWeight: 700, color: "var(--terracota)", textDecoration: "none" }}>
+              Entrar →
+            </a>
+          </div>
         </form>
       </div>
     </div>

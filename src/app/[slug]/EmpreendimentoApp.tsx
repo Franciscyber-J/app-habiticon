@@ -490,6 +490,7 @@ export default function EmpreendimentoApp({
 
     return {
       empreendimento: empFresh.nome,
+      empreendimentoId: empFresh.slug,
       cidade: empFresh.cidade,
       estado: empFresh.estado,
       modelo: modelo.nome,

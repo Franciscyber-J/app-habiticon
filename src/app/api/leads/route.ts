@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
       nomeCorretor,
       corretorId,
       empreendimento,
+      empreendimentoId: empreendimentoIdRecebido,
       modelo,
       valorImovel,
       area,
@@ -64,11 +65,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const slug = empreendimento
+    const slug = empreendimentoIdRecebido
+      ? empreendimentoIdRecebido
+      : empreendimento
       ? empreendimento
           .toLowerCase()
           .normalize("NFD")
           .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9\s-]/g, "")
+          .trim()
           .replace(/\s+/g, "-")
       : "default";
 

@@ -18,6 +18,7 @@ interface Lead {
 
 interface PropostaData {
   empreendimento: string;
+  empreendimentoId?: string;
   cidade: string;
   estado: string;
   modelo: string;
@@ -146,6 +147,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
             corretorId: finalCorretorId,
             nomeCorretor: finalNomeCorretor,
             empreendimento: proposta.empreendimento,
+            empreendimentoId: proposta.empreendimentoId || "",
             modelo: proposta.modelo,
             area: proposta.area || 0,
             quartos: proposta.quartos || 0,

@@ -180,6 +180,7 @@ export default function AdminPage() {
 
   const [listaCorretores, setListaCorretores] = useState<any[]>([]);
   const [listaCorrespondentes, setListaCorrespondentes] = useState<any[]>([]); // ← NOVO
+  const [listaCoordenadores, setListaCoordenadores] = useState<any[]>([]); // ← NOVO
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
   const [filtroStatus, setFiltroStatus] = useState<string>("ativos");
   const [filtroEmpreendimento, setFiltroEmpreendimento] = useState<string>("todos");
@@ -222,7 +223,11 @@ export default function AdminPage() {
   const [salvandoAcesso, setSalvandoAcesso] = useState(false);
   const [modalAcessoCorretor, setModalAcessoCorretor] = useState<{corretor: any | null}>({ corretor: null });
   const [salvandoAcessoCorretor, setSalvandoAcessoCorretor] = useState(false);
+  const [modalAcessoCoordenador, setModalAcessoCoordenador] = useState<{coordenador: any | null}>({ coordenador: null });
+  const [salvandoAcessoCoordenador, setSalvandoAcessoCoordenador] = useState(false);
   const [filtroEquipeEmp, setFiltroEquipeEmp] = useState<string>("todos");
+  const [visaoEquipe, setVisaoEquipe] = useState<"corretores" | "coordenadores">("corretores");
+  const [filtroEquipeEmpCoord, setFiltroEquipeEmpCoord] = useState<string>("todos");
 
   // ← NOVO: Estado do Modal de Notificações do Telegram
   const [modalNotificacoes, setModalNotificacoes] = useState(false);
@@ -296,6 +301,17 @@ export default function AdminPage() {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any)).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
       setListaCorrespondentes(data);
     }, (error) => console.error("Erro ao carregar correspondentes:", error));
+    return () => unsub();
+  }, [authVerificado]);
+
+  // ← CARREGA COORDENADORES
+  useEffect(() => {
+    if (!authVerificado) return;
+    const qCoordenadores = query(collection(db, "usuarios"), where("status", "==", "ativo"), where("role", "==", "coordenador"));
+    const unsub = onSnapshot(qCoordenadores, (snapshot) => {
+      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any)).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+      setListaCoordenadores(data);
+    }, (error) => console.error("Erro ao carregar coordenadores:", error));
     return () => unsub();
   }, [authVerificado]);
 
@@ -645,16 +661,43 @@ export default function AdminPage() {
         : [...permitidosAtuais, empSlug];
 
       await updateDoc(doc(db, "usuarios", corretor.id), {
-        empreendimentosPermitidos: novosPermitidos
+        empreendimentosPermitidos: novosPermitidos,
+        acessoConfigurado: true
       });
 
-      const corretorAtualizado = { ...corretor, empreendimentosPermitidos: novosPermitidos };
+      const corretorAtualizado = { ...corretor, empreendimentosPermitidos: novosPermitidos, acessoConfigurado: true };
       setModalAcessoCorretor({ corretor: corretorAtualizado });
       setListaCorretores(prev => prev.map(c => c.id === corretor.id ? corretorAtualizado : c));
     } catch (error) {
       alert("Erro ao salvar. Tente novamente.");
     } finally {
       setSalvandoAcessoCorretor(false);
+    }
+  };
+
+  const toggleEmpreendimentoCoordenador = async (empSlug: string) => {
+    if (!modalAcessoCoordenador.coordenador) return;
+    setSalvandoAcessoCoordenador(true);
+    try {
+      const coordenador = modalAcessoCoordenador.coordenador;
+      const permitidosAtuais: string[] = Array.isArray(coordenador.empreendimentosPermitidos) ? coordenador.empreendimentosPermitidos : [];
+      const jaPermitido = permitidosAtuais.includes(empSlug);
+      const novosPermitidos = jaPermitido
+        ? permitidosAtuais.filter(s => s !== empSlug)
+        : [...permitidosAtuais, empSlug];
+
+      await updateDoc(doc(db, "usuarios", coordenador.id), {
+        empreendimentosPermitidos: novosPermitidos,
+        acessoConfigurado: true
+      });
+
+      const coordenadorAtualizado = { ...coordenador, empreendimentosPermitidos: novosPermitidos, acessoConfigurado: true };
+      setModalAcessoCoordenador({ coordenador: coordenadorAtualizado });
+      setListaCoordenadores(prev => prev.map(c => c.id === coordenador.id ? coordenadorAtualizado : c));
+    } catch (error) {
+      alert("Erro ao salvar. Tente novamente.");
+    } finally {
+      setSalvandoAcessoCoordenador(false);
     }
   };
 
@@ -717,6 +760,14 @@ export default function AdminPage() {
         return permitidos.includes(filtroEquipeEmp);
       });
     }, [listaCorretores, filtroEquipeEmp, empreendimentos]);
+
+  const coordenadoresFiltrados = useMemo(() => {
+      if (filtroEquipeEmpCoord === "todos") return listaCoordenadores;
+      return listaCoordenadores.filter(c => {
+        const permitidos: string[] = Array.isArray(c.empreendimentosPermitidos) ? c.empreendimentosPermitidos : [];
+        return permitidos.includes(filtroEquipeEmpCoord);
+      });
+    }, [listaCoordenadores, filtroEquipeEmpCoord]);
 
   const ativos = empreendimentos.filter((e) => e.status === "ativo").length;
   const leadsNaRoletaCount = todosLeads.filter(l => !l.corretorId).length;
@@ -1099,7 +1150,27 @@ export default function AdminPage() {
               {/* ABA: EQUIPE */}
               {tab === "equipe" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+                  {/* SELETOR DE VISÃO: CORRETORES | COORDENADORES */}
+                  <div style={{ display: "flex", gap: 10, background: "rgba(0,0,0,0.3)", padding: 6, borderRadius: 14, border: "1px solid var(--border-subtle)", flexWrap: "wrap", maxWidth: "max-content" }}>
+                    <button
+                      onClick={() => setVisaoEquipe("corretores")}
+                      style={{ padding: "10px 18px", borderRadius: 10, border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "0.2s", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap", background: visaoEquipe === "corretores" ? "var(--terracota)" : "transparent", color: visaoEquipe === "corretores" ? "white" : "var(--gray-mid)" }}
+                    >
+                      <Users size={16} /> Corretores ({listaCorretores.length})
+                    </button>
+                    <button
+                      onClick={() => setVisaoEquipe("coordenadores")}
+                      style={{ padding: "10px 18px", borderRadius: 10, border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "0.2s", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap", background: visaoEquipe === "coordenadores" ? "#60a5fa" : "transparent", color: visaoEquipe === "coordenadores" ? "white" : "var(--gray-mid)" }}
+                    >
+                      <ShieldCheck size={16} /> Coordenadores ({listaCoordenadores.length})
+                    </button>
+                  </div>
+
+                  {visaoEquipe === "corretores" && (
                   <GestaoComissoes leads={todosLeads} empreendimentos={empreendimentos} corretores={listaCorretores} />
+                  )}
+                  {visaoEquipe === "corretores" && (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 8 }}>
                     <div style={{ background: "rgba(167,139,250,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(167,139,250,0.2)", display: "flex", alignItems: "center", gap: 12, flex: "1 1 300px" }}>
                       <Wallet size={18} color="#a78bfa" style={{ flexShrink: 0 }} />
@@ -1121,7 +1192,8 @@ export default function AdminPage() {
                       </select>
                     </div>
                   </div>
-                  {listaCorretores.length === 0 ? (
+                  )}
+                  {visaoEquipe === "corretores" && (listaCorretores.length === 0 ? (
                     <div style={{ padding: "64px 24px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.2)", border: "1px dashed var(--border-subtle)" }}>
                       <p style={{ fontSize: 14, color: "var(--gray-mid)" }}>Nenhum corretor na equipa.</p>
                     </div>
@@ -1172,6 +1244,79 @@ export default function AdminPage() {
                         </div>
                       ))}
                     </div>
+                  ))}
+
+                  {/* ─── VISÃO COORDENADORES ─── */}
+                  {visaoEquipe === "coordenadores" && (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+                        <div style={{ background: "rgba(96,165,250,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(96,165,250,0.2)", display: "flex", alignItems: "center", gap: 12, flex: "1 1 300px" }}>
+                          <ShieldCheck size={18} color="#60a5fa" style={{ flexShrink: 0 }} />
+                          <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>Controle quais empreendimentos cada coordenador pode visualizar (leads, corretores e materiais). Coordenadores sem empreendimentos liberados não veem nada até serem configurados.</p>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-card)", padding: "12px 16px", borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
+                          <ShieldCheck size={16} color="#60a5fa" />
+                          <select
+                            value={filtroEquipeEmpCoord}
+                            onChange={e => setFiltroEquipeEmpCoord(e.target.value)}
+                            style={{ background: "transparent", border: "none", color: "white", fontSize: 13, fontWeight: 600, outline: "none", cursor: "pointer" }}
+                          >
+                            <option value="todos" style={{ background: "#1a2e23" }}>Todos os Empreendimentos ({listaCoordenadores.length})</option>
+                            {empreendimentos.map(emp => (
+                              <option key={emp.slug} value={emp.slug} style={{ background: "#1a2e23" }}>
+                                {emp.nome} ({listaCoordenadores.filter(c => (Array.isArray(c.empreendimentosPermitidos) ? c.empreendimentosPermitidos : []).includes(emp.slug)).length})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {coordenadoresFiltrados.length === 0 ? (
+                        <div style={{ padding: "64px 24px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.2)", border: "1px dashed var(--border-subtle)" }}>
+                          <p style={{ fontSize: 14, color: "var(--gray-mid)" }}>{listaCoordenadores.length === 0 ? "Nenhum coordenador cadastrado." : "Nenhum coordenador neste empreendimento."}</p>
+                        </div>
+                      ) : (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+                          {coordenadoresFiltrados.map((coordenador) => {
+                            const qtdPermitidos = Array.isArray(coordenador.empreendimentosPermitidos) ? coordenador.empreendimentosPermitidos.length : 0;
+                            const configurado = coordenador.acessoConfigurado === true;
+                            return (
+                              <div key={coordenador.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
+                                <div style={{ padding: "20px", borderBottom: "1px solid var(--border-subtle)", background: "rgba(0,0,0,0.15)", display: "flex", gap: 14, alignItems: "center" }}>
+                                  <div style={{ width: 46, height: 46, borderRadius: 12, background: "rgba(96,165,250,0.15)", color: "#60a5fa", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "1px solid rgba(96,165,250,0.3)" }}>
+                                    {(coordenador.nome || "?")[0].toUpperCase()}
+                                  </div>
+                                  <div style={{ minWidth: 0, flex: 1 }}>
+                                    <h3 style={{ fontSize: 16, fontWeight: 700, color: "white", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{coordenador.nome}</h3>
+                                    <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>Coordenador de Vendas</p>
+                                  </div>
+                                </div>
+                                <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 16 }}>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 11, color: "var(--gray-dark)", textTransform: "uppercase", fontWeight: 700 }}>E-mail</span><span style={{ fontSize: 12, color: "var(--gray-light)", fontWeight: 600 }}>{coordenador.email || "-"}</span></div>
+                                    <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 11, color: "var(--gray-dark)", textTransform: "uppercase", fontWeight: 700 }}>WhatsApp</span><span style={{ fontSize: 12, color: "var(--gray-light)", fontWeight: 600 }}>{coordenador.telefone || "-"}</span></div>
+                                  </div>
+
+                                  {!configurado && (
+                                    <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(251,146,60,0.08)", border: "1px solid rgba(251,146,60,0.25)" }}>
+                                      <p style={{ fontSize: 11, color: "#fb923c", fontWeight: 600 }}>⚠ Nunca configurado — não vê nada ainda.</p>
+                                    </div>
+                                  )}
+
+                                  <button
+                                    onClick={() => setModalAcessoCoordenador({ coordenador: coordenador })}
+                                    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px", borderRadius: 10, cursor: "pointer", background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.3)", color: "#60a5fa", fontSize: 12, fontWeight: 700 }}
+                                  >
+                                    <Building2 size={14} />
+                                    Gerir Empreendimentos ({qtdPermitidos}/{empreendimentos.length})
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -1399,6 +1544,75 @@ export default function AdminPage() {
 
               <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end" }}>
                 <button onClick={() => setModalAcessoCorretor({ corretor: null })} style={{ padding: "10px 20px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
+                  Fechar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: ACESSO DO COORDENADOR AOS EMPREENDIMENTOS */}
+      <AnimatePresence>
+        {modalAcessoCoordenador.coordenador && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+            onClick={(e) => { if (e.target === e.currentTarget) setModalAcessoCoordenador({ coordenador: null }); }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 20, width: "100%", maxWidth: 480, overflow: "hidden", maxHeight: "90vh", display: "flex", flexDirection: "column" }}
+            >
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", background: "rgba(0,0,0,0.2)" }}>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
+                    <Building2 size={18} color="#60a5fa" /> Empreendimentos do Coordenador
+                  </h3>
+                  <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>
+                    Coordenador: <strong style={{ color: "var(--gray-light)" }}>{modalAcessoCoordenador.coordenador.nome}</strong>
+                  </p>
+                </div>
+                <button onClick={() => setModalAcessoCoordenador({ coordenador: null })} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+              </div>
+
+              <div style={{ padding: "16px 24px", background: "rgba(96,165,250,0.06)", borderBottom: "1px solid var(--border-subtle)", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <Info size={15} color="#60a5fa" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 12, color: "var(--gray-light)", lineHeight: 1.6 }}>
+                  Defina quais empreendimentos este coordenador pode <strong style={{ color: "#60a5fa" }}>visualizar</strong> (leads, corretores e materiais). Sem nenhum ligado, ele não vê nada.
+                </p>
+              </div>
+
+              <div style={{ overflowY: "auto", flex: 1, padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+                {empreendimentos.map((emp) => {
+                  const permitidos: string[] = Array.isArray(modalAcessoCoordenador.coordenador.empreendimentosPermitidos) ? modalAcessoCoordenador.coordenador.empreendimentosPermitidos : [];
+                  const temAcesso = permitidos.includes(emp.slug);
+
+                  return (
+                    <div key={emp.slug} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderRadius: 12, background: temAcesso ? "rgba(74,222,128,0.05)" : "rgba(239,68,68,0.05)", border: temAcesso ? "1px solid rgba(74,222,128,0.2)" : "1px solid rgba(239,68,68,0.2)", transition: "all 0.2s" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: temAcesso ? "rgba(74,222,128,0.15)" : "rgba(239,68,68,0.15)", color: temAcesso ? "#4ade80" : "#f87171", border: temAcesso ? "1px solid rgba(74,222,128,0.3)" : "1px solid rgba(239,68,68,0.3)" }}>
+                          <Building2 size={16} />
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 14, fontWeight: 700, color: "white" }}>{emp.nome}</p>
+                          <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 2 }}>{emp.cidade} · {emp.estado}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => toggleEmpreendimentoCoordenador(emp.slug)}
+                        disabled={salvandoAcessoCoordenador}
+                        style={{ padding: "8px 16px", borderRadius: 10, cursor: salvandoAcessoCoordenador ? "not-allowed" : "pointer", fontWeight: 800, fontSize: 12, border: "none", transition: "all 0.2s", background: temAcesso ? "rgba(74,222,128,0.2)" : "rgba(239,68,68,0.2)", color: temAcesso ? "#4ade80" : "#f87171", opacity: salvandoAcessoCoordenador ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}
+                      >
+                        {temAcesso ? <><ToggleRight size={16} /> LIGADO</> : <><ToggleLeft size={16} /> DESLIGADO</>}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={() => setModalAcessoCoordenador({ coordenador: null })} style={{ padding: "10px 20px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
                   Fechar
                 </button>
               </div>

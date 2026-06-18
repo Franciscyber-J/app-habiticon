@@ -133,7 +133,7 @@ export function ObrasEscadaChart({
       {/* Gráfico em escada */}
       <div>
         <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--gray-mid)", marginBottom: 14 }}>
-          Juros mensais por fase de obra
+          Valor Evolução Mensal por fase de obra
         </p>
         <div style={{ height: 200, minWidth: 0 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -238,7 +238,7 @@ export function ObrasEscadaChart({
       <div style={{ padding: "24px 28px", borderRadius: 20, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", boxShadow: "var(--shadow-card)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <p style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--gray-mid)" }}>
-            Total de juros pagos na obra (previsto)
+            Total de valores pagos de evolução de obra (previsto)
           </p>
           <p style={{ fontSize: 28, fontWeight: 800, color: "var(--terracota)" }}>
             {formatBRLDecimal(totalJuros)}
@@ -247,7 +247,7 @@ export function ObrasEscadaChart({
         
         <div style={{ paddingTop: 20, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
           <p style={{ fontSize: 13, color: "var(--gray-mid)", marginBottom: 14 }}>
-            Após o Habite-se, o financiamento bancário substitui os juros. Escolha sua modalidade:
+            Após o Habite-se, o financiamento bancário substitui os valores de evolução de obra. Escolha sua modalidade:
           </p>
           {sacAprovado ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>

@@ -7,16 +7,25 @@ import { setDoc, doc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { User, Mail, Lock, ShieldCheck, ArrowLeft, Loader2, Eye, EyeOff } from "lucide-react";
+import { User, Mail, Lock, ShieldCheck, ArrowLeft, Loader2, Eye, EyeOff, CreditCard, Landmark, Wallet } from "lucide-react";
 
 export default function CadastroCoordenador() {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
+  const [telefone, setTelefone] = useState("");
   const [senha, setSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false); // Estado para o "olhinho"
+
+  // Dados Bancários / Financeiros (Opcionais)
+  const [cpf, setCpf] = useState("");
+  const [chavePix, setChavePix] = useState("");
+  const [banco, setBanco] = useState("");
+  const [agencia, setAgencia] = useState("");
+  const [conta, setConta] = useState("");
+
   const router = useRouter();
 
   const handleCadastro = async (e: React.FormEvent) => {
@@ -38,9 +47,19 @@ export default function CadastroCoordenador() {
       await setDoc(doc(db, "usuarios", user.uid), {
         nome,
         email,
+        telefone,
         role: "coordenador",
         status: "ativo",
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        empreendimentosPermitidos: [],
+        acessoConfigurado: false,
+        dadosBancarios: {
+          cpf: cpf.trim(),
+          chavePix: chavePix.trim(),
+          banco: banco.trim(),
+          agencia: agencia.trim(),
+          conta: conta.trim()
+        }
       });
 
       alert("Cadastro de coordenador realizado com sucesso!");
@@ -90,6 +109,14 @@ export default function CadastroCoordenador() {
             </div>
           </div>
 
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6, display: "block" }}>WhatsApp</label>
+            <div style={{ position: "relative" }}>
+              <span style={{ position: "absolute", left: 16, top: 13, color: "var(--terracota)", fontSize: 16 }}>📞</span>
+              <input type="text" required value={telefone} onChange={(e) => setTelefone(e.target.value)} className="input-field" style={{ paddingLeft: 48, height: 48 }} placeholder="(64) 99999-9999" />
+            </div>
+          </div>
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Senha</label>
@@ -131,6 +158,46 @@ export default function CadastroCoordenador() {
                 >
                   {mostrarSenha ? <EyeOff size={16} color="var(--gray-mid)" /> : <Eye size={16} color="var(--gray-mid)" />}
                 </button>
+              </div>
+            </div>
+          </div>
+
+          {/* SEÇÃO: DADOS BANCÁRIOS (OPCIONAL) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, background: "rgba(0,0,0,0.2)", padding: 16, borderRadius: 14, border: "1px dashed var(--border-subtle)", marginTop: 4 }}>
+            <h2 style={{ fontSize: 13, fontWeight: 700, color: "var(--gray-light)", display: "flex", alignItems: "center", gap: 8 }}>
+              <Wallet size={15} color="#4ade80" /> Dados para Comissionamento (Opcional)
+            </h2>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>CPF ou CNPJ</label>
+                <div style={{ position: "relative" }}>
+                  <CreditCard size={15} color="var(--gray-dark)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+                  <input type="text" value={cpf} onChange={(e) => setCpf(e.target.value)} className="input-field" style={{ paddingLeft: 36, fontSize: 13 }} placeholder="Apenas números" />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Chave PIX</label>
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--gray-dark)", fontSize: 13 }}>❖</span>
+                  <input type="text" value={chavePix} onChange={(e) => setChavePix(e.target.value)} className="input-field" style={{ paddingLeft: 36, fontSize: 13 }} placeholder="CPF, E-mail ou Celular" />
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Banco</label>
+                <div style={{ position: "relative" }}>
+                  <Landmark size={13} color="var(--gray-dark)" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
+                  <input type="text" value={banco} onChange={(e) => setBanco(e.target.value)} className="input-field" style={{ paddingLeft: 30, fontSize: 12 }} placeholder="Ex: Nubank" />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Agência</label>
+                <input type="text" value={agencia} onChange={(e) => setAgencia(e.target.value)} className="input-field" style={{ fontSize: 12 }} placeholder="0001" />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Conta</label>
+                <input type="text" value={conta} onChange={(e) => setConta(e.target.value)} className="input-field" style={{ fontSize: 12 }} placeholder="12345-6" />
               </div>
             </div>
           </div>
