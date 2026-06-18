@@ -59,6 +59,9 @@ export default function PainelCoordenador() {
   const [empreendimentos, setEmpreendimentos] = useState<Empreendimento[]>([]);
   const [listaCorretores, setListaCorretores] = useState<any[]>([]);
   const [userName, setUserName] = useState("");
+  const [empreendimentosPermitidos, setEmpreendimentosPermitidos] = useState<string[]>([]);
+  const [acessoConfigurado, setAcessoConfigurado] = useState(false);
+  const [vetudo, setVetudo] = useState(false); // admin / e-mail supremo vê tudo
   const [abaAtiva, setAbaAtiva] = useState<"gestao" | "arquivos">("gestao");
   
   // Filtros Avançados
@@ -104,12 +107,21 @@ export default function PainelCoordenador() {
             return;
           }
           setUserName(userData.nome || "Coordenador");
+          if (userData.role === "admin") {
+            // Admin vê tudo
+            setVetudo(true);
+            setAcessoConfigurado(true);
+          } else {
+            setEmpreendimentosPermitidos(Array.isArray(userData.empreendimentosPermitidos) ? userData.empreendimentosPermitidos : []);
+            setAcessoConfigurado(userData.acessoConfigurado === true);
+          }
           setAuthVerificado(true);
         } else {
           // Fallback para o seu e-mail supremo caso o documento não exista
           if (user.email === "contax002@gmail.com") {
             setUserName("Administrador Supremo");
-            setAuthVerificado(true);
+            setVetudo(true);
+            setAcessoConfigurado(true);
           } else {
             alert("Perfil de utilizador não encontrado no banco de dados.");
             auth.signOut();
@@ -214,9 +226,35 @@ export default function PainelCoordenador() {
     });
   };
 
-  // ── LÓGICA DE FILTRAGEM ──
+  // ── PERMISSÃO POR EMPREENDIMENTO ──
+  const podeVerEmp = useMemo(() => {
+    return (slug: string) => vetudo || empreendimentosPermitidos.includes(slug);
+  }, [vetudo, empreendimentosPermitidos]);
+
+  // Leads restritos aos empreendimentos liberados (base de tudo)
+  const leadsPermitidos = useMemo(() => {
+    if (vetudo) return todosLeads;
+    return todosLeads.filter(l => empreendimentosPermitidos.includes(l.empreendimentoId));
+  }, [todosLeads, vetudo, empreendimentosPermitidos]);
+
+  // Corretores restritos: só os que têm ao menos 1 empreendimento em comum com o coordenador
+  const corretoresPermitidos = useMemo(() => {
+    if (vetudo) return listaCorretores;
+    return listaCorretores.filter(c => {
+      const permC: string[] = Array.isArray(c.empreendimentosPermitidos) ? c.empreendimentosPermitidos : [];
+      return permC.some(slug => empreendimentosPermitidos.includes(slug));
+    });
+  }, [listaCorretores, vetudo, empreendimentosPermitidos]);
+
+  // Empreendimentos restritos (para a aba de materiais)
+  const empreendimentosPermitidosLista = useMemo(() => {
+    if (vetudo) return empreendimentos;
+    return empreendimentos.filter(e => empreendimentosPermitidos.includes(e.slug));
+  }, [empreendimentos, vetudo, empreendimentosPermitidos]);
+
+  // ── LÓGICA DE FILTRAGEM (agora partindo de leadsPermitidos) ──
   const leadsFiltrados = useMemo(() => {
-    return todosLeads.filter(lead => {
+    return leadsPermitidos.filter(lead => {
       const matchCorretor = filtroCorretor === "todos" || 
                             (filtroCorretor === "roleta" && !lead.corretorId) || 
                             lead.corretorId === filtroCorretor;
@@ -228,10 +266,10 @@ export default function PainelCoordenador() {
       
       return matchCorretor && matchStatus && matchNome;
     });
-  }, [todosLeads, filtroCorretor, filtroStatus, pesquisaNome]);
+  }, [leadsPermitidos, filtroCorretor, filtroStatus, pesquisaNome]);
 
-  const leadsNaRoleta = todosLeads.filter(l => !l.corretorId).length;
-  const leadsAprovados = todosLeads.filter(l => l.status === "qualificado" || l.status === "credito_aprovado").length;
+  const leadsNaRoleta = leadsPermitidos.filter(l => !l.corretorId).length;
+  const leadsAprovados = leadsPermitidos.filter(l => l.status === "qualificado" || l.status === "credito_aprovado").length;
 
   if (!authVerificado) {
     return (
@@ -263,6 +301,21 @@ export default function PainelCoordenador() {
 
       <main className="container-app" style={{ padding: "30px 20px", maxWidth: 1000, margin: "0 auto" }}>
 
+        {!vetudo && !acessoConfigurado ? (
+          <div style={{ padding: "64px 28px", textAlign: "center", background: "var(--bg-card)", borderRadius: 20, border: "1px dashed rgba(96,165,250,0.3)", display: "flex", flexDirection: "column", alignItems: "center", gap: 16, marginTop: 40 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 18, background: "rgba(96,165,250,0.12)", border: "1px solid rgba(96,165,250,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Lock size={28} color="#60a5fa" />
+            </div>
+            <div>
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: "white", marginBottom: 8 }}>Acesso pendente de liberação</h2>
+              <p style={{ fontSize: 14, color: "var(--gray-mid)", lineHeight: 1.6, maxWidth: 460 }}>
+                Sua conta de coordenação ainda não tem empreendimentos liberados. Solicite ao <strong style={{ color: "#60a5fa" }}>administrador</strong> que habilite os empreendimentos que você irá acompanhar. Assim que liberado, seus leads e equipe aparecerão aqui automaticamente.
+              </p>
+            </div>
+          </div>
+        ) : (
+        <>
+
         {/* DASHBOARD RÁPIDO */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 32 }}>
           <div style={{ padding: "18px 16px 16px", background: "rgba(175,111,83,0.08)", border: "1px solid rgba(175,111,83,0.2)", borderRadius: 16 }}>
@@ -272,7 +325,7 @@ export default function PainelCoordenador() {
               </div>
               <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Total de Leads</span>
             </div>
-            <p style={{ fontSize: 36, fontWeight: 800, color: "var(--terracota)", lineHeight: 1 }}>{todosLeads.length}</p>
+            <p style={{ fontSize: 36, fontWeight: 800, color: "var(--terracota)", lineHeight: 1 }}>{leadsPermitidos.length}</p>
           </div>
           <div style={{ padding: "18px 16px 16px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
@@ -321,7 +374,7 @@ export default function PainelCoordenador() {
                 <select value={filtroCorretor} onChange={(e) => setFiltroCorretor(e.target.value)} className="input-field" style={{ height: 42, fontSize: 13, padding: "0 12px" }}>
                   <option value="todos">Toda a Equipe</option>
                   <option value="roleta">🔥 Soltos na Roleta</option>
-                  {listaCorretores.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  {corretoresPermitidos.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>
               </div>
               <div style={{ flex: "1 1 200px" }}>
@@ -440,7 +493,7 @@ export default function PainelCoordenador() {
         {/* ABA 2: MATERIAIS DE VENDAS E MAPAS */}
         {abaAtiva === "arquivos" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            {empreendimentos.map((emp) => {
+            {empreendimentosPermitidosLista.map((emp) => {
               if ((!emp.documentosPadrao || emp.documentosPadrao.length === 0) && !emp.mapaUrl) return null;
               
               return (
@@ -486,6 +539,9 @@ export default function PainelCoordenador() {
               );
             })}
           </div>
+        )}
+
+        </>
         )}
       </main>
 

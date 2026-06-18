@@ -83,6 +83,7 @@ export default function PainelCorretor() {
   const [userId, setUserId] = useState("");
   const [abaAtiva, setAbaAtiva] = useState<"meus" | "roleta" | "arquivos">("meus");
   const [empreendimentosPermitidos, setEmpreendimentosPermitidos] = useState<string[] | null>(null);
+  const [acessoConfigurado, setAcessoConfigurado] = useState<boolean>(true);
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
 
   // Estados do Perfil
@@ -117,17 +118,17 @@ export default function PainelCorretor() {
   const [novoHistorico, setNovoHistorico] = useState("");
   const [salvandoHistorico, setSalvandoHistorico] = useState(false);
 
-  // Filtros blindados contra valores nulos (null = sem restrição = vê tudo)
+  // Filtros por empreendimento permitido (lista vazia = não vê nada na roleta/divulgação)
   const empreendimentosVisiveis = useMemo(() => {
     const base = empreendimentos || [];
-    if (empreendimentosPermitidos === null) return base;
-    return base.filter(e => e?.slug && empreendimentosPermitidos.includes(e.slug));
+    const permitidos = empreendimentosPermitidos || [];
+    return base.filter(e => e?.slug && permitidos.includes(e.slug));
   }, [empreendimentos, empreendimentosPermitidos]);
 
   const leadsRoletaVisiveis = useMemo(() => {
     const base = leadsRoleta || [];
-    if (empreendimentosPermitidos === null) return base;
-    return base.filter(l => l?.empreendimentoId && empreendimentosPermitidos.includes(l.empreendimentoId));
+    const permitidos = empreendimentosPermitidos || [];
+    return base.filter(l => l?.empreendimentoId && permitidos.includes(l.empreendimentoId));
   }, [leadsRoleta, empreendimentosPermitidos]);
 
   // Estados do Mapa de Lotes (Reserva)
@@ -164,7 +165,8 @@ export default function PainelCorretor() {
           return;
         }
         setUserName(userData.nome || user.displayName || "Corretor");
-        setEmpreendimentosPermitidos(userData.empreendimentosPermitidos ?? null);
+        setEmpreendimentosPermitidos(Array.isArray(userData.empreendimentosPermitidos) ? userData.empreendimentosPermitidos : []);
+        setAcessoConfigurado(userData.acessoConfigurado === true);
         
         setPerfilData({
           nome: userData.nome || "",
@@ -602,6 +604,24 @@ const publicarHistorico = async () => {
 
       <main className="container-app" style={{ padding: "30px 20px", maxWidth: 800, margin: "0 auto" }}>
 
+        {!acessoConfigurado ? (
+          <div style={{ padding: "64px 28px", textAlign: "center", background: "var(--bg-card)", borderRadius: 20, border: "1px dashed rgba(175,111,83,0.3)", display: "flex", flexDirection: "column", alignItems: "center", gap: 16, marginTop: 40 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 18, background: "rgba(175,111,83,0.12)", border: "1px solid var(--border-active)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Lock size={28} color="var(--terracota)" />
+            </div>
+            <div>
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: "white", marginBottom: 8 }}>Acesso pendente de liberação</h2>
+              <p style={{ fontSize: 14, color: "var(--gray-mid)", lineHeight: 1.6, maxWidth: 460 }}>
+                Sua conta ainda não tem empreendimentos liberados. Solicite ao <strong style={{ color: "var(--terracota-light)" }}>administrador</strong> que habilite os empreendimentos em que você irá atuar. Assim que liberado, os leads livres e seus links de divulgação aparecerão aqui.
+              </p>
+            </div>
+            <button onClick={() => setPerfilAberto(true)} style={{ padding: "10px 20px", borderRadius: 10, background: "var(--terracota-glow)", border: "1px solid var(--border-active)", color: "var(--terracota-light)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+              <UserCircle size={16} /> Completar Meu Perfil
+            </button>
+          </div>
+        ) : (
+        <>
+
         <div style={{ marginBottom: 30 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16, marginBottom: 20 }}>
             <h1 style={{ fontSize: 24, fontWeight: 800, color: "white" }}>Área de Vendas</h1>
@@ -1038,6 +1058,9 @@ const publicarHistorico = async () => {
               })
             )}
           </div>
+        )}
+
+        </>
         )}
 
       </main>
