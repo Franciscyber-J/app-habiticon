@@ -82,6 +82,7 @@ export default function PainelCorretor() {
   const [userName, setUserName] = useState("");
   const [userId, setUserId] = useState("");
   const [abaAtiva, setAbaAtiva] = useState<"meus" | "roleta" | "arquivos">("meus");
+  const [mostrarReprovados, setMostrarReprovados] = useState(false);
   const [empreendimentosPermitidos, setEmpreendimentosPermitidos] = useState<string[] | null>(null);
   const [acessoConfigurado, setAcessoConfigurado] = useState<boolean>(true);
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
@@ -130,6 +131,12 @@ export default function PainelCorretor() {
     const permitidos = empreendimentosPermitidos || [];
     return base.filter(l => l?.empreendimentoId && permitidos.includes(l.empreendimentoId));
   }, [leadsRoleta, empreendimentosPermitidos]);
+
+  // Diz se o corretor PERDEU acesso ao empreendimento de um lead que ele já tem na carteira
+  const empBloqueado = (empreendimentoId: string): boolean => {
+    const permitidos = empreendimentosPermitidos || [];
+    return !permitidos.includes(empreendimentoId);
+  };
 
   // Estados do Mapa de Lotes (Reserva)
   const [mapaModalAberto, setMapaModalAberto] = useState<{aberto: boolean, empreendimento: Empreendimento | null, lead: LeadData | null}>({aberto: false, empreendimento: null, lead: null});
@@ -191,6 +198,7 @@ export default function PainelCorretor() {
       const unsubMeus = onSnapshot(qMeus, (snap) => {
         const meus = snap.docs
           .map(d => ({ id: d.id, ...d.data() } as LeadData))
+          .filter(l => !(l as any).excluido)
           .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setMeusLeads(meus);
       });
@@ -199,6 +207,7 @@ export default function PainelCorretor() {
       const unsubRoleta = onSnapshot(qRoleta, (snap) => {
         const roleta = snap.docs
           .map(d => ({ id: d.id, ...d.data() } as LeadData))
+          .filter(l => !(l as any).excluido)
           .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setLeadsRoleta(roleta);
       });
@@ -318,13 +327,40 @@ export default function PainelCorretor() {
     }
   };
 
-  const leadsAgrupados = meusLeads.reduce((acc, lead) => {
-    const empId = lead.empreendimentoId || "sem-empreendimento";
-    const empNome = lead.empreendimentoNome || "Outros Atendimentos";
-    if (!acc[empId]) { acc[empId] = { nome: empNome, leads: [] }; }
-    acc[empId].leads.push(lead);
-    return acc;
-  }, {} as Record<string, GrupoLeads>);
+  // Classifica o lead em uma "ordem de prioridade" para o corretor:
+  // 0 = em andamento (novo, em atendimento, com pendência) → topo
+  // 1 = aprovado/qualificado → meio
+  // 2 = reprovado/desqualificado/venda desfeita → fim (e ocultável por filtro)
+  const ordemLead = (status: string): number => {
+    if (status === "qualificado" || status === "credito_aprovado") return 1;
+    if (status === "nao_qualificado" || status === "credito_reprovado" || status === "desqualificado" || status === "venda_cancelada" || status === "venda_desfeita") return 2;
+    return 0; // novo, em_atendimento, com_pendencia, etc.
+  };
+
+  const ehReprovado = (status: string): boolean => ordemLead(status) === 2;
+
+  const leadsAgrupados = meusLeads
+    .filter(lead => mostrarReprovados || !ehReprovado(lead.status))
+    .reduce((acc, lead) => {
+      const empId = lead.empreendimentoId || "sem-empreendimento";
+      const empNome = lead.empreendimentoNome || "Outros Atendimentos";
+      if (!acc[empId]) { acc[empId] = { nome: empNome, leads: [] }; }
+      acc[empId].leads.push(lead);
+      return acc;
+    }, {} as Record<string, GrupoLeads>);
+
+  // Dentro de cada empreendimento, ordena: em andamento → aprovados → reprovados.
+  // Mantém o critério cronológico (mais recente primeiro) como desempate dentro de cada faixa.
+  Object.values(leadsAgrupados).forEach(grupo => {
+    grupo.leads.sort((a, b) => {
+      const ordA = ordemLead(a.status), ordB = ordemLead(b.status);
+      if (ordA !== ordB) return ordA - ordB;
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
+  });
+
+  // Contagem de reprovados ocultos (para o badge do toggle)
+  const totalReprovados = meusLeads.filter(l => ehReprovado(l.status)).length;
 
   const assumirLead = async (leadId: string) => {
     try {
@@ -696,6 +732,24 @@ const publicarHistorico = async () => {
             ========================================================= */}
         {abaAtiva === "meus" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            {/* TOGGLE: MOSTRAR REPROVADOS */}
+            {(meusLeads.length > 0) && (
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => setMostrarReprovados(v => !v)}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontSize: 12, fontWeight: 700, background: mostrarReprovados ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.04)", border: mostrarReprovados ? "1px solid rgba(239,68,68,0.4)" : "1px solid var(--border-subtle)", color: mostrarReprovados ? "#f87171" : "var(--gray-mid)" }}
+                >
+                  <AlertOctagon size={14} />
+                  {mostrarReprovados ? "Ocultar reprovados" : "Mostrar reprovados"}
+                  {!mostrarReprovados && totalReprovados > 0 && (
+                    <span style={{ fontSize: 10, fontWeight: 800, background: "rgba(239,68,68,0.25)", color: "#f87171", padding: "1px 7px", borderRadius: 100 }}>
+                      {totalReprovados}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
+
             {Object.keys(leadsAgrupados).length === 0 ? (
               <div style={{ padding: "60px 20px", textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 16, border: "1px dashed var(--border-subtle)" }}>
                 <div style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
@@ -727,6 +781,7 @@ const publicarHistorico = async () => {
                       const isAprovado = lead.status === "qualificado" || lead.status === "credito_aprovado";
                       const isDesqualificado = lead.status === "desqualificado" || lead.status === "venda_cancelada" || lead.status === "venda_desfeita";
                       const estaSolto = !lead.corretorId;
+                      const bloqueado = empBloqueado(lead.empreendimentoId);
 
                       const bgStatus = lead.status === "com_pendencia" || isReprovado || isDesqualificado ? "rgba(239,68,68,0.15)" : isAprovado ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.05)";
                       const borderStatus = lead.status === "com_pendencia" || isReprovado || isDesqualificado ? "rgba(239,68,68,0.5)" : isAprovado ? "rgba(74,222,128,0.4)" : "var(--border-subtle)";
@@ -737,8 +792,9 @@ const publicarHistorico = async () => {
                       return (
                         <div key={lead.id} style={{
                           background: "var(--bg-card)", borderRadius: 14, 
-                          border: borderColorCard,
-                          display: "flex", flexDirection: "column"
+                          border: bloqueado ? "1px solid rgba(148,163,184,0.3)" : borderColorCard,
+                          display: "flex", flexDirection: "column",
+                          opacity: bloqueado ? 0.7 : 1
                         }}>
                           {/* LINHA 1: INFO + STATUS */}
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 20px" }}>
@@ -777,7 +833,15 @@ const publicarHistorico = async () => {
                             )}
                           </div>
 
-                          {/* LINHA 2: AÇÕES */}
+                          {/* LINHA 2: AÇÕES (ou AVISO DE BLOQUEIO) */}
+                          {bloqueado ? (
+                          <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", padding: "12px 20px", display: "flex", alignItems: "center", gap: 10 }}>
+                            <Lock size={16} color="#94a3b8" style={{ flexShrink: 0 }} />
+                            <p style={{ fontSize: 12, color: "var(--gray-mid)", lineHeight: 1.5 }}>
+                              Você não tem mais acesso ao empreendimento <strong style={{ color: "var(--gray-light)" }}>{lead.empreendimentoNome}</strong>. Este lead permanece na sua carteira, mas está bloqueado. Procure a administração para mais informações.
+                            </p>
+                          </div>
+                          ) : (
                           <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", padding: "9px 20px", display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                             {!estaSolto && !isReprovado && !isDesqualificado && !lead.loteReserva && (
                               <button onClick={() => abrirMapaParaLead(lead)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
@@ -815,6 +879,7 @@ const publicarHistorico = async () => {
                               </a>
                             )}
                           </div>
+                          )}
 
                           {lead.loteReserva && !isAprovado && !isReprovado && !isDesqualificado && (
                             <div style={{ margin: "0 20px 14px", padding: "12px", background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -998,13 +1063,13 @@ const publicarHistorico = async () => {
               </p>
             </div>
 
-            {empreendimentos.length === 0 ? (
+            {empreendimentosVisiveis.length === 0 ? (
               <div style={{ padding: "60px 20px", textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 16, border: "1px dashed var(--border-subtle)" }}>
                 <FolderOpen size={32} color="var(--gray-dark)" style={{ margin: "0 auto 16px" }} />
                 <p style={{ color: "var(--gray-mid)", fontWeight: 600 }}>Nenhum material disponível ainda.</p>
               </div>
             ) : (
-              empreendimentos.map((emp) => {
+              empreendimentosVisiveis.map((emp) => {
                 if (!emp.documentosPadrao || emp.documentosPadrao.length === 0) return null;
                 
                 return (

@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { User, Lock, Mail, ArrowRight, Eye, EyeOff, CreditCard, Landmark, Wallet, FileBadge } from "lucide-react";
+import { User, Lock, Mail, ArrowRight, Eye, EyeOff, CreditCard, Landmark, Wallet, FileBadge, Building2, Check } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 
 export default function CadastroCorretorPage() {
   // Dados de Acesso
@@ -27,10 +27,32 @@ export default function CadastroCorretorPage() {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [mostrarConfirmarSenha, setMostrarConfirmarSenha] = useState(false);
 
+  // Empreendimentos solicitados no cadastro
+  const [empreendimentos, setEmpreendimentos] = useState<{slug: string, nome: string}[]>([]);
+  const [empreendimentosSolicitados, setEmpreendimentosSolicitados] = useState<string[]>([]);
+
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
   
   const router = useRouter();
+
+  // Carrega empreendimentos ativos (leitura pública permitida pelas regras)
+  useEffect(() => {
+    const carregar = async () => {
+      try {
+        const snap = await getDocs(query(collection(db, "empreendimentos"), where("status", "==", "ativo")));
+        setEmpreendimentos(snap.docs.map(d => ({ slug: d.id, nome: d.data().nome })).sort((a, b) => a.nome.localeCompare(b.nome)));
+      } catch (e) {
+        console.error("Erro ao carregar empreendimentos:", e);
+      }
+    };
+    carregar();
+  }, []);
+
+  const toggleEmpreendimento = (slug: string) => {
+    setEmpreendimentosSolicitados(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]);
+    setErro("");
+  };
 
   const handleCadastro = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +65,11 @@ export default function CadastroCorretorPage() {
 
     if (senha.length < 6) {
       setErro("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    if (empreendimentosSolicitados.length === 0) {
+      setErro("Selecione pelo menos um empreendimento em que deseja atuar.");
       return;
     }
 
@@ -63,6 +90,7 @@ export default function CadastroCorretorPage() {
          status: "ativo",
          dataCriacao: new Date().toISOString(),
          empreendimentosPermitidos: [],
+         empreendimentosSolicitados: empreendimentosSolicitados,
          acessoConfigurado: false,
          dadosBancarios: {
            cpf: cpf.trim(),
@@ -178,6 +206,40 @@ export default function CadastroCorretorPage() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* SESSÃO: EMPREENDIMENTOS SOLICITADOS */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--terracota)", borderBottom: "1px solid rgba(175,111,83,0.3)", paddingBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+              <Building2 size={16} /> Empreendimentos de Interesse (Obrigatório)
+            </h2>
+            <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: -8 }}>
+              Selecione em quais empreendimentos você deseja atuar. Seu acesso será <strong style={{ color: "var(--gray-light)" }}>liberado pela coordenação</strong> após o cadastro.
+            </p>
+            {empreendimentos.length === 0 ? (
+              <p style={{ fontSize: 13, color: "var(--gray-dark)", padding: "12px", textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px dashed var(--border-subtle)" }}>
+                Carregando empreendimentos...
+              </p>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+                {empreendimentos.map(emp => {
+                  const sel = empreendimentosSolicitados.includes(emp.slug);
+                  return (
+                    <button
+                      type="button"
+                      key={emp.slug}
+                      onClick={() => toggleEmpreendimento(emp.slug)}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 10, cursor: "pointer", textAlign: "left", transition: "0.15s", background: sel ? "rgba(175,111,83,0.12)" : "rgba(0,0,0,0.2)", border: sel ? "1px solid var(--terracota)" : "1px solid var(--border-subtle)" }}
+                    >
+                      <span style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: sel ? "var(--terracota)" : "transparent", border: sel ? "none" : "2px solid var(--gray-dark)", transition: "0.15s" }}>
+                        {sel && <Check size={13} color="white" />}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: sel ? "white" : "var(--gray-light)" }}>{emp.nome}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* SESSÃO 2: DADOS FINANCEIROS */}

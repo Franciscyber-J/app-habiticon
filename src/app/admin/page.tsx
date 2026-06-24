@@ -175,7 +175,7 @@ export default function AdminPage() {
   const [todosLeads, setTodosLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const [tab, setTab] = useState<"empreendimentos" | "leads" | "financeiro" | "equipe" | "recebiveis" | "arquivos">("empreendimentos");
+  const [tab, setTab] = useState<"empreendimentos" | "leads" | "financeiro" | "equipe" | "recebiveis" | "arquivos" | "lixeira">("empreendimentos");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [listaCorretores, setListaCorretores] = useState<any[]>([]);
@@ -232,6 +232,10 @@ export default function AdminPage() {
   // ← NOVO: Estado do Modal de Notificações do Telegram
   const [modalNotificacoes, setModalNotificacoes] = useState(false);
   const [alertasConfig, setAlertasConfig] = useState({ novoLead: true, vendaDireta: true, documentoAnexado: true });
+
+  // Lixeira
+  const [filtroLixeiraEmp, setFiltroLixeiraEmp] = useState<string>("todos");
+  const [buscaLixeira, setBuscaLixeira] = useState<string>("");
 
   const router = useRouter();
 
@@ -701,6 +705,25 @@ export default function AdminPage() {
     }
   };
 
+  // ── LIXEIRA: restaurar e excluir definitivo ──
+  const restaurarLead = async (lead: Lead) => {
+    if (!confirm(`Restaurar "${lead.nome}" da lixeira?\n\nO lead voltará a aparecer normalmente nos painéis.`)) return;
+    try {
+      const { deleteField } = await import("firebase/firestore");
+      await updateDoc(doc(db, "leads", lead.id), {
+        excluido: deleteField(),
+        excluidoInfo: deleteField(),
+      });
+    } catch (error) {
+      alert("Erro ao restaurar o lead.");
+    }
+  };
+
+  const excluirDefinitivo = async (lead: Lead) => {
+    if (!confirm(`EXCLUIR DEFINITIVAMENTE "${lead.nome}"?\n\nEsta ação é PERMANENTE e apaga todos os dados do lead. Não pode ser desfeita.`)) return;
+    await deletarLead(lead.id);
+  };
+
   const publicarHistoricoAdmin = async () => {
     if (!modalHistoricoAdminLead || !novoHistoricoAdmin.trim()) return;
     setSalvandoHistoricoAdmin(true);
@@ -733,6 +756,8 @@ export default function AdminPage() {
 
   const leadsFiltrados = useMemo(() => {
     return todosLeads.filter(lead => {
+      // Nunca mostra leads na lixeira na visão de vendas
+      if ((lead as any).excluido) return false;
       // Filtro de corretor
       const matchCorretor =
         filtroCorretor === "todos" ||
@@ -771,6 +796,29 @@ export default function AdminPage() {
 
   const ativos = empreendimentos.filter((e) => e.status === "ativo").length;
   const leadsNaRoletaCount = todosLeads.filter(l => !l.corretorId).length;
+
+  // Leads na lixeira (soft-deleted), agrupados por empreendimento + filtros
+  const leadsExcluidos = useMemo(() => {
+    return todosLeads.filter(l => (l as any).excluido);
+  }, [todosLeads]);
+
+  const leadsExcluidosFiltrados = useMemo(() => {
+    return leadsExcluidos.filter(l => {
+      const matchEmp = filtroLixeiraEmp === "todos" || l.empreendimentoId === filtroLixeiraEmp;
+      const matchBusca = !buscaLixeira.trim() || (l.nome || "").toLowerCase().includes(buscaLixeira.toLowerCase());
+      return matchEmp && matchBusca;
+    });
+  }, [leadsExcluidos, filtroLixeiraEmp, buscaLixeira]);
+
+  const lixeiraAgrupada = useMemo(() => {
+    return leadsExcluidosFiltrados.reduce((acc, lead) => {
+      const empId = lead.empreendimentoId || "sem-empreendimento";
+      const empNome = lead.empreendimentoNome || "Outros";
+      if (!acc[empId]) acc[empId] = { nome: empNome, leads: [] };
+      acc[empId].leads.push(lead);
+      return acc;
+    }, {} as Record<string, { nome: string; leads: Lead[] }>);
+  }, [leadsExcluidosFiltrados]);
 
   const handlePrint = () => { setIsPrinting(true); setTimeout(() => { window.print(); setIsPrinting(false); }, 400); };
 
@@ -1379,6 +1427,88 @@ export default function AdminPage() {
                               ))}
                             </div>
                           )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* ABA: LIXEIRA */}
+              {tab === "lixeira" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                  <div style={{ background: "rgba(239,68,68,0.06)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", gap: 12 }}>
+                    <Trash2 size={18} color="#f87171" style={{ flexShrink: 0 }} />
+                    <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>Leads enviados para a lixeira por coordenadores ou administradores. Eles <strong>não aparecem</strong> em nenhum painel. Você pode <strong style={{ color: "#4ade80" }}>restaurar</strong> (volta ao status original) ou <strong style={{ color: "#f87171" }}>excluir definitivamente</strong> (apaga de vez).</p>
+                  </div>
+
+                  {/* Filtros da lixeira */}
+                  <div style={{ background: "var(--bg-card)", padding: "16px 20px", borderRadius: 14, border: "1px solid var(--border-subtle)", display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Trash2 size={16} color="#f87171" />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gray-light)" }}>{leadsExcluidosFiltrados.length} na lixeira</span>
+                    </div>
+                    <select value={filtroLixeiraEmp} onChange={e => setFiltroLixeiraEmp(e.target.value)} style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 14, outline: "none", minWidth: 200, cursor: "pointer" }}>
+                      <option value="todos">Todos os Empreendimentos</option>
+                      {empreendimentos.map(e => <option key={e.slug} value={e.slug}>{e.nome}</option>)}
+                    </select>
+                    <div style={{ position: "relative", flex: "1 1 200px" }}>
+                      <input type="text" placeholder="Buscar por nome..." value={buscaLixeira} onChange={e => setBuscaLixeira(e.target.value)} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 14, outline: "none" }} />
+                      {buscaLixeira && <button onClick={() => setBuscaLixeira("")} style={{ position: "absolute", right: 10, top: 10, background: "transparent", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={16} /></button>}
+                    </div>
+                  </div>
+
+                  {leadsExcluidosFiltrados.length === 0 ? (
+                    <div style={{ padding: "64px 24px", borderRadius: 16, textAlign: "center", background: "rgba(0,0,0,0.2)", border: "1px dashed var(--border-subtle)" }}>
+                      <Trash2 size={32} color="var(--gray-dark)" style={{ margin: "0 auto 16px" }} />
+                      <p style={{ fontSize: 14, color: "var(--gray-mid)" }}>A lixeira está vazia.</p>
+                    </div>
+                  ) : (
+                    Object.entries(lixeiraAgrupada).map(([empId, grupo]) => (
+                      <div key={empId}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                          <Building2 size={16} color="var(--terracota)" />
+                          <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--gray-light)" }}>{grupo.nome}</h3>
+                          <span style={{ fontSize: 12, color: "var(--gray-dark)" }}>({grupo.leads.length})</span>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {grupo.leads.map(lead => {
+                            const info = (lead as any).excluidoInfo || {};
+                            return (
+                              <div key={lead.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 14, padding: "14px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                                    <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 15, background: "rgba(107,114,128,0.15)", color: "#9ca3af" }}>
+                                      {(lead.nome || "?")[0].toUpperCase()}
+                                    </div>
+                                    <div style={{ minWidth: 0 }}>
+                                      <p style={{ fontSize: 14, fontWeight: 700, color: "white", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.nome}</p>
+                                      <div style={{ display: "flex", gap: 6, fontSize: 11, color: "var(--gray-mid)", flexWrap: "wrap", alignItems: "center" }}>
+                                        <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Phone size={11} /> {lead.whatsapp}</span>
+                                        {lead.modelo && <><span style={{ color: "var(--border-subtle)" }}>·</span><span style={{ color: "var(--terracota-light)", fontWeight: 600 }}>{lead.modelo}</span></>}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                                    <button onClick={() => restaurarLead(lead)} style={{ padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, display: "flex", gap: 6, alignItems: "center", cursor: "pointer", background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.25)", color: "#4ade80" }}>
+                                      <ArrowLeft size={13} /> Restaurar
+                                    </button>
+                                    <button onClick={() => excluirDefinitivo(lead)} style={{ padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, display: "flex", gap: 6, alignItems: "center", cursor: "pointer", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>
+                                      <Trash2 size={13} /> Excluir definitivo
+                                    </button>
+                                  </div>
+                                </div>
+                                <div style={{ padding: "10px 14px", background: "rgba(0,0,0,0.2)", borderRadius: 10, border: "1px solid var(--border-subtle)", borderLeft: "3px solid rgba(239,68,68,0.4)" }}>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 4 }}>Motivo: {info.motivoLabel || info.motivo || "Não informado"}</p>
+                                  {info.motivoTexto && <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5, marginBottom: 4 }}>{info.motivoTexto}</p>}
+                                  <p style={{ fontSize: 11, color: "var(--gray-dark)" }}>
+                                    Por <strong style={{ color: "var(--gray-mid)" }}>{info.porNome || "—"}</strong>
+                                    {info.quando && <> em {new Date(info.quando).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às")}</>}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     ))

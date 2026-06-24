@@ -61,7 +61,9 @@ export default function LeadsPublicosPage({ params }: { params: Promise<{ slug: 
         setAtualizando(true);
         const novosLeads: Lead[] = [];
         querySnapshot.forEach((doc) => {
-          novosLeads.push({ id: doc.id, ...doc.data() } as Lead);
+          const data = doc.data();
+          if ((data as any).excluido) return; // nunca mostra leads na lixeira
+          novosLeads.push({ id: doc.id, ...data } as Lead);
         });
         
         // Ordenar do mais recente para o mais antigo

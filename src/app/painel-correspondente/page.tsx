@@ -86,7 +86,7 @@ export default function PainelCorrespondente() {
   const [empreendimentos, setEmpreendimentos] = useState<Empreendimento[]>([]);
   const [userName, setUserName] = useState("");
   const [termoBusca, setTermoBusca] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [filtroStatus, setFiltroStatus] = useState("ativos");
   const [abaAtiva, setAbaAtiva] = useState<"auditoria" | "arquivos">("auditoria");
   const [meuUid, setMeuUid] = useState<string>(""); // ← UID do correspondente logado
 
@@ -127,6 +127,7 @@ export default function PainelCorrespondente() {
           .map(d => ({ id: d.id, ...d.data() } as LeadData))
           // ← FILTRO SILENCIOSO: SÓ mostra leads onde o UID deste correspondente está na Lista Branca
           .filter(lead => {
+            if ((lead as any).excluido) return false; // nunca mostra leads na lixeira
             const permitidos = lead.correspondentesPermitidos || [];
             return permitidos.includes(user.uid);
           })
@@ -175,6 +176,8 @@ export default function PainelCorrespondente() {
       let bateStatus = false;
       if (filtroStatus === "todos") {
         bateStatus = true;
+      } else if (filtroStatus === "ativos") {
+        bateStatus = lead.status === "em_atendimento" || lead.status === "em_analise" || lead.status === "com_pendencia";
       } else if (filtroStatus === "credito_aprovado") {
         bateStatus = lead.status === "qualificado" || lead.status === "credito_aprovado";
       } else if (filtroStatus === "credito_reprovado") {
@@ -290,7 +293,11 @@ export default function PainelCorrespondente() {
                 </div>
                 <p style={{ fontSize: 36, fontWeight: 800, color: "#ef4444", lineHeight: 1 }}>{countPendencias}</p>
               </div>
-              <div style={{ padding: "18px 16px 16px", background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 16 }}>
+              <button
+                onClick={() => setFiltroStatus("credito_aprovado")}
+                title="Ver leads aprovados"
+                style={{ textAlign: "left", padding: "18px 16px 16px", background: filtroStatus === "credito_aprovado" ? "rgba(74,222,128,0.15)" : "rgba(74,222,128,0.08)", border: filtroStatus === "credito_aprovado" ? "1px solid rgba(74,222,128,0.5)" : "1px solid rgba(74,222,128,0.2)", borderRadius: 16, cursor: "pointer", transition: "0.2s" }}
+              >
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
                   <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(74,222,128,0.15)", border: "1px solid rgba(74,222,128,0.3)" }}>
                     <CheckCircle2 size={16} color="#4ade80" />
@@ -298,7 +305,7 @@ export default function PainelCorrespondente() {
                   <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Aprovados</span>
                 </div>
                 <p style={{ fontSize: 36, fontWeight: 800, color: "#4ade80", lineHeight: 1 }}>{countAprovados}</p>
-              </div>
+              </button>
             </div>
 
             {/* BARRA DE FILTROS */}
@@ -320,6 +327,7 @@ export default function PainelCorrespondente() {
                   onChange={(e) => setFiltroStatus(e.target.value)}
                   style={{ background: "#1a2e23", border: "none", color: "white", fontSize: 14, outline: "none", cursor: "pointer", padding: "12px 0" }}
                 >
+                  <option value="ativos"         style={{ background: "#1a2e23" }}>🟢 Em Andamento (Análise + Pendência)</option>
                   <option value="todos"          style={{ background: "#1a2e23" }}>Todos os Status</option>
                   <option value="em_atendimento" style={{ background: "#1a2e23" }}>⏳ Em Análise Inicial</option>
                   <option value="com_pendencia"  style={{ background: "#1a2e23" }}>⚠️ Com Pendência</option>

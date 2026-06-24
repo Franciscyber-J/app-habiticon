@@ -2,14 +2,16 @@
 
 import { CorrespondenteTag } from "@/components/shared/CorrespondenteTag";
 import { useState, useEffect, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { collection, query, where, onSnapshot, doc, getDoc, getDocs } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, getDoc, getDocs, updateDoc, arrayUnion } from "firebase/firestore";
 import Image from "next/image";
-import { Users, LogOut, MessageCircle, Building2, Flame, FolderOpen, FileText, BarChart3, Filter, X, Map as MapIcon, Lock, CheckCircle2, ShieldCheck, Phone, Clock } from "lucide-react";
+import { Users, LogOut, MessageCircle, Building2, Flame, FolderOpen, FileText, BarChart3, Filter, X, Map as MapIcon, Lock, CheckCircle2, ShieldCheck, Phone, Clock, MessageSquare, Briefcase, Info, Home, Trash2, AlertTriangle } from "lucide-react";
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { MapaInterativo } from "@/components/mapa/MapaInterativo";
+import { formatBRL } from "@/lib/calculos";
 
 // ─────────────────────────────────────────────────────────
 // TIPAGENS
@@ -50,6 +52,8 @@ interface Empreendimento {
   slug: string;
   nome: string;
   mapaUrl?: string; 
+  vendaEmOrdem?: boolean;
+  modelos?: any[];
   documentosPadrao?: DocumentoPadrao[];
 }
 
@@ -62,11 +66,11 @@ export default function PainelCoordenador() {
   const [empreendimentosPermitidos, setEmpreendimentosPermitidos] = useState<string[]>([]);
   const [acessoConfigurado, setAcessoConfigurado] = useState(false);
   const [vetudo, setVetudo] = useState(false); // admin / e-mail supremo vê tudo
-  const [abaAtiva, setAbaAtiva] = useState<"gestao" | "arquivos">("gestao");
+  const [abaAtiva, setAbaAtiva] = useState<"gestao" | "corretores" | "arquivos">("gestao");
   
   // Filtros Avançados
   const [filtroCorretor, setFiltroCorretor] = useState<string>("todos");
-  const [filtroStatus, setFiltroStatus] = useState<string>("todos");
+  const [filtroStatus, setFiltroStatus] = useState<string>("ativos");
   const [pesquisaNome, setPesquisaNome] = useState("");
 
   const [leadDossieId, setLeadDossieId] = useState<string | null>(null);
@@ -79,7 +83,48 @@ export default function PainelCoordenador() {
   const [loteDetalhe, setLoteDetalhe] = useState<any | null>(null);
   const [modalStatusCoordenador, setModalStatusCoordenador] = useState<LeadData | null>(null);
 
+  // Lista de correspondentes (para o modal de funções)
+  const [listaCorrespondentes, setListaCorrespondentes] = useState<any[]>([]);
+
+  // Histórico
+  const [modalHistoricoId, setModalHistoricoId] = useState<string | null>(null);
+  const modalHistoricoLead = todosLeads.find(l => l.id === modalHistoricoId) || null;
+  const [novoHistorico, setNovoHistorico] = useState("");
+  const [salvandoHistorico, setSalvandoHistorico] = useState(false);
+
+  // Acesso de correspondentes por lead
+  const [modalAcessoLead, setModalAcessoLead] = useState<LeadData | null>(null);
+  const [salvandoAcesso, setSalvandoAcesso] = useState(false);
+
+  // Mapa de reserva de lote
+  const [mapaReserva, setMapaReserva] = useState<{aberto: boolean, empreendimento: any | null, lead: LeadData | null}>({aberto: false, empreendimento: null, lead: null});
+  const [lotesReserva, setLotesReserva] = useState<any[]>([]);
+  const [loadingReserva, setLoadingReserva] = useState(false);
+  const [loteParaReservar, setLoteParaReservar] = useState<any | null>(null);
+
+  // Lixeira (soft-delete)
+  const [leadParaExcluir, setLeadParaExcluir] = useState<LeadData | null>(null);
+  const [motivoExclusao, setMotivoExclusao] = useState<string>("");
+  const [motivoTextoLivre, setMotivoTextoLivre] = useState<string>("");
+  const [salvandoExclusao, setSalvandoExclusao] = useState(false);
+
+  // Gestão de acesso de corretores (item 1)
+  const [modalAcessoCorretor, setModalAcessoCorretor] = useState<any | null>(null);
+  const [salvandoAcessoCorretor, setSalvandoAcessoCorretor] = useState(false);
+  const [buscaCorretor, setBuscaCorretor] = useState("");
+
   const router = useRouter();
+
+  // Motivos de exclusão (seleção única)
+  const MOTIVOS_EXCLUSAO = [
+    { id: "duplicado",        label: "Lead duplicado" },
+    { id: "dados_incorretos", label: "Dados cadastrais incorretos" },
+    { id: "contato_invalido", label: "Contato inválido / inexistente" },
+    { id: "teste",            label: "Teste / cadastro acidental" },
+    { id: "desistiu",         label: "Cliente desistiu / sem interesse real" },
+    { id: "lgpd",             label: "Solicitação do cliente (LGPD)" },
+    { id: "outro",            label: "Outro motivo" },
+  ];
 
   // ── AUTENTICAÇÃO E VALIDAÇÃO DE ROLE ──
   useEffect(() => {
@@ -179,11 +224,24 @@ export default function PainelCoordenador() {
         slug: d.id, 
         nome: d.data().nome, 
         mapaUrl: d.data().mapaUrl,
+        vendaEmOrdem: d.data().vendaEmOrdem,
+        modelos: d.data().modelos || [],
         documentosPadrao: d.data().documentosPadrao || [] 
       })));
     };
     fetchEmps();
   }, []);
+
+  // ── CARREGAR CORRESPONDENTES (para o modal de funções por lead) ──
+  useEffect(() => {
+    if (!authVerificado) return;
+    const q = query(collection(db, "usuarios"), where("status", "==", "ativo"), where("role", "==", "correspondente"));
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as any)).sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+      setListaCorrespondentes(data);
+    }, () => {});
+    return () => unsub();
+  }, [authVerificado]);
 
   // ── MAPA INTERATIVO (VISÃO GERAL) ──
   const abrirVisaoGeralMapa = async (emp: Empreendimento) => {
@@ -231,10 +289,11 @@ export default function PainelCoordenador() {
     return (slug: string) => vetudo || empreendimentosPermitidos.includes(slug);
   }, [vetudo, empreendimentosPermitidos]);
 
-  // Leads restritos aos empreendimentos liberados (base de tudo)
+  // Leads restritos aos empreendimentos liberados (base de tudo) — exclui os que estão na lixeira
   const leadsPermitidos = useMemo(() => {
-    if (vetudo) return todosLeads;
-    return todosLeads.filter(l => empreendimentosPermitidos.includes(l.empreendimentoId));
+    const base = todosLeads.filter(l => !(l as any).excluido);
+    if (vetudo) return base;
+    return base.filter(l => empreendimentosPermitidos.includes(l.empreendimentoId));
   }, [todosLeads, vetudo, empreendimentosPermitidos]);
 
   // Corretores restritos: só os que têm ao menos 1 empreendimento em comum com o coordenador
@@ -258,7 +317,9 @@ export default function PainelCoordenador() {
       const matchCorretor = filtroCorretor === "todos" || 
                             (filtroCorretor === "roleta" && !lead.corretorId) || 
                             lead.corretorId === filtroCorretor;
+      const isAtivo = !lead.status || lead.status === "novo" || lead.status === "em_atendimento" || lead.status === "com_pendencia";
       const matchStatus = filtroStatus === "todos" || 
+                          (filtroStatus === "ativos" && isAtivo) ||
                           (filtroStatus === "aprovados" && (lead.status === "qualificado" || lead.status === "credito_aprovado")) ||
                           (filtroStatus === "reprovados" && (lead.status === "nao_qualificado" || lead.status === "credito_reprovado" || lead.status === "desqualificado")) ||
                           lead.status === filtroStatus;
@@ -268,8 +329,242 @@ export default function PainelCoordenador() {
     });
   }, [leadsPermitidos, filtroCorretor, filtroStatus, pesquisaNome]);
 
+  // Agrupa os leads filtrados por empreendimento
+  const leadsAgrupados = useMemo(() => {
+    return leadsFiltrados.reduce((acc, lead) => {
+      const empId = lead.empreendimentoId || "sem-empreendimento";
+      const empNome = lead.empreendimentoNome || "Outros Atendimentos";
+      if (!acc[empId]) acc[empId] = { nome: empNome, leads: [] };
+      acc[empId].leads.push(lead);
+      return acc;
+    }, {} as Record<string, { nome: string; leads: LeadData[] }>);
+  }, [leadsFiltrados]);
+
   const leadsNaRoleta = leadsPermitidos.filter(l => !l.corretorId).length;
   const leadsAprovados = leadsPermitidos.filter(l => l.status === "qualificado" || l.status === "credito_aprovado").length;
+
+  // ── HISTÓRICO ──
+  const publicarHistorico = async () => {
+    if (!modalHistoricoLead || !novoHistorico.trim()) return;
+    setSalvandoHistorico(true);
+    try {
+      const entrada = {
+        texto: novoHistorico.trim(),
+        autorNome: userName || "Coordenador",
+        autorId: auth.currentUser?.uid || "coordenador",
+        timestamp: new Date().toISOString()
+      };
+      const historicoAtual = (modalHistoricoLead as any).historicoAtendimento || [];
+      await updateDoc(doc(db, "leads", modalHistoricoLead.id), {
+        historicoAtendimento: [...historicoAtual, entrada]
+      });
+      setNovoHistorico("");
+    } catch (error) {
+      alert("Erro ao publicar. Tente novamente.");
+    } finally {
+      setSalvandoHistorico(false);
+    }
+  };
+
+  // ── FUNÇÕES POR CORRESPONDENTE (igual admin) ──
+  const toggleFuncaoCorrespondente = async (correspondentId: string, funcao: 'correspondencia' | 'consultoria', novoValor: boolean) => {
+    if (!modalAcessoLead) return;
+    setSalvandoAcesso(true);
+    try {
+      const correspondente = listaCorrespondentes.find(c => c.id === correspondentId);
+      const permitidosAtuais = (modalAcessoLead as any).correspondentesPermitidos || [];
+      const infoAtuais = (modalAcessoLead as any).correspondentesInfo || [];
+
+      const infoNormalizada = listaCorrespondentes
+        .filter(c => permitidosAtuais.includes(c.id))
+        .map(c => {
+          const ex = infoAtuais.find((i: any) => i.id === c.id);
+          return {
+            id: c.id,
+            nome: c.nome,
+            telefone: ex?.telefone || c.telefone || "",
+            correspondencia: ex ? (ex.correspondencia ?? true) : true,
+            consultoria: ex ? (ex.consultoria ?? false) : false,
+          };
+        });
+
+      const entradaExistente = infoNormalizada.find(c => c.id === correspondentId);
+      let novasInfos: any[];
+
+      if (entradaExistente) {
+        const atualizada = { ...entradaExistente, [funcao]: novoValor };
+        if (!atualizada.correspondencia && !atualizada.consultoria) {
+          novasInfos = infoNormalizada.filter(c => c.id !== correspondentId);
+        } else {
+          novasInfos = infoNormalizada.map(c => c.id === correspondentId ? atualizada : c);
+        }
+      } else if (novoValor) {
+        novasInfos = [
+          ...infoNormalizada,
+          {
+            id: correspondentId,
+            nome: correspondente?.nome || correspondentId,
+            telefone: correspondente?.telefone || "",
+            correspondencia: funcao === 'correspondencia',
+            consultoria: funcao === 'consultoria',
+          },
+        ];
+      } else {
+        setSalvandoAcesso(false);
+        return;
+      }
+
+      const novosPermitidos = novasInfos.map(c => c.id);
+      await updateDoc(doc(db, "leads", modalAcessoLead.id), {
+        correspondentesPermitidos: novosPermitidos,
+        correspondentesInfo: novasInfos,
+      });
+      setModalAcessoLead(prev => prev ? { ...prev, correspondentesPermitidos: novosPermitidos, correspondentesInfo: novasInfos } as any : null);
+    } catch (error) {
+      alert("Erro ao salvar. Tente novamente.");
+    } finally {
+      setSalvandoAcesso(false);
+    }
+  };
+
+  // ── MAPA: RESERVA DE LOTE (igual corretor — reserva na fila) ──
+  const abrirMapaReserva = async (lead: LeadData) => {
+    const emp = empreendimentos.find(e => e.slug === lead.empreendimentoId) || null;
+    if (!emp || !emp.mapaUrl) {
+      alert("Este empreendimento ainda não tem um mapa SVG configurado.");
+      return;
+    }
+    setMapaReserva({ aberto: true, empreendimento: emp, lead });
+    setLoadingReserva(true);
+
+    const qQuadras = query(collection(db, "empreendimentos", emp.slug, "quadras"));
+    onSnapshot(qQuadras, (snapQuadras) => {
+      const lotesTemp: any[] = [];
+      let promises = snapQuadras.docs.map(docQuadra => {
+        const quadraBloqueada = docQuadra.data().bloqueada === true;
+        return new Promise<void>((resolve) => {
+          onSnapshot(collection(db, "empreendimentos", emp.slug, "quadras", docQuadra.id, "lotes"), (snapLotes) => {
+            snapLotes.forEach(docLote => {
+              const data = docLote.data();
+              const index = lotesTemp.findIndex(l => l.id === docLote.id);
+              const loteTratado = { id: docLote.id, quadraId: docQuadra.id, ...data, status: quadraBloqueada ? "bloqueado" : data.status };
+              if (index >= 0) lotesTemp[index] = loteTratado;
+              else lotesTemp.push(loteTratado);
+            });
+            setLotesReserva([...lotesTemp]);
+            resolve();
+          });
+        });
+      });
+      Promise.all(promises).then(() => setLoadingReserva(false));
+    });
+  };
+
+  const handleLoteClickReserva = (lote: any) => {
+    const { empreendimento, lead } = mapaReserva;
+    if (!empreendimento || !lead) return;
+    if (lote.status === "bloqueado") { alert("Este lote ou a sua quadra estão bloqueados."); return; }
+    if (lote.status === "vendido") { alert("Este lote já foi vendido."); return; }
+    if (empreendimento.vendaEmOrdem && lote.adjacentes && lote.adjacentes.length > 0) {
+      const adjacenteVendido = lotesReserva.some(l => lote.adjacentes.includes(l.svgPathId) && l.status === "vendido");
+      if (!adjacenteVendido) { alert("Pela regra de venda sequencial, só pode reservar se um lote vizinho já estiver vendido."); return; }
+    }
+    const jaNaFila = lote.fila?.some((f: any) => f.leadId === lead.id);
+    if (jaNaFila) { alert("Este cliente já está na fila deste lote."); return; }
+    setLoteParaReservar(lote);
+  };
+
+  const confirmarReservaComModelo = async (modeloNome: string, valor: number) => {
+    const { empreendimento, lead } = mapaReserva;
+    const lote = loteParaReservar;
+    if (!empreendimento || !lead || !lote) return;
+    try {
+      const novoFilaItem = {
+        leadId: lead.id, nomeCliente: lead.nome, corretorId: lead.corretorId || "",
+        nomeCorretor: lead.nomeCorretor || "Coordenação", modeloCasa: modeloNome, valorVenda: valor,
+        timestamp: new Date().toISOString()
+      };
+      const novaFila = [...(lote.fila || []), novoFilaItem];
+      await updateDoc(doc(db, "empreendimentos", empreendimento.slug, "quadras", lote.quadraId, "lotes", lote.id), {
+        fila: novaFila, status: "vinculado"
+      });
+      await updateDoc(doc(db, "leads", lead.id), {
+        loteReserva: { quadraId: lote.quadraId, loteId: lote.id, numero: lote.numero, modeloCasa: modeloNome, valorVenda: valor }
+      });
+      alert(`Lote ${lote.numero} reservado com o modelo ${modeloNome}!`);
+      setLoteParaReservar(null);
+      setMapaReserva({ aberto: false, empreendimento: null, lead: null });
+    } catch (error) {
+      alert("Erro ao processar reserva.");
+    }
+  };
+
+  // ── LIXEIRA (SOFT-DELETE) — coordenador envia para a lixeira ──
+  const abrirModalExcluir = (lead: LeadData) => {
+    setLeadParaExcluir(lead);
+    setMotivoExclusao("");
+    setMotivoTextoLivre("");
+  };
+
+  const confirmarExclusao = async () => {
+    if (!leadParaExcluir || !motivoExclusao) return;
+    if (motivoExclusao === "outro" && !motivoTextoLivre.trim()) return;
+    setSalvandoExclusao(true);
+    try {
+      const motivoObj = MOTIVOS_EXCLUSAO.find(m => m.id === motivoExclusao);
+      await updateDoc(doc(db, "leads", leadParaExcluir.id), {
+        excluido: true,
+        excluidoInfo: {
+          motivo: motivoExclusao,
+          motivoLabel: motivoObj?.label || motivoExclusao,
+          motivoTexto: motivoTextoLivre.trim(),
+          por: auth.currentUser?.uid || "coordenador",
+          porNome: userName || "Coordenador",
+          quando: new Date().toISOString(),
+        }
+      });
+      setLeadParaExcluir(null);
+      setMotivoExclusao("");
+      setMotivoTextoLivre("");
+    } catch (error) {
+      console.error("FALHA AO EXCLUIR (lixeira):", error);
+      alert("Erro ao mover para a lixeira. Tente novamente. Detalhe: " + ((error as any)?.code || (error as any)?.message || "desconhecido"));
+    } finally {
+      setSalvandoExclusao(false);
+    }
+  };
+
+  // ── GESTÃO DE ACESSO DO CORRETOR (item 1) — só mexe nos empreendimentos do coordenador ──
+  const toggleEmpreendimentoCorretor = async (empSlug: string) => {
+    if (!modalAcessoCorretor) return;
+    // Segurança: o coordenador só pode mexer no que ele mesmo tem acesso
+    if (!vetudo && !empreendimentosPermitidos.includes(empSlug)) {
+      alert("Você não tem acesso a este empreendimento. Apenas o administrador pode liberá-lo.");
+      return;
+    }
+    setSalvandoAcessoCorretor(true);
+    try {
+      const corretor = modalAcessoCorretor;
+      const permitidosAtuais: string[] = Array.isArray(corretor.empreendimentosPermitidos) ? corretor.empreendimentosPermitidos : [];
+      const jaPermitido = permitidosAtuais.includes(empSlug);
+      const novosPermitidos = jaPermitido
+        ? permitidosAtuais.filter(s => s !== empSlug)
+        : [...permitidosAtuais, empSlug];
+
+      await updateDoc(doc(db, "usuarios", corretor.id), {
+        empreendimentosPermitidos: novosPermitidos,
+        acessoConfigurado: true,
+      });
+
+      const atualizado = { ...corretor, empreendimentosPermitidos: novosPermitidos, acessoConfigurado: true };
+      setModalAcessoCorretor(atualizado);
+      setListaCorretores(prev => prev.map(c => c.id === corretor.id ? atualizado : c));
+    } catch (error) {
+      alert("Erro ao salvar o acesso. Tente novamente.");
+    } finally {
+      setSalvandoAcessoCorretor(false);
+    }
+  };
 
   if (!authVerificado) {
     return (
@@ -336,7 +631,11 @@ export default function PainelCoordenador() {
             </div>
             <p style={{ fontSize: 36, fontWeight: 800, color: "#ef4444", lineHeight: 1 }}>{leadsNaRoleta}</p>
           </div>
-          <div style={{ padding: "18px 16px 16px", background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 16 }}>
+          <button
+            onClick={() => { setAbaAtiva("gestao"); setFiltroStatus("aprovados"); }}
+            title="Ver leads aprovados / qualificados"
+            style={{ textAlign: "left", padding: "18px 16px 16px", background: filtroStatus === "aprovados" ? "rgba(74,222,128,0.15)" : "rgba(74,222,128,0.08)", border: filtroStatus === "aprovados" ? "1px solid rgba(74,222,128,0.5)" : "1px solid rgba(74,222,128,0.2)", borderRadius: 16, cursor: "pointer", transition: "0.2s" }}
+          >
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
               <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(74,222,128,0.15)", border: "1px solid rgba(74,222,128,0.3)" }}>
                 <BarChart3 size={16} color="#4ade80" />
@@ -344,7 +643,7 @@ export default function PainelCoordenador() {
               <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Aprovados / Vendidos</span>
             </div>
             <p style={{ fontSize: 36, fontWeight: 800, color: "#4ade80", lineHeight: 1 }}>{leadsAprovados}</p>
-          </div>
+          </button>
         </div>
 
         {/* ABAS */}
@@ -354,6 +653,12 @@ export default function PainelCoordenador() {
             style={{ flex: "1 1 min-content", padding: "12px", borderRadius: 10, border: "none", fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "0.2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, whiteSpace: "nowrap", background: abaAtiva === "gestao" ? "var(--terracota)" : "transparent", color: abaAtiva === "gestao" ? "white" : "var(--gray-mid)" }}
           >
             <Filter size={18} /> Monitoramento de Vendas
+          </button>
+          <button
+            onClick={() => setAbaAtiva("corretores")}
+            style={{ flex: "1 1 min-content", padding: "12px", borderRadius: 10, border: "none", fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "0.2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, whiteSpace: "nowrap", background: abaAtiva === "corretores" ? "rgba(96,165,250,0.15)" : "transparent", color: abaAtiva === "corretores" ? "#60a5fa" : "var(--gray-mid)" }}
+          >
+            <Users size={18} /> Corretores
           </button>
           <button
             onClick={() => setAbaAtiva("arquivos")}
@@ -380,6 +685,7 @@ export default function PainelCoordenador() {
               <div style={{ flex: "1 1 200px" }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Status do Cliente</label>
                 <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} className="input-field" style={{ height: 42, fontSize: 13, padding: "0 12px" }}>
+                  <option value="ativos">🟢 Em Andamento (Novos + Atendimento)</option>
                   <option value="todos">Qualquer Status</option>
                   <option value="novo">Novo</option>
                   <option value="em_atendimento">Em Atendimento</option>
@@ -401,8 +707,8 @@ export default function PainelCoordenador() {
               </div>
             </div>
 
-            {/* LISTAGEM DE LEADS (Somente Leitura / Contato) */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* LISTAGEM DE LEADS AGRUPADA POR EMPREENDIMENTO */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               <p style={{ fontSize: 13, color: "var(--gray-mid)", paddingLeft: 8 }}>Exibindo <strong>{leadsFiltrados.length}</strong> clientes.</p>
               
               {leadsFiltrados.length === 0 ? (
@@ -410,7 +716,15 @@ export default function PainelCoordenador() {
                    <p style={{ color: "var(--gray-mid)" }}>Nenhum lead encontrado com estes filtros.</p>
                  </div>
               ) : (
-                leadsFiltrados.map((lead) => {
+                Object.entries(leadsAgrupados).map(([empId, grupo]) => (
+                  <div key={empId}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                      <Building2 size={16} color="var(--terracota)" />
+                      <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--gray-light)" }}>{grupo.nome}</h3>
+                      <span style={{ fontSize: 12, color: "var(--gray-dark)" }}>({grupo.leads.length})</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {grupo.leads.map((lead) => {
                   const estaSolto = !lead.corretorId;
                   const nomeCorretor = listaCorretores.find(c => c.id === lead.corretorId)?.nome || lead.nomeCorretor || "Desconhecido";
                   
@@ -468,25 +782,148 @@ export default function PainelCoordenador() {
                       </div>
 
                       {/* LINHA 2: AÇÕES */}
-                      <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", padding: "9px 20px", display: "flex", alignItems: "center", gap: 5 }}>
-                        <button onClick={() => setLeadDossieId(lead.id)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
-                          <FolderOpen size={12} /> Ver Dossiê
+                      <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", padding: "9px 20px", display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                        {/* Funções por Correspondente */}
+                        {listaCorrespondentes.length > 0 && (() => {
+                          const qtdLib = ((lead as any).correspondentesPermitidos || []).length;
+                          return (
+                            <button onClick={() => { const fresco = todosLeads.find(l => l.id === lead.id) || lead; setModalAcessoLead(fresco); }} title="Gerir acesso dos correspondentes" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", background: qtdLib === 0 ? "rgba(239,68,68,0.06)" : "rgba(74,222,128,0.06)", border: qtdLib === 0 ? "1px solid rgba(239,68,68,0.15)" : "1px solid rgba(74,222,128,0.15)", color: qtdLib === 0 ? "#f87171" : "#4ade80" }}>
+                              <ShieldCheck size={12} /> {qtdLib > 0 ? `${qtdLib} lib.` : "Acesso fechado"}
+                            </button>
+                          );
+                        })()}
+
+                        {/* Vincular Lote */}
+                        {!(lead as any).loteReserva?.numero && lead.status !== "nao_qualificado" && lead.status !== "credito_reprovado" && (
+                          <button onClick={() => abrirMapaReserva(lead)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
+                            <MapIcon size={12} /> Vincular Lote
+                          </button>
+                        )}
+
+                        {/* Histórico */}
+                        <button onClick={() => setModalHistoricoId(lead.id)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
+                          <MessageSquare size={12} /> Histórico
+                          {((lead as any).historicoAtendimento || []).length > 0 && (
+                            <span style={{ fontSize: 9, fontWeight: 800, background: "#38bdf8", color: "#082f49", padding: "1px 5px", borderRadius: 100 }}>
+                              {((lead as any).historicoAtendimento || []).length}
+                            </span>
+                          )}
                         </button>
+
+                        {/* Dossiê */}
+                        <button onClick={() => setLeadDossieId(lead.id)} style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)" }}>
+                          <FolderOpen size={12} /> Dossiê
+                        </button>
+
+                        {/* Simulação */}
                         {lead.propostaUrl && (
                           <a href={lead.propostaUrl} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "var(--gray-light)", textDecoration: "none" }}>
-                            <FileText size={12} /> PDF
+                            <FileText size={12} /> Simulação
                           </a>
                         )}
+
                         <div style={{ flex: 1 }} />
                         <a href={`https://wa.me/55${(lead.whatsapp || "").replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.15)", color: "#4ade80", textDecoration: "none" }}>
                           <MessageCircle size={12} /> WhatsApp
                         </a>
+                        <button onClick={() => abrirModalExcluir(lead)} title="Mover para a lixeira" style={{ padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, display: "flex", gap: 4, alignItems: "center", cursor: "pointer", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", color: "#f87171" }}>
+                          <Trash2 size={12} />
+                        </button>
                       </div>
                     </div>
                   );
-                })
+                })}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
+          </div>
+        )}
+
+        {/* ABA: CORRETORES (gestão de acesso pelo coordenador) */}
+        {abaAtiva === "corretores" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div style={{ background: "rgba(96,165,250,0.08)", padding: "16px 20px", borderRadius: 14, border: "1px solid rgba(96,165,250,0.2)", display: "flex", alignItems: "center", gap: 12 }}>
+              <ShieldCheck size={18} color="#60a5fa" style={{ flexShrink: 0 }} />
+              <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.5 }}>
+                Libere ou desligue o acesso dos corretores aos <strong style={{ color: "#60a5fa" }}>seus</strong> empreendimentos. Empreendimentos que você não coordena aparecem bloqueados — somente o administrador os gere.
+              </p>
+            </div>
+
+            <div style={{ position: "relative" }}>
+              <input type="text" placeholder="Buscar corretor por nome..." value={buscaCorretor} onChange={e => setBuscaCorretor(e.target.value)} className="input-field" style={{ height: 44, fontSize: 13, padding: "0 14px" }} />
+              {buscaCorretor && <button onClick={() => setBuscaCorretor("")} style={{ position: "absolute", right: 12, top: 13, background: "transparent", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={16} /></button>}
+            </div>
+
+            {(() => {
+              const corretoresLista = listaCorretores.filter(c => {
+                // Filtro por busca de nome
+                if (!(c.nome || "").toLowerCase().includes(buscaCorretor.toLowerCase())) return false;
+                // Admin/email supremo vê todos
+                if (vetudo) return true;
+                // Coordenador: vê corretores que TÊM ou SOLICITARAM algum dos empreendimentos dele
+                const permC: string[] = Array.isArray(c.empreendimentosPermitidos) ? c.empreendimentosPermitidos : [];
+                const solicC: string[] = Array.isArray(c.empreendimentosSolicitados) ? c.empreendimentosSolicitados : [];
+                const relacionados = [...permC, ...solicC];
+                return relacionados.some(slug => empreendimentosPermitidos.includes(slug));
+              });
+              if (corretoresLista.length === 0) {
+                return (
+                  <div style={{ padding: "48px 24px", textAlign: "center", background: "rgba(0,0,0,0.2)", borderRadius: 16, border: "1px dashed var(--border-subtle)" }}>
+                    <p style={{ fontSize: 14, color: "var(--gray-mid)" }}>Nenhum corretor encontrado.</p>
+                  </div>
+                );
+              }
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+                  {corretoresLista.map(corretor => {
+                    const permitidos: string[] = Array.isArray(corretor.empreendimentosPermitidos) ? corretor.empreendimentosPermitidos : [];
+                    const solicitados: string[] = Array.isArray(corretor.empreendimentosSolicitados) ? corretor.empreendimentosSolicitados : [];
+                    const configurado = corretor.acessoConfigurado === true;
+                    // Empreendimentos do coordenador que o corretor solicitou mas ainda não tem acesso
+                    const pendentesNoMeu = solicitados.filter(s => (vetudo || empreendimentosPermitidos.includes(s)) && !permitidos.includes(s));
+                    return (
+                      <div key={corretor.id} style={{ background: "var(--bg-card)", border: pendentesNoMeu.length > 0 ? "1px solid rgba(251,146,60,0.4)" : "1px solid var(--border-subtle)", borderRadius: 16, overflow: "hidden" }}>
+                        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-subtle)", background: "rgba(0,0,0,0.15)", display: "flex", gap: 12, alignItems: "center" }}>
+                          <div style={{ width: 42, height: 42, borderRadius: 11, background: "rgba(96,165,250,0.15)", color: "#60a5fa", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, border: "1px solid rgba(96,165,250,0.3)", flexShrink: 0 }}>
+                            {(corretor.nome || "?")[0].toUpperCase()}
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <h3 style={{ fontSize: 15, fontWeight: 700, color: "white", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{corretor.nome}</h3>
+                            <p style={{ fontSize: 11, color: "var(--gray-mid)" }}>CRECI: {corretor.creci || "—"}</p>
+                          </div>
+                        </div>
+                        <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+                          {!configurado && (
+                            <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(251,146,60,0.08)", border: "1px solid rgba(251,146,60,0.25)" }}>
+                              <p style={{ fontSize: 11, color: "#fb923c", fontWeight: 600 }}>⚠ Aguardando liberação de acesso.</p>
+                            </div>
+                          )}
+                          {pendentesNoMeu.length > 0 && (
+                            <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.25)" }}>
+                              <p style={{ fontSize: 11, color: "#60a5fa", fontWeight: 600 }}>Solicitou acesso a {pendentesNoMeu.length} dos seus empreendimentos.</p>
+                            </div>
+                          )}
+                          <p style={{ fontSize: 11, color: "var(--gray-dark)" }}>
+                            Liberados: <strong style={{ color: "var(--gray-light)" }}>{permitidos.length}</strong> no total
+                            {!vetudo && (
+                              <> · <strong style={{ color: "#60a5fa" }}>{permitidos.filter(s => empreendimentosPermitidos.includes(s)).length}</strong> com você</>
+                            )}
+                          </p>
+                          <button
+                            onClick={() => setModalAcessoCorretor(corretor)}
+                            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px", borderRadius: 10, cursor: "pointer", background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.3)", color: "#60a5fa", fontSize: 12, fontWeight: 700 }}
+                          >
+                            <Building2 size={14} /> Gerir Acesso
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -606,7 +1043,7 @@ export default function PainelCoordenador() {
         </div>
       )}
 
-      {/* DOSSIÊ FLUTUANTE (SOMENTE LEITURA PARA O COORDENADOR) */}
+      {/* DOSSIÊ FLUTUANTE (COORDENADOR — edita ficha e adiciona docs, não remove consolidados) */}
       <DossieModal
         isOpen={leadDossieId !== null}
         onClose={() => setLeadDossieId(null)}
@@ -644,6 +1081,262 @@ export default function PainelCoordenador() {
                 onLoteClick={(lote) => setLoteDetalhe(lote)} 
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: HISTÓRICO DE ATENDIMENTO (COORDENADOR) */}
+      {modalHistoricoId !== null && modalHistoricoLead && (
+        <div onClick={(e) => { if (e.target === e.currentTarget) { setModalHistoricoId(null); setNovoHistorico(""); } }} style={{ position: "fixed", inset: 0, zIndex: 210, background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", width: "100%", maxWidth: 540, borderRadius: 24, border: "1px solid var(--border-subtle)", boxShadow: "0 20px 40px rgba(0,0,0,0.5)", overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.2)" }}>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 10 }}>
+                <MessageSquare size={18} color="#38bdf8" /> Histórico de Atendimento
+              </h2>
+              <button onClick={() => { setModalHistoricoId(null); setNovoHistorico(""); }} style={{ background: "transparent", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+            </div>
+            <div style={{ padding: "10px 24px", background: "rgba(56,189,248,0.05)", borderBottom: "1px solid var(--border-subtle)" }}>
+              <p style={{ fontSize: 13, color: "var(--gray-light)" }}>
+                Cliente: <strong style={{ color: "white" }}>{modalHistoricoLead.nome}</strong>
+                <span style={{ color: "var(--gray-dark)", marginLeft: 8 }}>• {modalHistoricoLead.empreendimentoNome}</span>
+              </p>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
+              {((modalHistoricoLead as any).historicoAtendimento || []).length === 0 ? (
+                <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                  <MessageSquare size={28} color="var(--gray-dark)" style={{ margin: "0 auto 12px" }} />
+                  <p style={{ color: "var(--gray-mid)", fontSize: 13 }}>Nenhuma anotação registrada para este cliente.</p>
+                </div>
+              ) : (
+                [...((modalHistoricoLead as any).historicoAtendimento || [])].reverse().map((entrada: any, idx: number) => (
+                  <div key={idx} style={{ padding: "14px 16px", background: "rgba(0,0,0,0.2)", borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#38bdf8" }}>{entrada.autorNome}</span>
+                      <span style={{ fontSize: 11, color: "var(--gray-dark)" }}>
+                        {new Date(entrada.timestamp).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às")}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>{entrada.texto}</p>
+                  </div>
+                ))
+              )}
+            </div>
+            <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 10, background: "rgba(0,0,0,0.1)" }}>
+              <textarea value={novoHistorico} onChange={e => setNovoHistorico(e.target.value)} placeholder="Adicionar nota de acompanhamento..." style={{ width: "100%", minHeight: 72, padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 13, resize: "none", outline: "none", fontFamily: "inherit", lineHeight: 1.6 }} />
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={publicarHistorico} disabled={!novoHistorico.trim() || salvandoHistorico} style={{ padding: "10px 20px", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 13, cursor: !novoHistorico.trim() || salvandoHistorico ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 8, background: novoHistorico.trim() ? "#38bdf8" : "rgba(56,189,248,0.15)", color: novoHistorico.trim() ? "#082f49" : "#38bdf8" }}>
+                  <MessageSquare size={14} /> {salvandoHistorico ? "Publicando..." : "Publicar Nota"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: FUNÇÕES POR CORRESPONDENTE (COORDENADOR) */}
+      <AnimatePresence>
+        {modalAcessoLead && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={(e) => { if (e.target === e.currentTarget) setModalAcessoLead(null); }}>
+            <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 20, width: "100%", maxWidth: 480, overflow: "hidden", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", background: "rgba(0,0,0,0.2)" }}>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}><ShieldCheck size={18} color="#38bdf8" /> Funções por Correspondente</h3>
+                  <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>Lead: <strong style={{ color: "var(--gray-light)" }}>{modalAcessoLead.nome}</strong></p>
+                </div>
+                <button onClick={() => setModalAcessoLead(null)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+              </div>
+              <div style={{ padding: "16px 24px", background: "rgba(56,189,248,0.06)", borderBottom: "1px solid var(--border-subtle)", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <Info size={15} color="#38bdf8" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 12, color: "var(--gray-light)", lineHeight: 1.6 }}>Defina a função de cada membro para este lead. <strong style={{ color: "#38bdf8" }}>CB</strong> = Correspondência bancária. <strong style={{ color: "#a78bfa" }}>Consultoria</strong> = Assessoria. Desligar ambos remove o acesso.</p>
+              </div>
+              <div style={{ overflowY: "auto", flex: 1, padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+                {listaCorrespondentes.length === 0 ? (
+                  <div style={{ padding: "40px 20px", textAlign: "center" }}><p style={{ fontSize: 13, color: "var(--gray-dark)" }}>Nenhum correspondente cadastrado ainda.</p></div>
+                ) : (
+                  listaCorrespondentes.map((correspondente) => {
+                    const permitidosAtuais = (modalAcessoLead as any).correspondentesPermitidos || [];
+                    const infoAtual = ((modalAcessoLead as any).correspondentesInfo || []).find((c: any) => c.id === correspondente.id);
+                    const estaPermitido = permitidosAtuais.includes(correspondente.id);
+                    const correspondenciaAtiva = estaPermitido ? (infoAtual?.correspondencia ?? true) : false;
+                    const consultoriaAtiva = infoAtual?.consultoria ?? false;
+                    const temAcesso = correspondenciaAtiva || consultoriaAtiva;
+                    return (
+                      <div key={correspondente.id} style={{ padding: "14px 16px", borderRadius: 12, background: temAcesso ? "rgba(56,189,248,0.04)" : "rgba(255,255,255,0.02)", border: temAcesso ? "1px solid rgba(56,189,248,0.2)" : "1px solid var(--border-subtle)" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <div style={{ width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 15, background: temAcesso ? "rgba(56,189,248,0.15)" : "rgba(255,255,255,0.05)", color: temAcesso ? "#38bdf8" : "var(--gray-dark)", border: temAcesso ? "1px solid rgba(56,189,248,0.3)" : "1px solid var(--border-subtle)" }}>
+                              {(correspondente.nome || "?")[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <p style={{ fontSize: 14, fontWeight: 700, color: "white" }}>{correspondente.nome}</p>
+                              <p style={{ fontSize: 11, color: "var(--gray-mid)", marginTop: 2 }}>{correspondente.email}</p>
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button onClick={() => toggleFuncaoCorrespondente(correspondente.id, 'correspondencia', !correspondenciaAtiva)} disabled={salvandoAcesso} style={{ padding: "6px 12px", borderRadius: 8, cursor: salvandoAcesso ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 11, border: "none", background: correspondenciaAtiva ? "rgba(56,189,248,0.2)" : "rgba(255,255,255,0.06)", color: correspondenciaAtiva ? "#38bdf8" : "var(--gray-dark)", opacity: salvandoAcesso ? 0.5 : 1, display: "flex", alignItems: "center", gap: 5 }}>
+                              <ShieldCheck size={12} /> CB: {correspondenciaAtiva ? "LIGADO" : "DESLIGADO"}
+                            </button>
+                            <button onClick={() => toggleFuncaoCorrespondente(correspondente.id, 'consultoria', !consultoriaAtiva)} disabled={salvandoAcesso} style={{ padding: "6px 12px", borderRadius: 8, cursor: salvandoAcesso ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 11, border: "none", background: consultoriaAtiva ? "rgba(167,139,250,0.2)" : "rgba(255,255,255,0.06)", color: consultoriaAtiva ? "#a78bfa" : "var(--gray-dark)", opacity: salvandoAcesso ? 0.5 : 1, display: "flex", alignItems: "center", gap: 5 }}>
+                              <Briefcase size={12} /> Consultoria: {consultoriaAtiva ? "LIGADO" : "DESLIGADO"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={() => setModalAcessoLead(null)} style={{ padding: "10px 20px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>Fechar</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: MAPA DE RESERVA DE LOTE (COORDENADOR) */}
+      {mapaReserva.aberto && mapaReserva.empreendimento && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,0.9)", backdropFilter: "blur(8px)", display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(15,30,22,0.95)" }}>
+            <div>
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}>
+                <MapIcon size={20} color="var(--terracota)" /> Vincular Lote — {mapaReserva.empreendimento.nome}
+              </h2>
+              <p style={{ fontSize: 13, color: "var(--gray-mid)", marginTop: 4 }}>
+                Selecione um lote disponível (Verde) para reservar para <strong style={{ color: "var(--gray-light)" }}>{mapaReserva.lead?.nome}</strong>.
+              </p>
+            </div>
+            <button onClick={() => setMapaReserva({ aberto: false, empreendimento: null, lead: null })} style={{ padding: 8, background: "rgba(255,255,255,0.1)", borderRadius: 8, border: "none", color: "white", cursor: "pointer" }}><X size={20} /></button>
+          </div>
+          <div style={{ flex: 1, padding: "20px", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
+            {loadingReserva ? (
+              <div style={{ color: "var(--terracota)", fontWeight: 700, animation: "pulse 2s infinite" }}>Sincronizando lotes...</div>
+            ) : (
+              <MapaInterativo mapaUrl={mapaReserva.empreendimento.mapaUrl || ""} lotes={lotesReserva} onLoteClick={handleLoteClickReserva} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: SELEÇÃO DE MODELO (sobre o mapa) */}
+      {loteParaReservar && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 130, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", padding: 30, borderRadius: 20, width: "100%", maxWidth: 400, textAlign: "center", border: "1px solid var(--border-subtle)" }}>
+            <Home size={40} color="var(--terracota)" style={{ marginBottom: 16 }} />
+            <h3 style={{ color: "white", fontSize: 18, fontWeight: 800 }}>Lote {loteParaReservar.numero}</h3>
+            <p style={{ color: "var(--gray-mid)", marginBottom: 24 }}>Escolha o modelo de casa para este cliente:</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {mapaReserva.empreendimento?.modelos?.map((modelo: any, idx: number) => (
+                <button key={idx} onClick={() => confirmarReservaComModelo(modelo.nome, modelo.valor)} style={{ padding: 16, background: "var(--terracota)", color: "white", border: "none", borderRadius: 12, fontWeight: 700, cursor: "pointer", fontSize: 15 }}>
+                  {modelo.nome} — {formatBRL(modelo.valor)}
+                </button>
+              ))}
+              {(!mapaReserva.empreendimento?.modelos || mapaReserva.empreendimento.modelos.length === 0) && (
+                <p style={{ color: "var(--gray-mid)", fontSize: 13 }}>Nenhum modelo cadastrado neste empreendimento.</p>
+              )}
+              <button onClick={() => setLoteParaReservar(null)} style={{ background: "transparent", border: "none", color: "var(--gray-dark)", cursor: "pointer", marginTop: 10, fontWeight: 600 }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: GESTÃO DE ACESSO DO CORRETOR (item 1) */}
+      <AnimatePresence>
+        {modalAcessoCorretor && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={(e) => { if (e.target === e.currentTarget) setModalAcessoCorretor(null); }}>
+            <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }} style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 20, width: "100%", maxWidth: 480, overflow: "hidden", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", background: "rgba(0,0,0,0.2)" }}>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 8 }}><Building2 size={18} color="#60a5fa" /> Acesso do Corretor</h3>
+                  <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>Corretor: <strong style={{ color: "var(--gray-light)" }}>{modalAcessoCorretor.nome}</strong></p>
+                </div>
+                <button onClick={() => setModalAcessoCorretor(null)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+              </div>
+              <div style={{ padding: "16px 24px", background: "rgba(96,165,250,0.06)", borderBottom: "1px solid var(--border-subtle)", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <Info size={15} color="#60a5fa" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 12, color: "var(--gray-light)", lineHeight: 1.6 }}>Libere ou desligue o acesso de <strong style={{ color: "#60a5fa" }}>{modalAcessoCorretor.nome}</strong> aos empreendimentos que você coordena.</p>
+              </div>
+              <div style={{ overflowY: "auto", flex: 1, padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+                {empreendimentos.filter(emp => vetudo || empreendimentosPermitidos.includes(emp.slug)).map((emp) => {
+                  const permitidos: string[] = Array.isArray(modalAcessoCorretor.empreendimentosPermitidos) ? modalAcessoCorretor.empreendimentosPermitidos : [];
+                  const solicitados: string[] = Array.isArray(modalAcessoCorretor.empreendimentosSolicitados) ? modalAcessoCorretor.empreendimentosSolicitados : [];
+                  const temAcesso = permitidos.includes(emp.slug);
+                  const foiSolicitado = solicitados.includes(emp.slug);
+
+                  return (
+                    <div key={emp.slug} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderRadius: 12, background: temAcesso ? "rgba(74,222,128,0.05)" : "rgba(239,68,68,0.05)", border: temAcesso ? "1px solid rgba(74,222,128,0.2)" : "1px solid rgba(239,68,68,0.2)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: temAcesso ? "rgba(74,222,128,0.15)" : "rgba(239,68,68,0.15)", color: temAcesso ? "#4ade80" : "#f87171", border: temAcesso ? "1px solid rgba(74,222,128,0.3)" : "1px solid rgba(239,68,68,0.3)" }}>
+                          <Building2 size={16} />
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 14, fontWeight: 700, color: "white" }}>{emp.nome}</p>
+                          {foiSolicitado && !temAcesso && <p style={{ fontSize: 11, color: "#60a5fa", marginTop: 2, fontWeight: 600 }}>Solicitado no cadastro</p>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => toggleEmpreendimentoCorretor(emp.slug)}
+                        disabled={salvandoAcessoCorretor}
+                        style={{ padding: "8px 16px", borderRadius: 10, cursor: salvandoAcessoCorretor ? "not-allowed" : "pointer", fontWeight: 800, fontSize: 12, border: "none", background: temAcesso ? "rgba(74,222,128,0.2)" : "rgba(239,68,68,0.2)", color: temAcesso ? "#4ade80" : "#f87171", opacity: salvandoAcessoCorretor ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}
+                      >
+                        {temAcesso ? <><CheckCircle2 size={15} /> LIGADO</> : <><Lock size={14} /> DESLIGADO</>}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={() => setModalAcessoCorretor(null)} style={{ padding: "10px 20px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>Fechar</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: MOTIVO DE EXCLUSÃO (ENVIAR PARA LIXEIRA) */}
+      {leadParaExcluir && (
+        <div onClick={(e) => { if (e.target === e.currentTarget) setLeadParaExcluir(null); }} style={{ position: "fixed", inset: 0, zIndex: 220, background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", width: "100%", maxWidth: 480, borderRadius: 20, border: "1px solid rgba(239,68,68,0.3)", overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(239,68,68,0.2)", background: "rgba(239,68,68,0.06)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
+                  <AlertTriangle size={18} /> Mover para a Lixeira
+                </h3>
+                <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>Cliente: <strong style={{ color: "var(--gray-light)" }}>{leadParaExcluir.nome}</strong></p>
+              </div>
+              <button onClick={() => setLeadParaExcluir(null)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+            </div>
+
+            <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
+              <p style={{ fontSize: 13, color: "var(--gray-light)", marginBottom: 4 }}>Selecione o motivo da exclusão (obrigatório):</p>
+              {MOTIVOS_EXCLUSAO.map(m => (
+                <button key={m.id} onClick={() => setMotivoExclusao(m.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, cursor: "pointer", textAlign: "left", background: motivoExclusao === m.id ? "rgba(239,68,68,0.1)" : "rgba(0,0,0,0.2)", border: motivoExclusao === m.id ? "1px solid rgba(239,68,68,0.4)" : "1px solid var(--border-subtle)" }}>
+                  <span style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, border: motivoExclusao === m.id ? "5px solid #f87171" : "2px solid var(--gray-dark)", transition: "0.15s" }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: motivoExclusao === m.id ? "white" : "var(--gray-light)" }}>{m.label}</span>
+                </button>
+              ))}
+
+              {motivoExclusao === "outro" && (
+                <textarea
+                  value={motivoTextoLivre}
+                  onChange={e => setMotivoTextoLivre(e.target.value)}
+                  placeholder="Descreva o motivo..."
+                  autoFocus
+                  style={{ width: "100%", minHeight: 70, padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 13, resize: "none", outline: "none", fontFamily: "inherit", lineHeight: 1.6, marginTop: 4 }}
+                />
+              )}
+            </div>
+
+            <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-subtle)", display: "flex", gap: 10, justifyContent: "flex-end", background: "rgba(0,0,0,0.1)" }}>
+              <button onClick={() => setLeadParaExcluir(null)} style={{ padding: "10px 18px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>Cancelar</button>
+              <button
+                onClick={confirmarExclusao}
+                disabled={!motivoExclusao || (motivoExclusao === "outro" && !motivoTextoLivre.trim()) || salvandoExclusao}
+                style={{ padding: "10px 18px", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", gap: 8, cursor: (!motivoExclusao || (motivoExclusao === "outro" && !motivoTextoLivre.trim()) || salvandoExclusao) ? "not-allowed" : "pointer", background: (!motivoExclusao || (motivoExclusao === "outro" && !motivoTextoLivre.trim())) ? "rgba(239,68,68,0.2)" : "#ef4444", color: "white", opacity: salvandoExclusao ? 0.6 : 1 }}
+              >
+                <Trash2 size={14} /> {salvandoExclusao ? "Movendo..." : "Mover para Lixeira"}
+              </button>
+            </div>
           </div>
         </div>
       )}

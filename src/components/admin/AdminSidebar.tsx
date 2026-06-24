@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { 
   Building2, Users, Banknote, Wallet, Landmark, 
-  FolderOpen, ArrowLeft, LogOut, X 
+  FolderOpen, ArrowLeft, LogOut, X, Trash2 
 } from "lucide-react";
 
 interface AdminSidebarProps {
@@ -26,6 +26,7 @@ export function AdminSidebar({ tab, setTab, fazerLogout, sidebarOpen, setSidebar
     { id: "equipe", label: "Equipe e Pagamentos", icon: Wallet },
     { id: "recebiveis", label: "Contratos & Recebíveis", icon: Landmark },
     { id: "arquivos", label: "Arquivos Padrão", icon: FolderOpen },
+    { id: "lixeira", label: "Lixeira", icon: Trash2 },
   ];
 
   const SidebarContent = () => (
