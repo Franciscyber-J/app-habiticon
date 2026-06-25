@@ -10,6 +10,7 @@ import { Users, ShieldCheck, LogOut, MessageCircle, Building2, MessageSquare, Us
 import { DossieModal } from "@/components/corretor/DossieModal";
 import { MapaInterativo } from "@/components/mapa/MapaInterativo";
 import { formatBRL } from "@/lib/calculos";
+import { ModalVinculoLote } from "@/components/corretor/ModalVinculoLote";
 
 // ─────────────────────────────────────────────────────────
 // TIPAGENS
@@ -154,6 +155,12 @@ export default function PainelCorretor() {
   const [modalStatusCorretor, setModalStatusCorretor] = useState<LeadData | null>(null);
   const [motivoNaoQualificado, setMotivoNaoQualificado] = useState("");
 
+  // Desvínculo de lote (com motivo)
+  const [leadParaDesvincular, setLeadParaDesvincular] = useState<LeadData | null>(null);
+  const [motivoDesvinculo, setMotivoDesvinculo] = useState<string>("");
+  const [motivoDesvinculoTexto, setMotivoDesvinculoTexto] = useState<string>("");
+  const [salvandoDesvinculo, setSalvandoDesvinculo] = useState(false);
+
   // ── AUTENTICAÇÃO E VALIDAÇÃO DE ROLE ──
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
@@ -233,8 +240,10 @@ export default function PainelCorretor() {
              mapaUrl: docItem.data().mapaUrl,
              vendaEmOrdem: docItem.data().vendaEmOrdem,
              documentosPadrao: docItem.data().documentosPadrao || [],
-             modelos: docItem.data().modelos || []
-           });
+             modelos: docItem.data().modelos || [],
+             lotes: docItem.data().lotes || [],
+             simulador: docItem.data().simulador || {},
+           } as any);
         });
         setEmpreendimentos(emps);
       } catch (error) {
@@ -408,31 +417,69 @@ export default function PainelCorretor() {
     }
   };
 
-  const desvincularLote = async (lead: LeadData) => {
-    if (!lead.loteReserva || !confirm("Deseja remover a reserva deste lote? Ele voltará a ficar disponível para outros corretores.")) return;
+  // Motivos de desvínculo de lote (seleção única) — mesmo padrão do coordenador
+  const MOTIVOS_DESVINCULO = [
+    { id: "cliente_desistiu",  label: "Cliente desistiu da compra" },
+    { id: "credito_negado",    label: "Crédito não aprovado" },
+    { id: "troca_lote",        label: "Cliente vai trocar de lote" },
+    { id: "troca_modelo",      label: "Cliente vai trocar de modelo" },
+    { id: "reserva_equivocada",label: "Reserva feita por engano" },
+    { id: "documentacao",      label: "Problema na documentação" },
+    { id: "outro",             label: "Outro motivo" },
+  ];
+
+  const abrirModalDesvincular = (lead: LeadData) => {
+    setLeadParaDesvincular(lead);
+    setMotivoDesvinculo("");
+    setMotivoDesvinculoTexto("");
+  };
+
+  const confirmarDesvinculo = async () => {
+    if (!leadParaDesvincular || !motivoDesvinculo) return;
+    if (motivoDesvinculo === "outro" && !motivoDesvinculoTexto.trim()) return;
+    const lead = leadParaDesvincular;
+    const reserva = lead.loteReserva;
+    if (!reserva?.quadraId || !reserva?.loteId) {
+      alert("Esta reserva não tem referência de lote. Não é possível desvincular automaticamente.");
+      return;
+    }
+    setSalvandoDesvinculo(true);
     try {
-      const { quadraId, loteId } = lead.loteReserva;
-      const loteRef = doc(db, "empreendimentos", lead.empreendimentoId, "quadras", quadraId, "lotes", loteId);
-      
+      const motivoObj = MOTIVOS_DESVINCULO.find(m => m.id === motivoDesvinculo);
+      const motivoFinal = motivoDesvinculo === "outro"
+        ? motivoDesvinculoTexto.trim()
+        : (motivoObj?.label || motivoDesvinculo);
+
+      // 1. Devolve o lote: remove o cliente da fila e ajusta o status
+      const loteRef = doc(db, "empreendimentos", lead.empreendimentoId, "quadras", reserva.quadraId, "lotes", reserva.loteId);
       const loteSnap = await getDoc(loteRef);
       if (loteSnap.exists()) {
         const filaAtual = loteSnap.data().fila || [];
         const novaFila = filaAtual.filter((f: any) => f.leadId !== lead.id);
-        const novoStatus = novaFila.length === 0 ? "disponivel" : "vinculado";
-
-        await updateDoc(loteRef, { fila: novaFila, status: novoStatus });
+        await updateDoc(loteRef, { fila: novaFila, status: novaFila.length === 0 ? "disponivel" : "vinculado" });
       }
 
-      const leadRef = doc(db, "leads", lead.id);
-      const leadSnap = await getDoc(leadRef);
-      if (leadSnap.exists()) {
-        await updateDoc(leadRef, { loteReserva: null });
-      }
+      // 2. Limpa a reserva do lead e registra o motivo no histórico de atendimento
+      const entradaHistorico = {
+        texto: `🔓 Lote ${reserva.numero || reserva.loteId} desvinculado. Motivo: ${motivoFinal}`,
+        autorNome: perfilData.nome || userName,
+        autorId: userId,
+        timestamp: new Date().toISOString(),
+      };
+      const historicoAtual = lead.historicoAtendimento || [];
+      await updateDoc(doc(db, "leads", lead.id), {
+        loteReserva: null,
+        historicoAtendimento: [...historicoAtual, entradaHistorico],
+      });
 
-      alert("Lote desvinculado com sucesso.");
+      setLeadParaDesvincular(null);
+      setMotivoDesvinculo("");
+      setMotivoDesvinculoTexto("");
     } catch (error) {
       console.error("Erro ao desvincular:", error);
       alert("Erro ao desvincular o lote.");
+    } finally {
+      setSalvandoDesvinculo(false);
     }
   };
 
@@ -583,7 +630,7 @@ const publicarHistorico = async () => {
     setLoteParaReservar(lote);
   };
 
-  const confirmarReservaComModelo = async (modeloNome: string, valor: number) => {
+  const confirmarReservaComModelo = async (modeloNome: string, valor: number, extra?: any) => {
     const { empreendimento, lead } = mapaModalAberto;
     const lote = loteParaReservar;
     if (!empreendimento || !lead || !lote) return;
@@ -600,9 +647,22 @@ const publicarHistorico = async () => {
         fila: novaFila, status: "vinculado"
       });
 
-      await updateDoc(doc(db, "leads", lead.id), {
-        loteReserva: { quadraId: lote.quadraId, loteId: lote.id, numero: lote.numero, modeloCasa: modeloNome, valorVenda: valor }
-      });
+      // Reserva completa: posição física + o que o cliente fechou (sobrevive à troca do SVG)
+      const loteReserva = extra ? {
+        quadraId: lote.quadraId, loteId: lote.id, numero: lote.numero,
+        svgPathId: extra.svgPathId || lote.svgPathId || "",
+        modeloCasa: modeloNome,
+        modeloId: extra.modeloId, modeloNome: extra.modeloNome,
+        valorCasa: extra.valorCasa,
+        fracaoId: extra.fracaoId, fracaoNome: extra.fracaoNome,
+        fracaoMedida: extra.fracaoMedida, fracaoValor: extra.fracaoValor,
+        itensAdicionais: extra.itensAdicionais || [],
+        valorVenda: valor,
+      } : {
+        quadraId: lote.quadraId, loteId: lote.id, numero: lote.numero, modeloCasa: modeloNome, valorVenda: valor
+      };
+
+      await updateDoc(doc(db, "leads", lead.id), { loteReserva });
 
       alert(`Lote ${lote.numero} reservado com o modelo ${modeloNome}!`);
       setLoteParaReservar(null);
@@ -889,9 +949,9 @@ const publicarHistorico = async () => {
                                 <p style={{ fontSize: 12, color: "var(--gray-mid)" }}>Valor total: {formatBRL(lead.loteReserva.valorVenda)}</p>
                               </div>
                               <button 
-                                onClick={() => desvincularLote(lead)}
+                                onClick={() => abrirModalDesvincular(lead)}
                                 style={{ padding: "8px", background: "rgba(239,68,68,0.15)", border: "none", borderRadius: 8, color: "#f87171", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-                                title="Desvincular Lote"
+                                title="Desvincular Lote (exige motivo)"
                               >
                                 <X size={16} />
                               </button>
@@ -1645,6 +1705,57 @@ const publicarHistorico = async () => {
         </div>
       )}
 
+      {/* MODAL: MOTIVO DE DESVÍNCULO DE LOTE */}
+      {leadParaDesvincular && (
+        <div onClick={(e) => { if (e.target === e.currentTarget) setLeadParaDesvincular(null); }} style={{ position: "fixed", inset: 0, zIndex: 160, background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", width: "100%", maxWidth: 480, borderRadius: 20, border: "1px solid rgba(251,146,60,0.3)", overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(251,146,60,0.2)", background: "rgba(251,146,60,0.06)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: "#fb923c", display: "flex", alignItems: "center", gap: 8 }}>
+                  <MapIcon size={18} /> Desvincular Lote
+                </h3>
+                <p style={{ fontSize: 12, color: "var(--gray-mid)", marginTop: 4 }}>
+                  Cliente: <strong style={{ color: "var(--gray-light)" }}>{leadParaDesvincular.nome}</strong>
+                  {leadParaDesvincular.loteReserva?.numero && <> · Lote <strong style={{ color: "var(--gray-light)" }}>{leadParaDesvincular.loteReserva.numero}</strong></>}
+                </p>
+              </div>
+              <button onClick={() => setLeadParaDesvincular(null)} style={{ background: "none", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+            </div>
+
+            <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
+              <p style={{ fontSize: 13, color: "var(--gray-light)", marginBottom: 4 }}>O lote volta a ficar disponível e o cliente sai da fila. O lead <strong>é mantido</strong>. Selecione o motivo (obrigatório):</p>
+              {MOTIVOS_DESVINCULO.map(m => (
+                <button key={m.id} onClick={() => setMotivoDesvinculo(m.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, cursor: "pointer", textAlign: "left", background: motivoDesvinculo === m.id ? "rgba(251,146,60,0.1)" : "rgba(0,0,0,0.2)", border: motivoDesvinculo === m.id ? "1px solid rgba(251,146,60,0.4)" : "1px solid var(--border-subtle)" }}>
+                  <span style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, border: motivoDesvinculo === m.id ? "5px solid #fb923c" : "2px solid var(--gray-dark)", transition: "0.15s" }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: motivoDesvinculo === m.id ? "white" : "var(--gray-light)" }}>{m.label}</span>
+                </button>
+              ))}
+
+              {motivoDesvinculo === "outro" && (
+                <textarea
+                  value={motivoDesvinculoTexto}
+                  onChange={e => setMotivoDesvinculoTexto(e.target.value)}
+                  placeholder="Descreva o motivo..."
+                  autoFocus
+                  style={{ width: "100%", minHeight: 70, padding: "10px 14px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-active)", color: "white", fontSize: 13, resize: "none", outline: "none", fontFamily: "inherit", lineHeight: 1.6, marginTop: 4 }}
+                />
+              )}
+            </div>
+
+            <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-subtle)", display: "flex", gap: 10, justifyContent: "flex-end", background: "rgba(0,0,0,0.1)" }}>
+              <button onClick={() => setLeadParaDesvincular(null)} style={{ padding: "10px 18px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>Cancelar</button>
+              <button
+                onClick={confirmarDesvinculo}
+                disabled={!motivoDesvinculo || (motivoDesvinculo === "outro" && !motivoDesvinculoTexto.trim()) || salvandoDesvinculo}
+                style={{ padding: "10px 18px", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", gap: 8, cursor: (!motivoDesvinculo || (motivoDesvinculo === "outro" && !motivoDesvinculoTexto.trim()) || salvandoDesvinculo) ? "not-allowed" : "pointer", background: (!motivoDesvinculo || (motivoDesvinculo === "outro" && !motivoDesvinculoTexto.trim())) ? "rgba(251,146,60,0.2)" : "#fb923c", color: "#1a1206", opacity: salvandoDesvinculo ? 0.6 : 1 }}
+              >
+                <MapIcon size={14} /> {salvandoDesvinculo ? "Desvinculando..." : "Desvincular Lote"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* DOSSIÊ FLUTUANTE */}
       <DossieModal
         isOpen={leadDossieId !== null}
@@ -1724,33 +1835,14 @@ const publicarHistorico = async () => {
         </div>
       )}
 
-      {/* MODAL DE SELEÇÃO DE MODELO (Aparece sobre o mapa) */}
-      {loteParaReservar && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 110, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div style={{ background: "var(--bg-card)", padding: 30, borderRadius: 20, width: "100%", maxWidth: 400, textAlign: "center", border: "1px solid var(--border-subtle)" }}>
-            <Home size={40} color="var(--terracota)" style={{ marginBottom: 16 }} />
-            <h3 style={{ color: "white", fontSize: 18, fontWeight: 800 }}>Lote {loteParaReservar.numero}</h3>
-            <p style={{ color: "var(--gray-mid)", marginBottom: 24 }}>Escolha o modelo de casa para este cliente:</p>
-            
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {mapaModalAberto.empreendimento?.modelos?.map((modelo: any, idx: number) => (
-                <button 
-                  key={idx} 
-                  onClick={() => confirmarReservaComModelo(modelo.nome, modelo.valor)} 
-                  style={{ padding: 16, background: "var(--terracota)", color: "white", border: "none", borderRadius: 12, fontWeight: 700, cursor: "pointer", fontSize: 15, transition: "0.2s" }}
-                >
-                  {modelo.nome} — {formatBRL(modelo.valor)}
-                </button>
-              ))}
-              {(!mapaModalAberto.empreendimento?.modelos || mapaModalAberto.empreendimento.modelos.length === 0) && (
-                <p style={{ color: "var(--gray-mid)", fontSize: 13 }}>Nenhum modelo cadastrado neste empreendimento.</p>
-              )}
-              <button onClick={() => setLoteParaReservar(null)} style={{ background: "transparent", border: "none", color: "var(--gray-dark)", cursor: "pointer", marginTop: 10, fontWeight: 600 }}>
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* MODAL DE VÍNCULO DE LOTE (sincronizado com o simulador) */}
+      {loteParaReservar && mapaModalAberto.empreendimento && (
+        <ModalVinculoLote
+          empreendimento={mapaModalAberto.empreendimento}
+          loteFisico={loteParaReservar}
+          onCancel={() => setLoteParaReservar(null)}
+          onConfirm={(modeloNome, valorVenda, extra) => confirmarReservaComModelo(modeloNome, valorVenda, extra)}
+        />
       )}
 
       <style dangerouslySetInnerHTML={{__html: `

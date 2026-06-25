@@ -73,6 +73,10 @@ export default function GestaoLotesPage({ params }: Params) {
   const [formMassa, setFormMassa] = useState({ numInicial: 1, numFinal: 20, area: "", valor: "", prefixoSvg: "lote_" });
   const [salvandoMassa, setSalvandoMassa] = useState(false);
 
+  // Desvínculo de lote (escolha: manter ou reprovar o lead) — NUNCA apaga
+  const [modalDesvincular, setModalDesvincular] = useState<{ quadraId: string; loteId: string; numeroLote: string } | null>(null);
+  const [processandoDesvinculo, setProcessandoDesvinculo] = useState(false);
+
   // ── CARREGAMENTO DE DADOS ──
   useEffect(() => {
     const carregarTudo = async () => {
@@ -283,40 +287,60 @@ export default function GestaoLotesPage({ params }: Params) {
     } catch (err) { alert("Erro ao alterar bloqueio."); }
   };
 
-  const forcarDisponivel = async (quadraId: string, loteId: string) => {
-    if (!confirm("Isso irá remover TODOS da fila e desvincular os leads. O lote ficará DISPONÍVEL verde no mapa. Tem certeza?")) return;
-    try {
-      const loteRef = doc(db, "empreendimentos", slug, "quadras", quadraId, "lotes", loteId);
-      const loteSnap = await getDoc(loteRef);
-      
-      if (loteSnap.exists()) {
-        const loteData = loteSnap.data() as Lote;
-        const fila = loteData.fila || [];
+  // ── DESVÍNCULO DE LOTE (nunca apaga o lead) ──
+  // Libera o lote (zera a fila e volta a "disponivel") e define o status do(s) lead(s) da fila.
+  const liberarLoteEAjustarLeads = async (quadraId: string, loteId: string, novoStatusLead: "em_atendimento" | "venda_desfeita") => {
+    const loteRef = doc(db, "empreendimentos", slug, "quadras", quadraId, "lotes", loteId);
+    const loteSnap = await getDoc(loteRef);
 
-        // Remove o lote dos leads um por um, verificando se eles ainda existem (evita o crash do documento fantasma)
-        for (const itemFila of fila) {
-          const leadRef = doc(db, "leads", itemFila.leadId);
-          const leadSnap = await getDoc(leadRef);
-          if (leadSnap.exists()) {
-            await updateDoc(leadRef, {
-              loteReserva: null,
-              status: "venda_desfeita" 
-            });
+    if (loteSnap.exists()) {
+      const loteData = loteSnap.data() as Lote;
+      const fila = loteData.fila || [];
+      // Verifica cada lead (evita crash com documento fantasma)
+      for (const itemFila of fila) {
+        const leadRef = doc(db, "leads", itemFila.leadId);
+        const leadSnap = await getDoc(leadRef);
+        if (leadSnap.exists()) {
+          const payload: any = { loteReserva: null, status: novoStatusLead };
+          if (novoStatusLead === "venda_desfeita") {
+            payload.motivoReprovacao = "Lote desvinculado pela administração (venda desfeita).";
+            payload.origemDesqualificacao = "admin";
           }
+          await updateDoc(leadRef, payload);
         }
       }
+    }
 
-      // Atualiza o status do próprio lote para livre
-      await updateDoc(loteRef, {
-        status: "disponivel", 
-        fila: [], 
-        leadAprovadoId: null
-      });
+    await updateDoc(loteRef, { status: "disponivel", fila: [], leadAprovadoId: null });
+  };
 
-      alert("Lote libertado e leads atualizados com sucesso.");
-    } catch (err) { 
+  const desvincularManterLead = async () => {
+    if (!modalDesvincular) return;
+    setProcessandoDesvinculo(true);
+    try {
+      await liberarLoteEAjustarLeads(modalDesvincular.quadraId, modalDesvincular.loteId, "em_atendimento");
+      alert("Lote liberado. O(s) lead(s) foram MANTIDOS e voltaram para 'Em atendimento'.");
+      setModalDesvincular(null);
+    } catch (err) {
       console.error(err);
-      alert("Erro ao limpar lote e desvincular leads."); 
+      alert("Erro ao desvincular o lote.");
+    } finally {
+      setProcessandoDesvinculo(false);
+    }
+  };
+
+  const desvincularReprovarLead = async () => {
+    if (!modalDesvincular) return;
+    setProcessandoDesvinculo(true);
+    try {
+      await liberarLoteEAjustarLeads(modalDesvincular.quadraId, modalDesvincular.loteId, "venda_desfeita");
+      alert("Lote liberado e o(s) lead(s) marcados como REPROVADOS (venda desfeita).");
+      setModalDesvincular(null);
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao desvincular o lote.");
+    } finally {
+      setProcessandoDesvinculo(false);
     }
   };
 
@@ -476,8 +500,8 @@ export default function GestaoLotesPage({ params }: Params) {
                                         </div>
                                       ))}
                                     </div>
-                                    <button onClick={() => forcarDisponivel(quadra.id, lote.id)} style={{ marginTop: 10, width: "100%", padding: "6px", fontSize: 10, fontWeight: 700, borderRadius: 6, background: "rgba(239,68,68,0.1)", color: "#f87171", border: "1px solid rgba(239,68,68,0.3)", cursor: "pointer" }}>
-                                      Desvincular (Forçar Livre)
+                                    <button onClick={() => setModalDesvincular({ quadraId: quadra.id, loteId: lote.id, numeroLote: lote.numero })} style={{ marginTop: 10, width: "100%", padding: "6px", fontSize: 10, fontWeight: 700, borderRadius: 6, background: "rgba(239,68,68,0.1)", color: "#f87171", border: "1px solid rgba(239,68,68,0.3)", cursor: "pointer" }}>
+                                      Desvincular Lote
                                     </button>
                                   </div>
                                 )}
@@ -486,8 +510,8 @@ export default function GestaoLotesPage({ params }: Params) {
                                 {lote.status === "vendido" && (
                                   <div style={{ background: "rgba(239,68,68,0.15)", padding: 10, borderRadius: 8, border: "1px solid rgba(239,68,68,0.3)" }}>
                                     <p style={{ fontSize: 11, fontWeight: 800, color: "#f87171", display: "flex", alignItems: "center", gap: 4 }}><CheckCircle2 size={12}/> VENDIDO DEFINITIVO</p>
-                                    <button onClick={() => forcarDisponivel(quadra.id, lote.id)} style={{ marginTop: 8, width: "100%", padding: "6px", fontSize: 10, fontWeight: 700, borderRadius: 6, background: "transparent", color: "white", border: "1px dashed var(--gray-mid)", cursor: "pointer" }}>
-                                      Desfazer Venda
+                                    <button onClick={() => setModalDesvincular({ quadraId: quadra.id, loteId: lote.id, numeroLote: lote.numero })} style={{ marginTop: 8, width: "100%", padding: "6px", fontSize: 10, fontWeight: 700, borderRadius: 6, background: "transparent", color: "white", border: "1px dashed var(--gray-mid)", cursor: "pointer" }}>
+                                      Desvincular / Desfazer Venda
                                     </button>
                                   </div>
                                 )}
@@ -593,6 +617,39 @@ export default function GestaoLotesPage({ params }: Params) {
                 {salvandoMassa ? "Gerando..." : <><CopyPlus size={18}/> Gerar {formMassa.numFinal >= formMassa.numInicial ? formMassa.numFinal - formMassa.numInicial + 1 : 0} Lotes</>}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DESVINCULAR LOTE (MANTER OU REPROVAR — NUNCA APAGA) */}
+      {modalDesvincular && (
+        <div onClick={(e) => { if (e.target === e.currentTarget && !processandoDesvinculo) setModalDesvincular(null); }} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", width: "100%", maxWidth: 460, borderRadius: 20, border: "1px solid rgba(251,146,60,0.3)", overflow: "hidden" }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(251,146,60,0.2)", background: "rgba(251,146,60,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: "#fb923c", display: "flex", alignItems: "center", gap: 8 }}>
+                <AlertTriangle size={18} /> Desvincular Lote {modalDesvincular.numeroLote}
+              </h2>
+              <button onClick={() => { if (!processandoDesvinculo) setModalDesvincular(null); }} style={{ background: "transparent", border: "none", color: "var(--gray-mid)", cursor: "pointer" }}><X size={20} /></button>
+            </div>
+            <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 16 }}>
+              <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>
+                O lote será liberado e a fila esvaziada. <strong>O lead nunca é apagado</strong> — escolha o que fazer com ele:
+              </p>
+
+              <button onClick={desvincularManterLead} disabled={processandoDesvinculo} style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(74,222,128,0.3)", background: "rgba(74,222,128,0.1)", color: "#4ade80", fontWeight: 800, fontSize: 14, cursor: processandoDesvinculo ? "not-allowed" : "pointer", textAlign: "left", opacity: processandoDesvinculo ? 0.6 : 1 }}>
+                ✅ Desvincular e MANTER o lead
+                <span style={{ display: "block", fontSize: 12, fontWeight: 500, color: "var(--gray-mid)", marginTop: 4 }}>O lead volta para "Em atendimento" e continua ativo no pipeline.</span>
+              </button>
+
+              <button onClick={desvincularReprovarLead} disabled={processandoDesvinculo} style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontWeight: 800, fontSize: 14, cursor: processandoDesvinculo ? "not-allowed" : "pointer", textAlign: "left", opacity: processandoDesvinculo ? 0.6 : 1 }}>
+                🔴 Desvincular e REPROVAR o lead
+                <span style={{ display: "block", fontSize: 12, fontWeight: 500, color: "var(--gray-mid)", marginTop: 4 }}>O lead é marcado como "Venda desfeita" (sai das visões ativas).</span>
+              </button>
+
+              <button onClick={() => setModalDesvincular(null)} disabled={processandoDesvinculo} style={{ padding: "10px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "white", fontWeight: 600, cursor: processandoDesvinculo ? "not-allowed" : "pointer", fontSize: 13 }}>
+                {processandoDesvinculo ? "Processando..." : "Cancelar"}
+              </button>
+            </div>
           </div>
         </div>
       )}
