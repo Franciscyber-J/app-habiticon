@@ -10,6 +10,8 @@ import {
 import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { db } from "@/lib/firebase";
+import { PainelCalculoMinimo } from "@/components/correspondente/PainelCalculoMinimo";
+import { ComparadorImoveis } from "@/components/correspondente/ComparadorImoveis";
 
 // ─────────────────────────────────────────────────────────
 // TIPAGENS
@@ -32,6 +34,7 @@ interface ToastMessage {
 
 export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
   const [abaAtiva, setAbaAtiva] = useState<string>("proponente");
+  const [abaModal, setAbaModal] = useState<"analise" | "dossie">("analise");
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [docPendenciaAtivo, setDocPendenciaAtivo] = useState<string | null>(null);
   const [textoPendencia, setTextoPendencia] = useState("");
@@ -517,9 +520,10 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
             style={{
               background: "var(--bg-base)", width: "100%", maxWidth: 700,
               borderTopLeftRadius: 28, borderTopRightRadius: 28,
-              maxHeight: "92vh", display: "flex", flexDirection: "column",
+              height: "92vh", maxHeight: "92vh", display: "flex", flexDirection: "column",
               border: "1px solid var(--border-subtle)", borderBottom: "none",
-              boxShadow: "0 -10px 40px rgba(0,0,0,0.5)", position: "relative"
+              boxShadow: "0 -10px 40px rgba(0,0,0,0.5)", position: "relative",
+              overflow: "hidden"
             }}
           >
 
@@ -722,7 +726,7 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
             </AnimatePresence>
 
             {/* HEADER: RESUMO FINANCEIRO */}
-            <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", position: "sticky", top: 0, background: "var(--bg-base)", zIndex: 10, borderTopLeftRadius: 28, borderTopRightRadius: 28 }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-subtle)", flexShrink: 0, background: "var(--bg-base)", zIndex: 10, borderTopLeftRadius: 28, borderTopRightRadius: 28 }}>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
                 <div>
                   <h2 style={{ fontSize: 20, fontWeight: 800, color: "white", display: "flex", alignItems: "center", gap: 10 }}>
@@ -774,29 +778,46 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
                 )}
               </div>
 
-              {/* MINI DASHBOARD FINANCEIRO */}
-              <div style={{ display: "flex", gap: 12, background: "rgba(0,0,0,0.3)", padding: "12px 16px", borderRadius: 12, border: "1px solid var(--border-subtle)", overflowX: "auto" }}>
-                {[
-                  { label: "Renda Familiar",          value: dadosFinanceiros.rendaFamiliar,   tooltip: "" },
-                  { label: "Avaliação SICAQ (Laudo)", value: dadosFinanceiros.valorAvaliacao,  tooltip: "Valor alvo da avaliação de engenharia no sistema da Caixa" }, 
-                  { label: "Crédito Caixa (Repasse)", value: dadosFinanceiros.valorFinanciado, tooltip: "Valor do repasse do banco para fechar a matemática do contrato" },
-                  { label: "Subsídio",                value: dadosFinanceiros.subsidio,        tooltip: "" },
-                ].map((item, i) => (
-                  <div key={i} title={item.tooltip} style={{ display: "flex", alignItems: "center", gap: 8, paddingRight: 16, borderRight: i < 3 ? "1px solid var(--border-subtle)" : "none", flexShrink: 0, cursor: item.tooltip ? "help" : "default" }}>
-                    {i === 0 && <Calculator size={16} color="var(--terracota)" />}
-                    <div>
-                      <p style={{ fontSize: 10, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, borderBottom: item.tooltip ? "1px dotted var(--gray-dark)" : "none", paddingBottom: item.tooltip ? 2 : 0 }}>
-                        {item.label}
-                      </p>
-                      <p style={{ fontSize: 14, fontWeight: 800, color: item.label === "Subsídio" ? "#4ade80" : "white" }}>
-                        {item.value > 0 ? `R$ ${Number(item.value).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+              {/* BARRA DE ABAS DO MODAL */}
+              <div style={{ display: "flex", gap: 8, background: "rgba(0,0,0,0.25)", padding: 5, borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
+                <button
+                  onClick={() => setAbaModal("analise")}
+                  style={{
+                    flex: 1, padding: "9px 14px", borderRadius: 9, border: "none", cursor: "pointer",
+                    fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                    background: abaModal === "analise" ? "rgba(56,189,248,0.15)" : "transparent",
+                    color: abaModal === "analise" ? "#38bdf8" : "var(--gray-mid)",
+                    transition: "0.2s"
+                  }}
+                >
+                  <Calculator size={15} /> Análise Financeira
+                </button>
+                <button
+                  onClick={() => setAbaModal("dossie")}
+                  style={{
+                    flex: 1, padding: "9px 14px", borderRadius: 9, border: "none", cursor: "pointer",
+                    fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                    background: abaModal === "dossie" ? "rgba(56,189,248,0.15)" : "transparent",
+                    color: abaModal === "dossie" ? "#38bdf8" : "var(--gray-mid)",
+                    transition: "0.2s"
+                  }}
+                >
+                  <FileText size={15} /> Dossiê
+                </button>
               </div>
             </div>
 
+            {/* ════════ ABA: ANÁLISE FINANCEIRA ════════ */}
+            {abaModal === "analise" && (
+              <div style={{ padding: "24px", overflowY: "auto", flex: "1 1 auto", minHeight: 0, maxHeight: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
+                <PainelCalculoMinimo lead={lead} empreendimento={empreendimento} />
+                <ComparadorImoveis lead={lead} empreendimento={empreendimento} />
+              </div>
+            )}
+
+            {/* ════════ ABA: DOSSIÊ ════════ */}
+            {abaModal === "dossie" && (
+            <>
             {/* ABAS DE PESSOAS */}
             <div style={{ position: "relative" }}>
               <div style={{ display: "flex", gap: 8, paddingTop: 16, paddingLeft: 24, paddingBottom: 0, overflowX: "auto", overflowY: "visible", borderBottom: "1px solid var(--border-subtle)" }}>
@@ -1154,11 +1175,13 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
                 )}
               </div>
             )}
+            </>
+            )}
 
             {/* FOOTER: DECISÃO DE CRÉDITO E BOTÃO DE REVERTER */}
             <div style={{
               padding: "16px 24px", background: "var(--bg-base)", borderTop: "1px solid var(--border-subtle)",
-              position: "sticky", bottom: 0, zIndex: 10, display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center"
+              flexShrink: 0, zIndex: 10, display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center"
             }}>
               {isDecidido ? (
                 <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1265,16 +1288,16 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
                   <button
                     onClick={() => iniciarProcessoAprovacao("nao_qualificado")}
                     className="flex-1 sm:flex-none"
-                    style={{ padding: "12px 20px", background: "transparent", color: "#f87171", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+                    style={{ padding: "9px 18px", background: "transparent", color: "#f87171", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
                   >
-                    <ThumbsDown size={16} /> Reprovar
+                    <ThumbsDown size={15} /> Reprovar
                   </button>
                   <button
                     onClick={() => iniciarProcessoAprovacao("qualificado")}
                     className="flex-1 sm:flex-none"
-                    style={{ padding: "12px 24px", background: "#4ade80", color: "#064e3b", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 4px 14px rgba(74,222,128,0.3)" }}
+                    style={{ padding: "9px 20px", background: "rgba(74,222,128,0.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.35)", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
                   >
-                    <ThumbsUp size={16} /> Aprovar Crédito
+                    <ThumbsUp size={15} /> Aprovar Crédito
                   </button>
                 </>
               )}
