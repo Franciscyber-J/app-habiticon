@@ -349,8 +349,12 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
       setMotivoReprovacao("");
       setModalReprovacaoAberto(true);
     } else {
+      // Pré-preenche com o valor REAL do contrato (não o valorFinanciado antigo do simulador)
+      const contratoReal = (typeof lead?.loteReserva?.valorVenda === "number" && lead.loteReserva.valorVenda > 0)
+        ? lead.loteReserva.valorVenda
+        : (lead?.valorImovel || dadosFinanceiros.valorFinanciado || 0);
       setDadosAprovacao({
-        valorAprovado: dadosFinanceiros.valorFinanciado.toString(),
+        valorAprovado: contratoReal ? contratoReal.toString() : "",
         valorParcela: "",
         observacoes: ""
       });

@@ -1994,6 +1994,29 @@ export default function AdminPage() {
                       <p style={{ fontSize: 13, color: "var(--gray-light)", lineHeight: 1.6 }}>{(modalAprovacao as any).creditoAprovadoInfo.observacoes}</p>
                     </div>
                   )}
+
+                  {/* DOCUMENTOS DE ANÁLISE (parecer/laudo anexado pelo correspondente) */}
+                  <div style={{ border: "1px solid var(--border-subtle)", borderRadius: 10, overflow: "hidden" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "rgba(0,0,0,0.15)", borderBottom: "1px solid var(--border-subtle)" }}>
+                      <FileText size={14} color="var(--gray-mid)" />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gray-light)" }}>Documentos de Análise</span>
+                    </div>
+                    <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                      {(modalAprovacao as any).documentosAnaliseCredito && (modalAprovacao as any).documentosAnaliseCredito.length > 0 ? (
+                        (modalAprovacao as any).documentosAnaliseCredito.map((docItem: any, index: number) => (
+                          <div key={index} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: "rgba(0,0,0,0.15)", borderRadius: 7, border: "1px solid var(--border-subtle)" }}>
+                            <FileText size={13} color="var(--gray-mid)" style={{ flexShrink: 0 }} />
+                            <p style={{ fontSize: 12, color: "var(--gray-light)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{docItem.nome}</p>
+                            <a href={docItem.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, fontWeight: 600, color: "#4ade80", textDecoration: "none", padding: "3px 8px", borderRadius: 5, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)", display: "flex", alignItems: "center", gap: 4 }}>
+                              <ExternalLink size={11} /> Abrir
+                            </a>
+                          </div>
+                        ))
+                      ) : (
+                        <p style={{ fontSize: 11, color: "var(--gray-dark)", padding: "4px 0" }}>Nenhum documento de análise anexado.</p>
+                      )}
+                    </div>
+                  </div>
                 </>
               ) : (
                 <div style={{ padding: "14px 16px", background: "rgba(74,222,128,0.06)", borderRadius: 10, border: "1px solid rgba(74,222,128,0.15)" }}>
