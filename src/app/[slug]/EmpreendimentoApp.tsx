@@ -250,12 +250,14 @@ export default function EmpreendimentoApp({
   const handleSubsidioChange = useCallback((
     sub: number, taxa: number, rendaDigitada: boolean, rendaVal = 0, faixaId?: number
   ) => {
-    setSubsidio(sub);
+    // Subsídio desligado no admin deste empreendimento → nunca aplica
+    const subsidioPermitido = (empFresh as any).simulador?.subsidioAtivo !== false;
+    setSubsidio(subsidioPermitido ? sub : 0);
     setTaxaAtual(taxa);
     setRendaPreenchida(rendaDigitada);
     if (rendaVal > 0) setRendaFamiliar(rendaVal);
     setFaixaIdPelaRenda(faixaId ?? null);
-  }, []);
+  }, [empFresh]);
 
   // ── HELPER: AVALIAÇÃO SBPE (CUB + COMPLEMENTARES) ──
   const getLaudoSBPE = useCallback((mod: Modelo) => {
@@ -763,6 +765,7 @@ export default function EmpreendimentoApp({
                       initialRenda={rendaFamiliar}
                       valorImovel={modelo?.valor || 0}
                       tetoMcmv={empFresh.mcmv.tetoImovel}
+                      subsidioAtivo={(empFresh as any).simulador?.subsidioAtivo !== false}
                     />
                   </div>
                   {rendaPreenchida && (

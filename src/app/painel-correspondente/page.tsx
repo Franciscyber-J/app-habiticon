@@ -121,11 +121,12 @@ export default function PainelCorrespondente() {
         });
       }
 
-      const qLeads = query(collection(db, "leads"), where("status", "!=", "novo"));
+      const qLeads = query(collection(db, "leads"));
       const unsubLeads = onSnapshot(qLeads, (snap) => {
         const leads = snap.docs
           .map(d => ({ id: d.id, ...d.data() } as LeadData))
           // ← FILTRO SILENCIOSO: SÓ mostra leads onde o UID deste correspondente está na Lista Branca
+          // (inclui leads "novo"/livres — o correspondente vê assim que for liberado, com ou sem corretor)
           .filter(lead => {
             if ((lead as any).excluido) return false; // nunca mostra leads na lixeira
             const permitidos = lead.correspondentesPermitidos || [];
@@ -177,7 +178,7 @@ export default function PainelCorrespondente() {
       if (filtroStatus === "todos") {
         bateStatus = true;
       } else if (filtroStatus === "ativos") {
-        bateStatus = lead.status === "em_atendimento" || lead.status === "em_analise" || lead.status === "com_pendencia";
+        bateStatus = lead.status === "novo" || lead.status === "em_atendimento" || lead.status === "em_analise" || lead.status === "com_pendencia";
       } else if (filtroStatus === "credito_aprovado") {
         bateStatus = lead.status === "qualificado" || lead.status === "credito_aprovado";
       } else if (filtroStatus === "credito_reprovado") {

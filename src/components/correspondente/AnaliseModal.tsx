@@ -7,7 +7,7 @@ import {
   MessageSquareWarning, ThumbsUp, ThumbsDown, Calculator, FilePlus, FilePlus2,
   RefreshCcw, UploadCloud, Phone, FileCheck2, Loader2, Edit3
 } from "lucide-react";
-import { doc, updateDoc, getDoc } from "firebase/firestore";
+import { doc, updateDoc, getDoc, getDocs, collection } from "firebase/firestore";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { db } from "@/lib/firebase";
 import { PainelCalculoMinimo } from "@/components/correspondente/PainelCalculoMinimo";
@@ -27,6 +27,16 @@ interface ToastMessage {
   msg: string;
   tipo: "sucesso" | "erro";
 }
+
+// ── CHECKLIST PADRÃO (espelha o DossieModal do corretor) ──
+const CHECKLIST_BASE = [
+  { id: "rg_cnh",               label: "RG ou CNH (Frente e Verso)" },
+  { id: "certidao",             label: "Certidão (Nascimento / Casamento / Divórcio)" },
+  { id: "comprovante_renda",    label: "Comprovante de Renda (3 últimos meses)" },
+  { id: "comprovante_endereco", label: "Comprovante de Endereço Atualizado" },
+  { id: "carteira_trabalho",    label: "Carteira de Trabalho — CTPS (se CLT)" },
+  { id: "imposto_renda",        label: "Declaração de IR (se declarante)" },
+];
 
 // ─────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
@@ -84,9 +94,53 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
     }
   }, [isOpen, lead?.empreendimentoId]);
 
+  // ── LÊ OS LOTES FÍSICOS VENDIDOS (varre todas as quadras) ──
+  // Cruzamento por NÚMERO do lote: o item comercial "Quadra 21 - Lote 22" casa
+  // com o lote físico numero:"22" status:"vendido". Exclui o lote do próprio lead.
+  const [lotesVendidos, setLotesVendidos] = useState<string[]>([]);
+  useEffect(() => {
+    if (!isOpen || !lead?.empreendimentoId) { setLotesVendidos([]); return; }
+    let cancelado = false;
+    (async () => {
+      try {
+        const numeroDoLead = String(lead?.loteReserva?.numero ?? "");
+        const quadrasSnap = await getDocs(collection(db, "empreendimentos", lead.empreendimentoId, "quadras"));
+        const vendidos: string[] = [];
+        for (const q of quadrasSnap.docs) {
+          const lotesSnap = await getDocs(collection(db, "empreendimentos", lead.empreendimentoId, "quadras", q.id, "lotes"));
+          lotesSnap.forEach(l => {
+            const d = l.data();
+            const numero = String(d.numero ?? "");
+            // Só conta como bloqueado se vendido E não for o lote do próprio lead
+            if (d.status === "vendido" && numero && numero !== numeroDoLead) {
+              vendidos.push(numero);
+            }
+          });
+        }
+        if (!cancelado) setLotesVendidos(vendidos);
+      } catch (e) {
+        console.error("Erro ao ler lotes vendidos:", e);
+        if (!cancelado) setLotesVendidos([]);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [isOpen, lead?.empreendimentoId, lead?.loteReserva?.numero]);
+
   if (!isOpen || !lead) return null;
 
-  const dossie = lead.dossie || {};
+  // Sem dossiê salvo → mostra o checklist padrão (igual ao painel do corretor),
+  // assim o correspondente já vê os slots e o 1º anexo/pendência persiste a estrutura.
+  const dossie = (lead.dossie && Object.keys(lead.dossie).length > 0)
+    ? lead.dossie
+    : {
+        proponente: {
+          nome: "Proponente Principal",
+          documentos: CHECKLIST_BASE.reduce(
+            (acc, item) => ({ ...acc, [item.id]: { label: item.label, arquivos: [], pendenciaCorrespondente: "" } }),
+            {}
+          ),
+        },
+      };
 
   // MAPEAMENTO INTELIGENTE DAS VARIÁVEIS
   const dadosFinanceiros = {
@@ -814,7 +868,7 @@ export function AnaliseModal({ isOpen, onClose, lead }: AnaliseModalProps) {
             {/* ════════ ABA: ANÁLISE FINANCEIRA ════════ */}
             {abaModal === "analise" && (
               <div style={{ padding: "24px", overflowY: "auto", flex: "1 1 auto", minHeight: 0, maxHeight: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
-                <PainelCalculoMinimo lead={lead} empreendimento={empreendimento} />
+                <PainelCalculoMinimo lead={lead} empreendimento={empreendimento} lotesVendidos={lotesVendidos} />
                 <ComparadorImoveis lead={lead} empreendimento={empreendimento} />
               </div>
             )}

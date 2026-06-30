@@ -11,6 +11,7 @@ interface SubsidioGaugeProps {
   initialRenda?: number;
   valorImovel: number;
   tetoMcmv: number;
+  subsidioAtivo?: boolean;
 }
 
 // Cor por posição na lista de faixas (não mais por id fixo)
@@ -23,6 +24,7 @@ export function SubsidioGauge({
   initialRenda,
   valorImovel,
   tetoMcmv,
+  subsidioAtivo = true,
 }: SubsidioGaugeProps) {
   const [renda, setRenda] = useState(() => {
     if (!initialRenda) return "";
@@ -43,7 +45,7 @@ export function SubsidioGauge({
   }, [rendaNum, faixas]);
 
   const faixaAtual = resultado?.faixa ?? null;
-  const subsidio   = isSBPE ? 0 : (resultado?.subsidio ?? 0);
+  const subsidio   = (isSBPE || !subsidioAtivo) ? 0 : (resultado?.subsidio ?? 0);
   const taxa       = isSBPE ? 11.38 : (resultado?.taxa ?? 12); // 11.38 é fallback. O parent controla a taxa real SBPE
 
   // Índice da faixa atual na lista (0-based)

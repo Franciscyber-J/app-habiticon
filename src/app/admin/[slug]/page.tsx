@@ -1655,6 +1655,30 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                       <div><FieldLabel>Observação MCMV</FieldLabel><textarea rows={3} className="input-field" style={{resize:"vertical",fontSize:13,lineHeight:1.6}} value={emp.mcmv.observacao} onChange={e=>update("mcmv.observacao",e.target.value)}/></div>
                     </div>
                   </Card>
+
+                  {/* 💸 SUBSÍDIO NO SIMULADOR — liga/desliga a calculadora de subsídio deste empreendimento */}
+                  <Card title="💸 Subsídio no Simulador" subtitle="Quando desligado, o simulador deste empreendimento nunca aplica subsídio (some o card de aplicar, a sidebar e o PDF). Use quando a entrada embutida já estiver no preço.">
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "14px 16px", borderRadius: 12, background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-subtle)" }}>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontSize: 14, fontWeight: 700, color: "var(--gray-light)", marginBottom: 4 }}>Oferecer subsídio MCMV no simulador</p>
+                        <p style={{ fontSize: 12, color: "var(--gray-mid)", lineHeight: 1.5 }}>
+                          Liga ou desliga a calculadora de subsídio para este empreendimento.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => update("simulador.subsidioAtivo", !(emp.simulador?.subsidioAtivo !== false))}
+                        style={{
+                          padding: "8px 16px", borderRadius: 10, cursor: "pointer", border: "none",
+                          fontWeight: 800, fontSize: 13, flexShrink: 0, transition: "0.2s",
+                          background: (emp.simulador?.subsidioAtivo !== false) ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.08)",
+                          color: (emp.simulador?.subsidioAtivo !== false) ? "#4ade80" : "var(--gray-mid)",
+                          boxShadow: (emp.simulador?.subsidioAtivo !== false) ? "0 0 0 1px rgba(74,222,128,0.3)" : "none",
+                        }}
+                      >
+                        {(emp.simulador?.subsidioAtivo !== false) ? "OFERECENDO" : "DESLIGADO"}
+                      </button>
+                    </div>
+                  </Card>
                 </motion.div>
               )}
 

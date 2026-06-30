@@ -503,7 +503,21 @@ export function calcularSubsidio(
   faixas: FaixaMCMV[],
   isCotista = false
 ): { faixa: FaixaMCMV | null; subsidio: number; taxa: number; taxaCotista: number; taxaNaoCotista: number } {
-  const faixa = faixas.find(f => renda >= f.rendaMin && renda <= f.rendaMax) ?? null;
+  // Busca direta (renda dentro de [rendaMin, rendaMax] de alguma faixa)
+  let faixa = faixas.find(f => renda >= f.rendaMin && renda <= f.rendaMax) ?? null;
+
+  // Fallback: renda caiu num vão entre faixas (ex: rendaMax=3200 e próxima rendaMin=3202).
+  // Em vez de "sem faixa", encosta na faixa válida mais próxima — abaixo do menor mínimo
+  // pega a primeira; acima de tudo é tratado como SBPE pelo componente.
+  if (!faixa && faixas.length > 0) {
+    const ordenadas = [...faixas].sort((a, b) => a.rendaMin - b.rendaMin);
+    if (renda < ordenadas[0].rendaMin) {
+      faixa = ordenadas[0];
+    } else {
+      // está num buraco interno → pega a faixa imediatamente inferior
+      faixa = [...ordenadas].reverse().find(f => renda >= f.rendaMin) ?? ordenadas[ordenadas.length - 1];
+    }
+  }
 
   if (!faixa) return { faixa: null, subsidio: 0, taxa: 12.0, taxaCotista: 12.0, taxaNaoCotista: 12.0 };
 
