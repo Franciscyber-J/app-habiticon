@@ -180,6 +180,17 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       const pageW = pdfDoc.internal.pageSize.getWidth();
       const pageH = pdfDoc.internal.pageSize.getHeight();
 
+      // Quebra de página: se o próximo bloco não couber antes do rodapé,
+      // cria uma nova página com o mesmo fundo e reposiciona o cursor no topo.
+      const novaPaginaSePreciso = (yAtual: number, alturaNecessaria: number): number => {
+        const limite = pageH - 22; // margem de segurança acima do rodapé
+        if (yAtual + alturaNecessaria <= limite) return yAtual;
+        pdfDoc.addPage();
+        pdfDoc.setFillColor(15, 30, 22);
+        pdfDoc.rect(0, 0, pageW, pageH, "F");
+        return 20; // topo da nova página
+      };
+
       pdfDoc.setFillColor(15, 30, 22);
       pdfDoc.rect(0, 0, pageW, pageH, "F");
 
@@ -298,6 +309,9 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       });
 
       y += 8;
+      // O card de parcelas ocupa ~30mm + o y+=40 posterior. Garante que o bloco
+      // inteiro (título + card) caiba; senão, joga tudo pra página 2.
+      y = novaPaginaSePreciso(y, 46);
       pdfDoc.setFont("helvetica", "bold");
       pdfDoc.setFontSize(10);
       pdfDoc.setTextColor(175, 111, 83);
@@ -330,7 +344,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
         pdfDoc.text(formatBRLDecimal(proposta.parcelaPRICE), col2X + (pageW - 35) / 4, y + 12, { align: "center" });
         pdfDoc.setFontSize(8);
         pdfDoc.setTextColor(154, 154, 153);
-        pdfDoc.text("parcela fixa", col2X + (pageW - 35) / 4, y + 20, { align: "center" });
+        pdfDoc.text("parcela inicial", col2X + (pageW - 35) / 4, y + 20, { align: "center" });
       } else {
         pdfDoc.setFillColor(23, 39, 28);
         pdfDoc.roundedRect(15, y - 4, pageW - 30, 30, 3, 3, "F");
@@ -343,7 +357,7 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
         pdfDoc.text(formatBRLDecimal(proposta.parcelaPRICE), pageW / 2, y + 15, { align: "center" });
         pdfDoc.setFontSize(8);
         pdfDoc.setTextColor(154, 154, 153);
-        pdfDoc.text("parcela fixa · 360 meses", pageW / 2, y + 22, { align: "center" });
+        pdfDoc.text("parcela inicial estimada · sujeita à avaliação da Caixa", pageW / 2, y + 22, { align: "center" });
         
         y += 34;
         pdfDoc.setFont("helvetica", "italic");
@@ -354,6 +368,8 @@ export function PDFGenerator({ proposta }: PDFGeneratorProps) {
       }
 
       y += 40;
+      // O card de notas legais tem ~35mm de altura. Se não couber, vai pra próxima página.
+      y = novaPaginaSePreciso(y, 40);
       pdfDoc.setFillColor(23, 39, 28);
       pdfDoc.roundedRect(15, y - 4, pageW - 30, 35, 3, 3, "F");
       pdfDoc.setFont("helvetica", "bold");

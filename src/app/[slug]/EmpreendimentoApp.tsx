@@ -227,7 +227,7 @@ export default function EmpreendimentoApp({
   const tetoRendaMCMV = useMemo(() => Math.max(...empFresh.mcmv.faixas.map((f: any) => f.rendaMax), 13000), [empFresh.mcmv.faixas]);
   
   // O Teto do Imóvel deve olhar para o maior teto cadastrado nas faixas (geralmente a Faixa 4 = 600k)
-  const tetoMaximoMCMVGlobal = useMemo(() => Math.max(...empFresh.mcmv.faixas.map((f: any) => f.tetoImovel || 0), empFresh.mcmv.tetoImovel || 600000), [empFresh.mcmv.faixas, empFresh.mcmv.tetoImovel]);
+  const tetoMaximoMCMVGlobal = useMemo(() => Math.max(...empFresh.mcmv.faixas.map((f: any) => f.tetoImovel || 0), 600000), [empFresh.mcmv.faixas]);
   
   const isSBPE = useMemo(() => {
     if (!modelo) return false;
@@ -356,24 +356,9 @@ export default function EmpreendimentoApp({
     const subsidioEfetivo = usarSubsidio ? subsidio : 0;
     const valorVenda = valorEfetivo - subsidioEfetivo;
 
-    let maxFinRenda = Infinity;
-    if (rendaFamiliar > 0) {
-      const sim = simular({
-        valorImovel: valorEfetivo,
-        entrada: 0,
-        prazoMeses: empFresh.simulador.prazoMeses,
-        taxaAnual: taxaAtual,
-        subsidio,
-        usarSubsidio,
-        rendaFamiliar,
-        tetoImovel: tetoEfetivo,  
-      });
-      maxFinRenda = sim.finLiberadoPRICE;
-    }
-
     const cubCfg = empFresh.simulador.cub;
     const totalItensMCMV = cubCfg?.itensComplementares?.reduce((acc, item) => acc + (Number(item.valor) || 0), 0) || 0;
-    
+
     const maxFinCUB =
       cubCfg && cubCfg.cubVigente > 0
         ? calcularMaxFinCUB(
@@ -386,6 +371,66 @@ export default function EmpreendimentoApp({
           )
         : 0;
 
+    // ── ENTRADA MÍNIMA REAL: o maior entre (mínimo pelo laudo) e (mínimo pela renda) ──
+    // Nunca pode existir vão descoberto: entrada + financiado deve = valor da casa.
+    // Solução fechada (sem realimentação): quanto a renda financia depende da taxa,
+    // e a taxa depende da faixa onde o valor de avaliação cai. Avaliamos a capacidade
+    // de renda na taxa da faixa EFETIVA (a que o laudo força), que é a taxa real da
+    // parcela — assim o mínimo cobre o vão na taxa correta, sem loop.
+    let maxFinRenda = Infinity;
+    if (rendaFamiliar > 0) {
+      // Máximo que a renda financia, deixando a faixa/taxa caírem naturalmente.
+      // Ponto de equilíbrio: testa cada faixa; a taxa usada tem que bater com a
+      // faixa onde a avaliação resultante cai. Escolhe o MAIOR financiamento coerente
+      // (= menor entrada). A faixa é consequência, não escolha.
+      const faixasPorTeto = [...empFresh.mcmv.faixas].sort(
+        (a: any, b: any) => (a.tetoImovel || 0) - (b.tetoImovel || 0)
+      );
+
+      let melhorFin = 0;
+      for (const f of faixasPorTeto) {
+        const taxaTry = f.taxa ?? empFresh.simulador.taxaFaixa12;
+        const simTry = simular({
+          valorImovel: valorEfetivo,
+          entrada: 0,
+          prazoMeses: empFresh.simulador.prazoMeses,
+          taxaAnual: taxaTry,
+          subsidio,
+          usarSubsidio,
+          rendaFamiliar,
+          tetoImovel: tetoEfetivo,
+        });
+        const finTry = simTry.finLiberadoPRICE;
+        // Avaliação que esse financiamento exige (renda como gargalo): financiado ÷ 0,80.
+        const avaliacaoTry = finTry / COTA_MAXIMA_CAIXA;
+        // Em qual faixa essa avaliação realmente cai?
+        const faixaReal = faixasPorTeto.find(
+          (fx: any) => avaliacaoTry <= (fx.tetoImovel ?? Infinity)
+        ) ?? faixasPorTeto[faixasPorTeto.length - 1];
+        // Coerente se a taxa que usei é a da faixa onde caiu.
+        if ((faixaReal.taxa ?? taxaTry) === taxaTry) {
+          // Coerente: esse é um financiamento válido. Guarda o maior.
+          if (finTry > melhorFin) melhorFin = finTry;
+        }
+      }
+      // Fallback: se nenhuma combinação fechou coerente, usa a faixa da renda pura.
+      if (melhorFin <= 0) {
+        const faixaRenda = empFresh.mcmv.faixas.find(
+          (f: any) => rendaFamiliar >= f.rendaMin && rendaFamiliar <= f.rendaMax
+        );
+        const simFb = simular({
+          valorImovel: valorEfetivo,
+          entrada: 0,
+          prazoMeses: empFresh.simulador.prazoMeses,
+          taxaAnual: faixaRenda?.taxa ?? empFresh.simulador.taxaFaixa12,
+          subsidio, usarSubsidio, rendaFamiliar,
+          tetoImovel: tetoEfetivo,
+        });
+        melhorFin = simFb.finLiberadoPRICE;
+      }
+      maxFinRenda = melhorFin;
+    }
+
     return calcularEntradaMinima(
       valorVenda,
       maxFinRenda,
@@ -396,8 +441,8 @@ export default function EmpreendimentoApp({
     );
   }, [
     modelo, rendaFamiliar, empFresh.simulador.entradaMin, empFresh.simulador.prazoMeses, 
-    empFresh.simulador.cub, empFresh.simulador.taxaSBPE, 
-    taxaAtual, subsidio, usarSubsidio, tetoEfetivo, valorLoteEmpreendimento, isSBPE, getLaudoSBPE, getLaudoMCMV,
+    empFresh.simulador.cub, empFresh.simulador.taxaSBPE, empFresh.simulador.taxaFaixa12, empFresh.mcmv.faixas,
+    subsidio, usarSubsidio, tetoEfetivo, valorLoteEmpreendimento, isSBPE, getLaudoSBPE, getLaudoMCMV,
     itensAdicionaisTotal, fachadaDiff, valorEfetivo
   ]);
 
@@ -410,30 +455,48 @@ export default function EmpreendimentoApp({
   const minEntradaPermitida = motorEntrada?.entradaMinima ?? empFresh.simulador.entradaMin;
 
   const faixaEfetiva = useMemo((): FaixaEfetiva | null => {
-    if (!modelo || rendaFamiliar <= 0 || isSBPE) return null; 
-    const laudoTotal = getLaudoMCMV(modelo);
+    if (!modelo || rendaFamiliar <= 0 || isSBPE) return null;
     const subsidioBase = usarSubsidio ? subsidio : 0;
-    return determinarFaixaEfetiva(laudoTotal > 0 ? laudoTotal : null, rendaFamiliar, empFresh.mcmv.faixas, subsidioBase);
-  }, [modelo, rendaFamiliar, empFresh.mcmv.faixas, subsidio, usarSubsidio, isSBPE, getLaudoMCMV]);
+
+    // ── VALOR DE CLASSIFICAÇÃO DA FAIXA (reage à entrada) ──
+    // A faixa é definida pelo MAIOR entre:
+    //  (a) o valor de venda da casa (piso — nunca desce disso), e
+    //  (b) o valor de avaliação necessário p/ viabilizar o financiamento com a
+    //      entrada atual: min(casa − entrada − subsídio, laudo entregue) ÷ 0,80.
+    // Conforme a entrada sobe, (b) cai; quando o MAIOR cruza o teto de uma faixa
+    // menor, a taxa desce. Casas cujo valor de venda já supera o teto nunca descem.
+    const laudoEntregue = getLaudoMCMV(modelo);
+    const financiamentoNecessario = Math.max(0, valorEfetivo - entrada - subsidioBase);
+    const baseFinanciavel = laudoEntregue > 0
+      ? Math.min(financiamentoNecessario, laudoEntregue * COTA_MAXIMA_CAIXA)
+      : financiamentoNecessario;
+    const avaliacaoNecessaria = baseFinanciavel / COTA_MAXIMA_CAIXA;
+    const valorClassificacao = Math.max(valorEfetivo, avaliacaoNecessaria);
+
+    return determinarFaixaEfetiva(valorClassificacao > 0 ? valorClassificacao : null, rendaFamiliar, empFresh.mcmv.faixas, subsidioBase);
+  }, [modelo, rendaFamiliar, empFresh.mcmv.faixas, subsidio, usarSubsidio, isSBPE, getLaudoMCMV, valorEfetivo, entrada]);
 
   useEffect(() => {
-    if (isSBPE) return; 
+    if (isSBPE) return;
     if (!faixaEfetiva?.faixaEfetiva) return;
     const taxaCorreta = faixaEfetiva.taxaEfetiva;
     if (Math.abs(taxaCorreta - taxaAtual) > 0.001) {
       setTaxaAtual(taxaCorreta);
     }
-    if (faixaEfetiva.laudoForcouFaixaSuperior && faixaEfetiva.faixaEfetiva.id > 2) {
-      setUsarSubsidio(false);
-    }
   }, [faixaEfetiva, isSBPE, taxaAtual]);
 
   const prevMinEntrada = useRef(minEntradaPermitida);
   useEffect(() => {
-    if (prevMinEntrada.current !== minEntradaPermitida) {
-      setEntrada(minEntradaPermitida);
+    // Tolerância de R$1: evita loop com a Fase 3 (entrada → faixa → taxa → minEntrada → entrada).
+    // Só reescreve a entrada se o mínimo mudou de forma material OU se a entrada está
+    // abaixo do mínimo por mais de R$1 (trava de entrada mínima legítima).
+    const minMudou = Math.abs(prevMinEntrada.current - minEntradaPermitida) > 1;
+    if (minMudou) {
       prevMinEntrada.current = minEntradaPermitida;
-    } else if (entrada < minEntradaPermitida) {
+      if (Math.abs(entrada - minEntradaPermitida) > 1) {
+        setEntrada(minEntradaPermitida);
+      }
+    } else if (entrada < minEntradaPermitida - 1) {
       setEntrada(minEntradaPermitida);
     }
   }, [minEntradaPermitida, entrada]);
@@ -792,9 +855,13 @@ export default function EmpreendimentoApp({
                   </div>
                   <p className="text-body" style={{ marginTop: -30 }}>
                     Selecione o modelo e ajuste a entrada.
-                    {isSBPE 
+                    {isSBPE
                        ? " Cliente enquadrado no SBPE por ultrapassar os limites do MCMV."
-                       : (subsidio > 0 ? ` O subsídio e a taxa de ${taxaAtual}% já estão mapeados.` : " Configure a renda no passo anterior para calcular o subsídio.")}
+                       : (subsidio > 0
+                          ? ` O subsídio e a taxa de ${taxaAtual}% já estão mapeados.`
+                          : ((empFresh as any).simulador?.subsidioAtivo === false
+                             ? ` A taxa de ${taxaAtual}% já está aplicada conforme o enquadramento.`
+                             : " Configure a renda no passo anterior para calcular o subsídio."))}
                   </p>
 
                   {/* Toggle subsídio */}
@@ -1030,8 +1097,21 @@ export default function EmpreendimentoApp({
                     </div>
                   )}
 
+                  {/* Trava: sem renda não simula (evita parcela/subsídio irreais) */}
+                  {modelo && rendaFamiliar <= 0 && (
+                    <div style={{ padding: "20px 22px", borderRadius: 14, background: "rgba(251,146,60,0.08)", border: "1px solid rgba(251,146,60,0.3)", display: "flex", gap: 14, alignItems: "flex-start" }}>
+                      <AlertTriangle size={20} color="#fb923c" style={{ flexShrink: 0, marginTop: 1 }} />
+                      <div>
+                        <p style={{ fontSize: 14, fontWeight: 700, color: "#fb923c", marginBottom: 6 }}>Informe a renda para simular</p>
+                        <p style={{ fontSize: 13, color: "#fed7aa", lineHeight: 1.6 }}>
+                          A renda familiar define o enquadramento na faixa correta e a taxa de juros real. Volte ao passo <strong>Renda &amp; Subsídio</strong> e informe a renda antes de simular as parcelas.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Cards resultado */}
-                  {modelo && resultadoSimulacao && (
+                  {modelo && rendaFamiliar > 0 && resultadoSimulacao && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                         <h3 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--gray-mid)" }}>

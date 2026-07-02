@@ -172,10 +172,10 @@ export function ComparadorSacPrice({ resultadoSimulacao, taxaAnual, prazoMeses, 
           <div style={{ fontSize: 26, fontWeight: 800, color: "var(--gray-light)", marginBottom: 4 }}>
             <AnimatedBRL value={resultadoSimulacao.parcelaPricePrimeira} />
           </div>
-          <p style={{ fontSize: 11, color: "var(--gray-mid)", marginBottom: 16 }}>Parcela fixa (todas iguais)</p>
+          <p style={{ fontSize: 11, color: "var(--gray-mid)", marginBottom: 16 }}>Parcela inicial estimada</p>
           <div style={{ borderTop: "1px solid rgba(175,111,83,0.15)", paddingTop: 14 }}>
             <InfoLine label="Valor Financiado" value={formatBRL(resultadoSimulacao.finLiberadoPRICE)} valueColor="white" />
-            <InfoLine label="Invariável" value="Até o fim" valueColor="var(--terracota)" />
+            <InfoLine label="Valor final" value="Análise da Caixa" valueColor="var(--terracota)" />
             <InfoLine label={`${prazoCalculo} parcelas`} value={`${prazoAnos} anos`} last />
           </div>
         </div>
@@ -238,7 +238,7 @@ export function ComparadorSacPrice({ resultadoSimulacao, taxaAnual, prazoMeses, 
         </div>
 
         <p style={{ fontSize: 11, color: "var(--gray-dark)", marginTop: 10, lineHeight: 1.5 }}>
-          * Inclui seguros obrigatórios estimados (~R$ 70-100/mês) não exibidos acima. Sujeito à análise de crédito.
+          * Inclui seguros obrigatórios estimados (~R$ 70-100/mês) não exibidos acima. Os valores são uma estimativa — a avaliação de engenharia e a análise de crédito da Caixa determinam as parcelas e condições finais.
         </p>
       </div>
 
@@ -270,7 +270,7 @@ export function ComparadorSacPrice({ resultadoSimulacao, taxaAnual, prazoMeses, 
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ width: 20, height: 2, background: "var(--terracota)", borderTop: "2px dashed" }} />
-            <span style={{ fontSize: 11, color: "var(--gray-mid)" }}>PRICE (fixo)</span>
+            <span style={{ fontSize: 11, color: "var(--gray-mid)" }}>PRICE (quase constante)</span>
           </div>
         </div>
       </div>

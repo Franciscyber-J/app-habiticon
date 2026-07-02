@@ -481,6 +481,14 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!f.simulador.taxaSBPE) f.simulador.taxaSBPE = 11.38;
         if (!f.simulador.cubSBPE) f.simulador.cubSBPE = 0;
         if (!f.simulador.bdiSBPE) f.simulador.bdiSBPE = 0.18;
+        if (f.simulador.tetoSBPE === undefined) f.simulador.tetoSBPE = 0;
+        // Garante tetoImovel por faixa (fallback: teto global antigo, senão 0)
+        if (f.mcmv?.faixas) {
+          f.mcmv.faixas = f.mcmv.faixas.map((fx: any) => ({
+            ...fx,
+            tetoImovel: fx.tetoImovel ?? f.mcmv.tetoImovel ?? 0,
+          }));
+        }
 
         // INJEÇÃO DOS ITENS COMPLEMENTARES PRÉ-CONFIGURADOS SE ESTIVEREM VAZIOS
         if (!f.simulador.cub.itensComplementares || f.simulador.cub.itensComplementares.length === 0) {
@@ -1646,13 +1654,31 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                           <div><FieldLabel hint="FGTS < 3 anos">Taxa não-cotista (% a.a.)</FieldLabel><NumInput value={faixa.taxa} suffix="% a.a." step={0.01} onChange={v=>update(`mcmv.faixas.${idx}.taxa`,v)}/></div>
                           <div><FieldLabel hint="FGTS ≥ 3 anos">Taxa cotista (% a.a.)</FieldLabel><NumInput value={faixa.taxaCotista??faixa.taxa-0.5} suffix="% a.a." step={0.01} onChange={v=>update(`mcmv.faixas.${idx}.taxaCotista`,v)}/></div>
                         </Two>
+                        <Hr/>
+                        <div>
+                          <FieldLabel hint="Valor máximo de avaliação do imóvel nesta faixa. Se o laudo/avaliação ultrapassar este teto, o cliente sobe para a próxima faixa (taxa maior).">
+                            Teto do Imóvel nesta Faixa (R$)
+                          </FieldLabel>
+                          <NumInput value={faixa.tetoImovel ?? 0} prefix="R$" step={1000} onChange={v=>update(`mcmv.faixas.${idx}.tetoImovel`,v)}/>
+                        </div>
                       </div>
                     </Card>
                   ))}
-                  <Card title="🏠 Teto Regional">
+                  <Card title="🏠 Configurações Gerais MCMV">
                     <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                      <div><FieldLabel hint="Valor máximo do imóvel para MCMV">Teto do Imóvel (R$)</FieldLabel><NumInput value={emp.mcmv.tetoImovel} prefix="R$" onChange={v=>update("mcmv.tetoImovel",v)}/></div>
+                      <div style={{padding:"10px 14px",borderRadius:8,background:"rgba(56,189,248,0.07)",border:"1px solid rgba(56,189,248,0.2)",display:"flex",gap:8,alignItems:"flex-start"}}>
+                        <Info size={13} color="#38bdf8" style={{flexShrink:0,marginTop:1}}/>
+                        <p style={{fontSize:12,color:"var(--gray-mid)",lineHeight:1.5}}>O teto do imóvel agora é configurado <strong style={{color:"var(--gray-light)"}}>por faixa</strong> (nos cards acima). O sistema usa o maior teto entre as faixas como limite geral do MCMV.</p>
+                      </div>
                       <div><FieldLabel>Observação MCMV</FieldLabel><textarea rows={3} className="input-field" style={{resize:"vertical",fontSize:13,lineHeight:1.6}} value={emp.mcmv.observacao} onChange={e=>update("mcmv.observacao",e.target.value)}/></div>
+                    </div>
+                  </Card>
+
+                  {/* 🏦 TETO SBPE — valor máximo de avaliação aceito na linha SBPE */}
+                  <Card title="🏦 Teto do Imóvel — Linha SBPE" subtitle="Valor máximo de avaliação aceito pela Caixa na linha SBPE (Alto Padrão). A Caixa atualiza este teto periodicamente. Acima dele o financiamento não é aceito.">
+                    <div>
+                      <FieldLabel hint="Teto de avaliação para SBPE. Deixe 0 se não quiser limitar.">Teto SBPE (R$)</FieldLabel>
+                      <NumInput value={emp.simulador?.tetoSBPE ?? 0} prefix="R$" step={10000} onChange={v=>update("simulador.tetoSBPE",v)}/>
                     </div>
                   </Card>
 
