@@ -70,6 +70,11 @@ export function ModalVinculoLote({ empreendimento, loteFisico, onCancel, onConfi
 
   const itensComplementares: ItemComplementar[] = empreendimento?.simulador?.cub?.itensComplementares || [];
 
+  // Frações admitidas no lote físico (cadastro do admin). A metragem é fato físico:
+  // o lote restringe o conjunto, e o modelo escolhido decide qual delas vale.
+  const idsPermitidos: string[] = Array.isArray(loteFisico?.fracaoIds) ? loteFisico.fracaoIds : [];
+  const temRestricao = idsPermitidos.length > 0;
+
   // ── ESTADO ──
   const [modeloId, setModeloId] = useState<string>(modelos[0]?.id || "");
   const [fracaoId, setFracaoId] = useState<string | null>(null);
@@ -81,6 +86,24 @@ export function ModalVinculoLote({ empreendimento, loteFisico, onCancel, onConfi
   const fracoesVisiveis = useMemo(() => lotesVisiveis(lotesComerciais, modeloId), [lotesComerciais, modeloId]);
   const fracaoPadrao = useMemo(() => padraoDoModelo(lotesComerciais, modeloId), [lotesComerciais, modeloId]);
 
+  // Interseção: frações do lote ∩ frações visíveis para o modelo escolhido.
+  const fracoesPermitidas = useMemo(
+    () => (temRestricao ? fracoesVisiveis.filter(l => idsPermitidos.includes(l.id)) : fracoesVisiveis),
+    [temRestricao, idsPermitidos, fracoesVisiveis]
+  );
+
+  // Modelo sem nenhuma fração compatível com este lote → não pode ser vendido aqui.
+  const modeloIncompativel = temRestricao && fracoesPermitidas.length === 0;
+
+  // Sobrou exatamente uma → trava automática, sem escolha para o corretor.
+  const fracaoTravada = temRestricao && fracoesPermitidas.length === 1 ? fracoesPermitidas[0] : null;
+
+  // Padrão efetivo respeitando a restrição do lote.
+  const fracaoPadraoEfetiva = useMemo(() => {
+    if (fracaoPadrao && fracoesPermitidas.some(l => l.id === fracaoPadrao.id)) return fracaoPadrao;
+    return [...fracoesPermitidas].sort((a, b) => a.valor - b.valor)[0] || null;
+  }, [fracoesPermitidas, fracaoPadrao]);
+
   // Itens visíveis para este modelo (igual ItensAdicionaisSimulador)
   const itensFiltrados = useMemo(() => itensComplementares.filter(item => {
     if (!item.ativoNoSimulador) return false;
@@ -90,14 +113,14 @@ export function ModalVinculoLote({ empreendimento, loteFisico, onCancel, onConfi
 
   // Ao trocar de modelo: volta a fração ao padrão do modelo e zera os itens (igual simulador)
   useEffect(() => {
-    setFracaoId(fracaoPadrao?.id ?? null);
+    setFracaoId(fracaoPadraoEfetiva?.id ?? null);
     setItensAtivos({});
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modeloId, fracaoPadrao?.id]);
+  }, [modeloId, fracaoPadraoEfetiva?.id]);
 
   const fracaoSelecionada = useMemo(
-    () => fracoesVisiveis.find(l => l.id === fracaoId) || fracaoPadrao || null,
-    [fracoesVisiveis, fracaoId, fracaoPadrao]
+    () => fracoesPermitidas.find(l => l.id === fracaoId) || fracaoPadraoEfetiva || null,
+    [fracoesPermitidas, fracaoId, fracaoPadraoEfetiva]
   );
 
   // valorCasa idêntico ao EmpreendimentoApp: modelo.valorCasa ?? max(0, modelo.valor − fracaoPadrao.valor)
@@ -115,10 +138,10 @@ export function ModalVinculoLote({ empreendimento, loteFisico, onCancel, onConfi
   const valorFracao = fracaoSelecionada?.valor ?? 0;
   const valorVendaFinal = valorCasa + valorFracao + totalItens;
 
-  const temFracoes = fracoesVisiveis.length > 1; // só mostra o passo se há escolha real
+  const temFracoes = fracoesPermitidas.length > 1; // só mostra o passo se há escolha real
   const temItens = itensFiltrados.length > 0;
 
-  const podeConfirmar = Boolean(modelo) && !salvando;
+  const podeConfirmar = Boolean(modelo) && !salvando && !modeloIncompativel && Boolean(fracaoSelecionada);
 
   const confirmar = () => {
     if (!modelo) return;
@@ -189,12 +212,39 @@ export function ModalVinculoLote({ empreendimento, loteFisico, onCancel, onConfi
             )}
           </div>
 
+          {/* MODELO INCOMPATÍVEL COM AS FRAÇÕES DESTE LOTE */}
+          {modeloIncompativel && (
+            <div style={{ display: "flex", gap: 12, padding: "14px 16px", borderRadius: 12, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)" }}>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>⛔</span>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "#f87171", marginBottom: 4 }}>Este modelo não é vendável neste lote</p>
+                <p style={{ fontSize: 12, color: "#fca5a5", lineHeight: 1.6 }}>
+                  Nenhuma das frações permitidas para o lote {loteFisico.numero} está disponível para <strong>{modelo?.nome}</strong>. Escolha outro modelo ou outro lote.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* FRAÇÃO TRAVADA — resolvida pelo lote físico + modelo escolhido */}
+          {fracaoTravada && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 12, background: "rgba(56,189,248,0.06)", border: "1px solid rgba(56,189,248,0.25)" }}>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>🔒</span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: "#38bdf8", marginBottom: 3 }}>Fração deste lote</p>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "var(--gray-light)" }}>
+                  {fracaoTravada.nome}{(fracaoTravada as any).medida ? ` · ${(fracaoTravada as any).medida}` : ""}
+                </p>
+              </div>
+              <p style={{ fontSize: 14, fontWeight: 800, color: "#38bdf8", flexShrink: 0 }}>{formatBRL(fracaoTravada.valor)}</p>
+            </div>
+          )}
+
           {/* PASSO 2 — FRAÇÃO / LOTE (só se houver escolha) */}
           {temFracoes && (
             <div>
               <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--gray-mid)", marginBottom: 10 }}>2 · Lote / Fração</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {[...fracoesVisiveis].sort((a, b) => a.valor - b.valor).map(l => {
+                {[...fracoesPermitidas].sort((a, b) => a.valor - b.valor).map(l => {
                   const isSel = (fracaoSelecionada?.id || null) === l.id;
                   const ehPadrao = fracaoPadrao?.id === l.id;
                   return (

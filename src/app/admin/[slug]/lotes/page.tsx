@@ -30,6 +30,7 @@ interface Lote {
   status: "disponivel" | "vinculado" | "vendido" | "bloqueado"; // Adicionado "bloqueado"
   fila: LoteLeadFila[];
   leadAprovadoId: string | null;
+  fracaoIds?: string[]; // frações comerciais admitidas neste lote (vazio = corretor escolhe livremente)
 }
 
 interface Quadra {
@@ -39,11 +40,21 @@ interface Quadra {
   lotes: Lote[];
 }
 
+interface FracaoComercial {
+  id: string;
+  nome: string;
+  tipo?: string;
+  medida?: string;
+  valor: number;
+  ativo?: boolean;
+}
+
 interface Empreendimento {
   slug: string;
   nome: string;
   mapaUrl?: string;
   vendaEmOrdem?: boolean;
+  lotes?: FracaoComercial[]; // frações comerciais (Valores → Lotes & Frações)
 }
 
 interface Params { params: Promise<{ slug: string }> }
@@ -66,7 +77,7 @@ export default function GestaoLotesPage({ params }: Params) {
 
   // Estados de Formulário (Lote Único)
   const [modalLote, setModalLote] = useState<{aberto: boolean, quadraId: string, lote: Lote | null}>({aberto: false, quadraId: "", lote: null});
-  const [formLote, setFormLote] = useState({ numero: "", area: "", valor: "", svgPathId: "", adjacentes: "" });
+  const [formLote, setFormLote] = useState({ numero: "", area: "", valor: "", svgPathId: "", adjacentes: "", fracaoIds: [] as string[] });
 
   // Estados de Formulário (Lote em Massa)
   const [modalMassa, setModalMassa] = useState<{aberto: boolean, quadraId: string}>({aberto: false, quadraId: ""});
@@ -111,7 +122,7 @@ export default function GestaoLotesPage({ params }: Params) {
             snapLotes.forEach((docLote) => {
               lotesData.push({ id: docLote.id, ...docLote.data() } as Lote);
             });
-            lotesData.sort((a,b) => parseInt(a.numero) - parseInt(b.numero));
+            lotesData.sort((a, b) => String(a.numero ?? "").localeCompare(String(b.numero ?? ""), "pt-BR", { numeric: true }));
             
             setQuadras(prev => {
               const copia = [...prev];
@@ -187,11 +198,12 @@ export default function GestaoLotesPage({ params }: Params) {
     if (lote) {
       setFormLote({
         numero: lote.numero, area: String(lote.area), valor: String(lote.valor),
-        svgPathId: lote.svgPathId, adjacentes: lote.adjacentes?.join(", ") || ""
+        svgPathId: lote.svgPathId, adjacentes: lote.adjacentes?.join(", ") || "",
+        fracaoIds: Array.isArray(lote.fracaoIds) ? lote.fracaoIds : []
       });
       setModalLote({ aberto: true, quadraId, lote });
     } else {
-      setFormLote({ numero: "", area: "", valor: "", svgPathId: "", adjacentes: "" });
+      setFormLote({ numero: "", area: "", valor: "", svgPathId: "", adjacentes: "", fracaoIds: [] });
       setModalLote({ aberto: true, quadraId, lote: null });
     }
   };
@@ -206,6 +218,7 @@ export default function GestaoLotesPage({ params }: Params) {
       valor: Number(formLote.valor),
       svgPathId: formLote.svgPathId.trim(),
       adjacentes: adjArray,
+      fracaoIds: formLote.fracaoIds,
       atualizadoEm: new Date().toISOString()
     };
 
@@ -476,6 +489,11 @@ export default function GestaoLotesPage({ params }: Params) {
                                     </div>
                                     <p style={{ fontSize: 11, color: "var(--gray-mid)" }}>SVG ID: <span style={{ color: "var(--gray-light)", fontFamily: "monospace" }}>{lote.svgPathId}</span></p>
                                     <p style={{ fontSize: 11, color: "var(--gray-mid)" }}>{lote.area}m² · {formatBRL(lote.valor)}</p>
+                                    {Array.isArray(lote.fracaoIds) && lote.fracaoIds.length > 0 && (
+                                      <p style={{ fontSize: 11, color: "#38bdf8", marginTop: 2 }}>
+                                        🔒 {lote.fracaoIds.length} fração(ões) permitida(s)
+                                      </p>
+                                    )}
                                   </div>
                                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
                                     <button onClick={() => toggleBloqueioLote(quadra.id, lote.id, lote.status)} title={lote.status === "bloqueado" ? "Desbloquear" : "Bloquear Individualmente"} style={{ width: 28, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.08)", border: "none", color: "white", cursor: "pointer" }}>
@@ -559,6 +577,41 @@ export default function GestaoLotesPage({ params }: Params) {
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Valor Base (R$)</label>
                   <input type="number" required value={formLote.valor} onChange={e => setFormLote({...formLote, valor: e.target.value})} className="input-field" style={{ fontSize: 14 }} placeholder="Ex: 50000" />
                 </div>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Fração Comercial deste Lote</label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflowY: "auto", padding: "10px 12px", borderRadius: 10, background: "rgba(0,0,0,0.25)", border: "1px solid var(--border-subtle)" }}>
+                  {(empreendimento?.lotes || []).length === 0 ? (
+                    <p style={{ fontSize: 12, color: "var(--gray-dark)" }}>Nenhuma fração cadastrada em Valores → Lotes &amp; Frações.</p>
+                  ) : (
+                    (empreendimento?.lotes || []).map(f => {
+                      const marcada = formLote.fracaoIds.includes(f.id);
+                      return (
+                        <button
+                          type="button"
+                          key={f.id}
+                          onClick={() => setFormLote({
+                            ...formLote,
+                            fracaoIds: marcada
+                              ? formLote.fracaoIds.filter(x => x !== f.id)
+                              : [...formLote.fracaoIds, f.id],
+                          })}
+                          style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", borderRadius: 8, cursor: "pointer", textAlign: "left", background: marcada ? "rgba(56,189,248,0.1)" : "rgba(255,255,255,0.03)", border: marcada ? "1px solid rgba(56,189,248,0.4)" : "1px solid var(--border-subtle)" }}
+                        >
+                          <span style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: marcada ? "#38bdf8" : "transparent", border: marcada ? "none" : "1.5px solid var(--gray-dark)" }}>
+                            {marcada && <Check size={11} color="#082f49" />}
+                          </span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: marcada ? "white" : "var(--gray-mid)", flex: 1, minWidth: 0 }}>
+                            {f.nome}{f.medida ? ` — ${f.medida}` : ""} · {formatBRL(f.valor || 0)}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                <p style={{ fontSize: 11, color: "var(--gray-dark)", marginTop: 4 }}>
+                  Marque todas as frações fisicamente possíveis neste lote (uma por modelo de casa, quando o valor varia por modelo). No vínculo, o modelo escolhido define qual delas vale — se sobrar só uma, ela trava automaticamente. Nada marcado = escolha livre.
+                </p>
               </div>
               <div>
                 <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--gray-mid)", textTransform: "uppercase", marginBottom: 6 }}>Lotes Adjacentes</label>
