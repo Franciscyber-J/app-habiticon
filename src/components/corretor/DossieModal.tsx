@@ -14,7 +14,7 @@ import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebas
 import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase";
 import { notificarTelegram } from "@/lib/notificacoes";
-import { simular, formatBRL, calcularLaudoCUB, COTA_MAXIMA_CAIXA, parcelamentoCartao, parcelamentoBoleto, TAXA_BOLETO_MENSAL } from "@/lib/calculos";
+import { simular, formatBRL, calcularLaudoCUB, COTA_MAXIMA_CAIXA, parcelamentoCartao, parcelamentoBoleto, TAXA_BOLETO_MENSAL, entradaMinimaDoModelo } from "@/lib/calculos";
 
 // ─────────────────────────────────────────────────────────
 // TIPAGENS E CONSTANTES
@@ -106,7 +106,7 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
 
     const modeloEncontrado = empreendimento.modelos?.find((m: any) => m.nome === lead.modelo);
     const valorImovel = modeloEncontrado?.valor || lead.valorImovel || 0;
-    const entradaOfertada = Number(lead.preCadastro?.entrada) || empreendimento.simulador?.entradaMin || 0;
+    const entradaOfertada = Number(lead.preCadastro?.entrada) || entradaMinimaDoModelo(empreendimento, modeloEncontrado) || 0;
 
     if (valorImovel <= 0 || entradaOfertada <= 0) return null;
 
@@ -198,7 +198,7 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
 
       // Validação de mínimo (só se não for modo manual)
       if (!modoEntradaManual) {
-        const minimo = empreendimento?.simulador?.entradaMin || 10000;
+        const minimo = entradaMinimaDoModelo(empreendimento, modelo || lead.modelo);
         if (entradaNum < minimo) {
           mostrarToast(`Entrada mínima é R$ ${minimo.toLocaleString('pt-BR')} — corrija antes de salvar.`, "erro");
           return;
@@ -781,7 +781,17 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
                             <label style={{ fontSize: 11, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700 }}>Modelo da Casa</label>
                             <select
                               value={fichaForm.modelo || ""}
-                              onChange={e => setFichaForm({...fichaForm, modelo: e.target.value})}
+                              onChange={e => {
+                                const novoModelo = e.target.value;
+                                const proximo = {...fichaForm, modelo: novoModelo};
+                                if (!fichaForm.modoEntradaManual) {
+                                  const pisoNovo = entradaMinimaDoModelo(empreendimento, novoModelo);
+                                  if (parsearMoedaInput(fichaForm.entrada) < pisoNovo) {
+                                    proximo.entrada = pisoNovo.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                  }
+                                }
+                                setFichaForm(proximo);
+                              }}
                               style={{ width: "100%", padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, marginTop: 4, outline: "none" }}
                             >
                               <option value="">Selecione um modelo...</option>
@@ -802,14 +812,14 @@ export function DossieModal({ isOpen, onClose, lead, isAdmin = false }: DossieMo
                                 onBlur={() => {
                                   if (!fichaForm.modoEntradaManual) {
                                     const val = parsearMoedaInput(fichaForm.entrada);
-                                    const minimo = empreendimento?.simulador?.entradaMin || 10000;
+                                    const minimo = entradaMinimaDoModelo(empreendimento, fichaForm.modelo || lead.modelo);
                                     if (val < minimo) {
                                       setFichaForm({...fichaForm, entrada: minimo.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })});
                                     }
                                   }
                                 }}
                                 style={{ width: "100%", padding: "8px 12px 8px 36px", borderRadius: 8, background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-subtle)", color: "white", fontSize: 13, outline: "none" }}
-                                placeholder={`${(empreendimento?.simulador?.entradaMin || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+                                placeholder={`${entradaMinimaDoModelo(empreendimento, fichaForm.modelo || lead.modelo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                               />
                             </div>
                           </div>

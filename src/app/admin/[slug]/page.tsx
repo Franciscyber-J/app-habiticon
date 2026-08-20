@@ -14,7 +14,9 @@ import { ConfiguracoesSBPE } from "@/components/admin/ConfiguracoesSBPE";
 import { ItensAdicionaisAdmin } from "@/components/admin/ItensAdicionaisAdmin";
 import { FachadaAdmin } from "@/components/admin/FachadaAdmin";
 import { LotesAdmin } from "@/components/admin/LotesAdmin";
+import { EntradaMinimaPorModelo } from "@/components/admin/EntradaMinimaPorModelo";
 import { padraoDoModelo } from "@/lib/lotes";
+import { entradaMinimaDoModelo } from "@/lib/calculos";
 
 type Section = "valores" | "galeria" | "textos" | "mcmv" | "localizacao" | "mapa" | "comissoes" | "atendimento" | "adicionais";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -771,14 +773,15 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
     
     const lote = ((padraoDoModelo((emp.lotes||[]) as any, emp.modelos[0]?.id || "") || (emp.lotes||[])[0])?.valor) || emp.modelos[0]?.valorLote || 48000;
     const laudo = lote + m.area * cubEquivalente * (1+bdi);
-    const maxFin = laudo * 0.80; // MCMV sempre permite 80%
+        const maxFin = laudo * 0.80; // MCMV sempre permite 80%
+    const pisoModelo = entradaMinimaDoModelo(emp, m);
 
     return { 
        nome: m.nome, 
        laudo, 
        maxFin, 
-       entradaMin: Math.max(10000, m.valor - maxFin), 
-       funciona: maxFin >= m.valor - 10000, 
+       entradaMin: Math.max(pisoModelo, m.valor - maxFin), 
+       funciona: maxFin >= m.valor - pisoModelo, 
        cubEquivalente,
        totalItens
     };
@@ -1163,10 +1166,13 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
                   <Card title="⚙️ Parâmetros do Simulador" subtitle="Prazo, entradas e taxas">
                     <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                      <Two>
-                        <div><FieldLabel hint="Mínimo da construtora">Entrada Mínima (R$)</FieldLabel><NumInput value={emp.simulador.entradaMin} prefix="R$" onChange={v=>update("simulador.entradaMin",v)}/></div>
+                                            <Two>
+                        <div><FieldLabel hint="Padrão — usado por todo modelo sem valor próprio">Entrada Mínima (R$)</FieldLabel><NumInput value={emp.simulador.entradaMin} prefix="R$" onChange={v=>update("simulador.entradaMin",v)}/></div>
                         <div><FieldLabel hint="Teto do slider">Entrada Máxima (R$)</FieldLabel><NumInput value={emp.simulador.entradaMax} prefix="R$" onChange={v=>update("simulador.entradaMax",v)}/></div>
                       </Two>
+                      <Hr/>
+                      <EntradaMinimaPorModelo emp={emp} update={update} />
+                      <Hr/>
                       <div><FieldLabel hint="Caixa aceita até 420 meses">Prazo (meses)</FieldLabel><NumInput value={emp.simulador.prazoMeses} suffix="meses" onChange={v=>update("simulador.prazoMeses",v)}/></div>
                       <Hr/>
                       <p style={{fontSize:11,fontWeight:700,color:"var(--gray-mid)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Taxas de Juros Nominais</p>
@@ -1375,7 +1381,7 @@ const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
                                   <div key={l}><p style={{fontSize:10,color:"var(--gray-dark)",marginBottom:3}}>{l}</p><p style={{fontSize:13,fontWeight:700,color:"var(--gray-light)"}}>{v}</p></div>
                                 ))}
                               </div>
-                              {!d.funciona&&<p style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>CUB equivalente mínimo para 100%: R$ {Math.ceil(((emp.modelos.find((mx:any)=>mx.nome===d.nome)?.valor - emp.simulador.entradaMin) / 0.8 - (emp.modelos[0]?.valorLote||48000)) / ((emp.modelos.find((mx:any)=>mx.nome===d.nome)?.area || 1) * (1+(emp.simulador.cub?.bdi||0.18)))).toLocaleString("pt-BR")}/m²</p>}
+                              {!d.funciona&&<p style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>CUB equivalente mínimo para 100%: R$ {Math.ceil(((emp.modelos.find((mx:any)=>mx.nome===d.nome)?.valor - entradaMinimaDoModelo(emp, d.nome)) / 0.8 - (emp.modelos[0]?.valorLote||48000)) / ((emp.modelos.find((mx:any)=>mx.nome===d.nome)?.area || 1) * (1+(emp.simulador.cub?.bdi||0.18)))).toLocaleString("pt-BR")}/m²</p>}
                             </div>
                           );})}
                         </div>

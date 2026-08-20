@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Info, Plus, Trash2, AlertTriangle } from "lucide-react";
+import { entradaMinimaDoModelo } from "@/lib/calculos";
 
 // ============================================================================
 // COMPONENTES DE UI
@@ -89,8 +90,9 @@ export function ConfiguracoesSBPE({ emp, update }: ConfiguracoesSBPEProps) {
     const maxFinSAC = laudo * 0.80; // SBPE permite 80% na SAC
     const maxFinPRICE = laudo * 0.70; // SBPE permite 70% na PRICE
     
-    const entradaMinSAC = Math.max(emp.simulador.entradaMin || 10000, m.valor - maxFinSAC);
-    const funcionaSAC = maxFinSAC >= m.valor - (emp.simulador.entradaMin || 10000);
+    const pisoModelo = entradaMinimaDoModelo(emp, m);
+    const entradaMinSAC = Math.max(pisoModelo, m.valor - maxFinSAC);
+    const funcionaSAC = maxFinSAC >= m.valor - pisoModelo;
     
     return { nome: m.nome, laudo, maxFinSAC, maxFinPRICE, entradaMinSAC, funcionaSAC, cubEquivalente };
   }) : null;

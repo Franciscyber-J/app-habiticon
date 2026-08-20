@@ -28,6 +28,7 @@ import {
   simular,
   formatBRL,
   calcularEntradaMinima,
+  entradaMinimaDoModelo,
   calcularMaxFinCUB,
   calcularLaudoCUB,
   determinarFaixaEfetiva,
@@ -60,6 +61,7 @@ interface Modelo {
   valorLote?: number;
   tamanhoLote?: string;
   valorCasa?: number;
+  entradaMin?: number | null;
 }
 
 interface FaixaMCMV {
@@ -196,7 +198,7 @@ export default function EmpreendimentoApp({
     setItensAdicionaisAtivos([]);
     setLoteSelecionado(null); // LoteSelector re-emite o padrão do novo modelo
   };
-  const [entrada,           setEntrada]           = useState(empFresh.simulador.entradaMin);
+  const [entrada,           setEntrada]           = useState(() => entradaMinimaDoModelo(empFresh, empFresh.modelos[0]));
   const [subsidio,          setSubsidio]          = useState(0);
   const [taxaAtual,         setTaxaAtual]         = useState(empFresh.simulador.taxaFaixa12);
   const [rendaPreenchida,   setRendaPreenchida]   = useState(false);
@@ -219,6 +221,9 @@ export default function EmpreendimentoApp({
   const valorLoteEmpreendimento = loteSelecionado?.valor ?? (lotePadrao?.valor ?? 48000);
 
   const modelo = empFresh.modelos.find((m) => m.id === modeloSelecionado) || empFresh.modelos[0];
+  // Piso comercial de entrada DESTE modelo (override próprio ou padrão do empreendimento).
+  // Toda referência a entrada mínima nesta tela passa por aqui.
+  const pisoEntrada = entradaMinimaDoModelo(empFresh, modelo);
   const valorCasaModelo = (modelo as any)?.valorCasa ?? Math.max(0, (modelo?.valor || 0) - (lotePadrao?.valor || 0));
   const fachadaSelecionada = fachadasPorModelo[modeloSelecionado] || null;
   const fachadaDiff = fachadaSelecionada?.diferencaPreco || 0;
@@ -318,14 +323,14 @@ export default function EmpreendimentoApp({
       const maxFinCUB = info.cotaCaixa;
       
       const maxFinEfetivo = Math.min(maxFinCUB, maxFinRenda);
-      const entradaFinal = Math.max(empFresh.simulador.entradaMin, valorEfetivo - maxFinEfetivo);
+      const entradaFinal = Math.max(pisoEntrada, valorEfetivo - maxFinEfetivo);
 
       let limitador: LimitadorEntrada = "cota_80";
       let detalhe = "Teto SBPE — Máximo 80% (SAC)";
 
-      if (entradaFinal <= empFresh.simulador.entradaMin + 1) {
+      if (entradaFinal <= pisoEntrada + 1) {
         limitador = "entrada_min";
-        detalhe = `Entrada mínima de R$ ${empFresh.simulador.entradaMin.toLocaleString("pt-BR")} aplicada.`;
+        detalhe = `Entrada mínima de R$ ${pisoEntrada.toLocaleString("pt-BR")} aplicada.`;
       } else if (maxFinRenda >= maxFinCUB) {
         limitador = laudoCalculado > 0 ? "cub" : "cota_80";
         detalhe = laudoCalculado > 0 ? `Laudo Alto Padrão liberou máximo de R$ ${maxFinCUB.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}.` : "Teto SBPE (80%) limitou o financiamento.";
@@ -347,7 +352,7 @@ export default function EmpreendimentoApp({
         maxFinCota80: financiamentoPadraoSemCUB,
         maxFinCUB: maxFinCUB,
         ganhoEntradaEmbutida: ganhoReal, 
-        cubCobre: maxFinEfetivo >= (valorEfetivo - empFresh.simulador.entradaMin),
+        cubCobre: maxFinEfetivo >= (valorEfetivo - pisoEntrada),
         pctFinanciadoSobreVenda: maxFinEfetivo / valorEfetivo
       };
     }
@@ -435,12 +440,12 @@ export default function EmpreendimentoApp({
       valorVenda,
       maxFinRenda,
       maxFinCUB,
-      empFresh.simulador.entradaMin,
+      pisoEntrada,
       COTA_MAXIMA_CAIXA,
       tetoEfetivo,
     );
   }, [
-    modelo, rendaFamiliar, empFresh.simulador.entradaMin, empFresh.simulador.prazoMeses, 
+    modelo, rendaFamiliar, pisoEntrada, empFresh.simulador.prazoMeses, 
     empFresh.simulador.cub, empFresh.simulador.taxaSBPE, empFresh.simulador.taxaFaixa12, empFresh.mcmv.faixas,
     subsidio, usarSubsidio, tetoEfetivo, valorLoteEmpreendimento, isSBPE, getLaudoSBPE, getLaudoMCMV,
     itensAdicionaisTotal, fachadaDiff, valorEfetivo
@@ -452,7 +457,7 @@ export default function EmpreendimentoApp({
     return getLaudoMCMV(modelo);
   }, [modelo, isSBPE, getLaudoSBPE, getLaudoMCMV]);
 
-  const minEntradaPermitida = motorEntrada?.entradaMinima ?? empFresh.simulador.entradaMin;
+  const minEntradaPermitida = motorEntrada?.entradaMinima ?? pisoEntrada;
 
   const faixaEfetiva = useMemo((): FaixaEfetiva | null => {
     if (!modelo || rendaFamiliar <= 0 || isSBPE) return null;
@@ -588,7 +593,7 @@ export default function EmpreendimentoApp({
 
   const getModuloStatus = (modId: string) => {
     if (modId === "renda")     return rendaPreenchida ? "done" : "active";
-    if (modId === "simulador") return modelo && entrada >= empFresh.simulador.entradaMin ? "done" : "pending";
+    if (modId === "simulador") return modelo && entrada >= pisoEntrada ? "done" : "pending";
     if (modId === "obra")      return resultadoSimulacao && resultadoSimulacao.finLiberadoPRICE > 0 ? "done" : "pending";
     if (modId === "proposta")  return propostaData ? "done" : "pending";
     return "pending";
@@ -620,7 +625,7 @@ export default function EmpreendimentoApp({
 
   const AlertaTrava = () => {
     if (!motorEntrada) return null;
-    if (minEntradaPermitida <= empFresh.simulador.entradaMin) return null;
+    if (minEntradaPermitida <= pisoEntrada) return null;
     if (motorEntrada.limitador === "entrada_min") return null;
 
     const cfg = TRAVA_CONFIG[motorEntrada.limitador];
@@ -1030,7 +1035,7 @@ export default function EmpreendimentoApp({
                         const pct = (pctFinanciadoSobreVenda * 100).toFixed(1);
                         
                         // Nova Lógica Inteligente para Cores e Status
-                        const laudoPotencialCobre = maxFinCUB >= (modelo.valor - empFresh.simulador.entradaMin);
+                        const laudoPotencialCobre = maxFinCUB >= (modelo.valor - pisoEntrada);
                         const aRendaEsmagou = maxFinRenda < maxFinCUB && maxFinRenda < maxFinCota80;
                         
                         let cor = "#f87171"; // Vermelho
@@ -1079,8 +1084,8 @@ export default function EmpreendimentoApp({
                             </div>
                             {!laudoPotencialCobre && (
                               <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                                📐 Para embutir 100% da entrada (mín R$10k), o CUB equivalente precisaria ser ≥ R${
-                                  Math.ceil(((modelo.valor - empFresh.simulador.entradaMin) / cotaMax - valorLoteEmpreendimento) / (modelo.area * (1 + bdi))).toLocaleString("pt-BR")
+                                📐 Para embutir 100% da entrada (mín R$ {pisoEntrada.toLocaleString("pt-BR")}), o CUB equivalente precisaria ser ≥ R${
+                                  Math.ceil(((modelo.valor - pisoEntrada) / cotaMax - valorLoteEmpreendimento) / (modelo.area * (1 + bdi))).toLocaleString("pt-BR")
                                 }/m²
                               </p>
                             )}
@@ -1091,7 +1096,7 @@ export default function EmpreendimentoApp({
                       <EntradaSlider
                         value={entrada}
                         min={minEntradaPermitida}
-                        max={empFresh.simulador.entradaMax}
+                        max={Math.max(empFresh.simulador.entradaMax, Math.ceil(minEntradaPermitida) + 1000)}
                         onChange={setEntrada}
                       />
                     </div>

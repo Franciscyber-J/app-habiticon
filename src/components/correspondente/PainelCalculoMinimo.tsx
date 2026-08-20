@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { Target, Layers, Info, AlertTriangle, CheckCircle2, ChevronDown, Edit3, Home, TrendingUp } from "lucide-react";
-import { formatBRL, calcularLaudoCUB, simular, determinarFaixaEfetiva, COTA_MAXIMA_CAIXA } from "@/lib/calculos";
+import { formatBRL, calcularLaudoCUB, simular, determinarFaixaEfetiva, entradaMinimaDoModelo, COTA_MAXIMA_CAIXA } from "@/lib/calculos";
 
 // ─────────────────────────────────────────────────────────
 // PainelCalculoMinimo
@@ -38,7 +38,6 @@ export function PainelCalculoMinimo({ lead, empreendimento, lotesVendidos = [] }
     if (!empreendimento) return null;
 
     const sim = empreendimento.simulador || {};
-    const entradaMin: number = Number(sim.entradaMin) || 0;
     const prazoMeses: number = Number(sim.prazoMeses) || 360;
     const reserva = lead?.loteReserva || null;
 
@@ -47,6 +46,10 @@ export function PainelCalculoMinimo({ lead, empreendimento, lotesVendidos = [] }
     const modeloPorNome = lead?.modelo ? modelos.find(m => m.nome === lead.modelo) : null;
     const modelo = modeloPorId || modeloPorNome || null;
     const modeloId = modelo?.id || null;
+
+    // Piso de entrada DESTE modelo (override próprio ou padrão do empreendimento).
+    // Sem modelo identificado, cai no padrão — mesmo comportamento de antes.
+    const entradaMin: number = entradaMinimaDoModelo(empreendimento, modelo);
 
     const valorLoteModelo = Number(modelo?.valorLote) || 0;
     const valorCasaBase = (typeof modelo?.valorCasa === "number" ? modelo.valorCasa : null)
@@ -265,7 +268,7 @@ export function PainelCalculoMinimo({ lead, empreendimento, lotesVendidos = [] }
               <div>
                 <p style={{ fontSize: 10, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Entrada Mínima</p>
                 <p style={{ fontSize: 16, fontWeight: 800, color: "var(--gray-light)" }}>{formatBRL(base.entradaMin)}</p>
-                <p style={{ fontSize: 9, color: "var(--gray-dark)", marginTop: 2 }}>config. do empreend.</p>
+                <p style={{ fontSize: 9, color: "var(--gray-dark)", marginTop: 2 }}>{base.modeloNome ? `mínimo · ${base.modeloNome}` : "config. do empreend."}</p>
               </div>
               <div>
                 <p style={{ fontSize: 10, color: "var(--gray-mid)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Repasse Necessário</p>
@@ -424,7 +427,7 @@ export function PainelCalculoMinimo({ lead, empreendimento, lotesVendidos = [] }
                       <p style={{ fontSize: 15, fontWeight: 800, color: "white", marginTop: 2 }}>{formatBRL(entradaUsada)}</p>
                     )}
                     <p style={{ fontSize: 9, color: "var(--gray-dark)", marginTop: 1 }}>
-                      {(entradaEditavel != null && entradaEditavel > base.entradaMin) ? "definida pelo cliente" : `mínimo do empreend. (${formatBRL(base.entradaMin)})`}
+                      {(entradaEditavel != null && entradaEditavel > base.entradaMin) ? "definida pelo cliente" : `mínimo do modelo (${formatBRL(base.entradaMin)})`}
                     </p>
                   </div>
                   <button onClick={() => setEditandoEntrada(v => !v)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 7, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", color: "var(--gray-light)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>

@@ -5,6 +5,7 @@ import { Scale, TrendingUp, Edit3, Trophy, AlertTriangle, CheckCircle2, XCircle,
 import {
   simular, calcularLaudoCUB, determinarFaixaEfetiva,
   formatBRL, COTA_MAXIMA_CAIXA,
+  entradaMinimaDoModelo, menorEntradaMinima,
 } from "@/lib/calculos";
 import {
   simularSBPE, SBPE_COTA_MAXIMA_SAC,
@@ -40,7 +41,8 @@ export function ComparadorImoveis({ lead, empreendimento }: ComparadorImoveisPro
   // Renda e entrada: pega do lead; correspondente pode editar
   const rendaInicial = Number(lead?.simulacao?.rendaFamiliar ?? lead?.rendaFamiliar ?? 0) || 0;
   const sim = empreendimento?.simulador || {};
-  const entradaMinConfig = Number(sim.entradaMin) || 0;
+    // Parte do MENOR piso do empreendimento — cada modelo aplica o seu por cima.
+  const entradaMinConfig = menorEntradaMinima(empreendimento);
 
   const [renda, setRenda] = useState<number>(rendaInicial);
   const [entrada, setEntrada] = useState<number>(entradaMinConfig);
@@ -73,7 +75,10 @@ export function ComparadorImoveis({ lead, empreendimento }: ComparadorImoveisPro
       const valorLote = Number(m.valorLote) || 0;
       const valorCasa = typeof m.valorCasa === "number" ? m.valorCasa : Math.max(0, (m.valor || 0) - valorLote);
       const contrato = Number(m.valor) || (valorCasa + valorLote);
-      const repasse = Math.max(0, contrato - entrada);
+      // Piso comercial DESTE modelo. A entrada informada nunca vale menos que ele.
+      const pisoModelo = entradaMinimaDoModelo(empreendimento, m);
+      const entradaBase = Math.max(entrada, pisoModelo);
+      const repasse = Math.max(0, contrato - entradaBase);
 
       // Laudo CUB MCMV
       const laudoCUB = (cubVigente > 0 && area > 0)
@@ -87,7 +92,7 @@ export function ComparadorImoveis({ lead, empreendimento }: ComparadorImoveisPro
       let taxa = 0;
       let maxFinRenda = 0;
       let maxFinCUB = 0;
-      let entradaReal = entrada;
+      let entradaReal = entradaBase;
       let rendaOK = false;
       let cubOK = false;
       let bloqueio: string | null = null;
@@ -116,7 +121,7 @@ export function ComparadorImoveis({ lead, empreendimento }: ComparadorImoveisPro
         // Entrada real HONESTA: o limitador mais restritivo entre CUB e renda (e o piso).
         // O banco libera no máximo o menor dos dois financiamentos.
         const maxFinReal = renda > 0 && !bloqueio ? Math.min(maxFinCUB, maxFinRenda) : maxFinCUB;
-        entradaReal = Math.max(entrada, contrato - maxFinReal);
+        entradaReal = Math.max(entradaBase, contrato - maxFinReal);
       } else {
         // ── SBPE ──
         linha = "SBPE";
@@ -133,7 +138,7 @@ export function ComparadorImoveis({ lead, empreendimento }: ComparadorImoveisPro
         });
         maxFinRenda = r.finLiberadoSAC; // SAC já cruza renda × cota 80%
         // Entrada real honesta: limitador mais restritivo (o finLiberadoSAC já é o mínimo renda×cota)
-        entradaReal = Math.max(entrada, contrato - maxFinRenda);
+        entradaReal = Math.max(entradaBase, contrato - maxFinRenda);
         rendaOK = renda > 0 && maxFinRenda >= repasse;
         cubOK = maxFinCUB >= repasse;
       }
@@ -144,7 +149,8 @@ export function ComparadorImoveis({ lead, empreendimento }: ComparadorImoveisPro
         id: m.id, nome: m.nome, linha, taxa, area, contrato, repasse,
         maxFinRenda: Math.round(maxFinRenda), maxFinCUB: Math.round(maxFinCUB),
         entradaReal: Math.round(entradaReal), rendaOK, cubOK, aprovado, bloqueio,
-        entradaNoPiso: Math.round(entradaReal) <= Math.round(entrada),
+        entradaBase: Math.round(entradaBase),
+        entradaNoPiso: Math.round(entradaReal) <= Math.round(entradaBase),
       };
     });
 
@@ -174,7 +180,7 @@ export function ComparadorImoveis({ lead, empreendimento }: ComparadorImoveisPro
       if (maisBarato && maisBarato.linha === "MCMV" && !maisBarato.bloqueio) {
         // financiável real = min(repasse, maxFinCUB); a entrada sobe se o CUB não cobre
         const financiavelAlvo = Math.min(maisBarato.repasse, maisBarato.maxFinCUB);
-        const entradaCenario = Math.max(entrada, maisBarato.contrato - maisBarato.maxFinCUB);
+        const entradaCenario = Math.max(maisBarato.entradaBase, maisBarato.contrato - maisBarato.maxFinCUB);
         // busca a menor renda cujo finLiberadoPRICE >= financiavelAlvo
         let lo = 0, hi = 50000, achou = 0;
         for (let it = 0; it < 50; it++) {
@@ -273,6 +279,9 @@ export function ComparadorImoveis({ lead, empreendimento }: ComparadorImoveisPro
                     <span style={{ color: r.entradaNoPiso ? "#4ade80" : "#fb923c" }}>
                       Entrada necessária: <strong>{formatBRL(r.entradaReal)}</strong>
                     </span>
+                    {r.entradaBase > entrada && (
+                      <span style={{ color: "var(--gray-dark)" }}>piso deste modelo: {formatBRL(r.entradaBase)}</span>
+                    )}
                   </div>
 
                   {r.bloqueio && (

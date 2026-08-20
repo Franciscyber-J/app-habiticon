@@ -680,6 +680,65 @@ export function calcularEntradaMinima(
 }
 
 // ===================================================
+// ENTRADA MÍNIMA POR MODELO
+// ===================================================
+// Fonte única da verdade do piso de entrada.
+// Regra: modelo.entradaMin (override) vence; senão simulador.entradaMin (padrão).
+// null / undefined / "" / NaN / negativo => cai no padrão do empreendimento.
+// Zero é override VÁLIDO (permite modelo sem entrada mínima).
+
+/**
+ * Resolve a entrada mínima aplicável a um modelo específico.
+ * @param empreendimento objeto completo do empreendimento
+ * @param modeloOuId objeto do modelo, ou o id, ou o nome do modelo
+ */
+export function entradaMinimaDoModelo(empreendimento: any, modeloOuId?: any): number {
+  const padrao = Number(empreendimento?.simulador?.entradaMin) || 0;
+  if (modeloOuId === null || modeloOuId === undefined) return padrao;
+
+  let modelo: any = modeloOuId;
+  if (typeof modeloOuId === "string") {
+    const lista: any[] = empreendimento?.modelos || [];
+    modelo =
+      lista.find((m: any) => m?.id === modeloOuId) ||
+      lista.find((m: any) => m?.nome === modeloOuId) ||
+      null;
+  }
+  if (!modelo || typeof modelo !== "object") return padrao;
+
+  const bruto = modelo.entradaMin;
+  if (bruto === null || bruto === undefined || bruto === "") return padrao;
+
+  const n = Number(bruto);
+  if (!Number.isFinite(n) || n < 0) return padrao;
+  return n;
+}
+
+/**
+ * Menor entrada mínima entre TODOS os modelos do empreendimento.
+ * Usado em telas que ainda não têm um modelo definido (piso de partida).
+ */
+export function menorEntradaMinima(empreendimento: any): number {
+  const padrao = Number(empreendimento?.simulador?.entradaMin) || 0;
+  const lista: any[] = empreendimento?.modelos || [];
+  if (lista.length === 0) return padrao;
+  return Math.min(...lista.map((m: any) => entradaMinimaDoModelo(empreendimento, m)));
+}
+
+/**
+ * true se algum modelo tem override próprio (usado para rótulos de UI).
+ */
+export function temEntradaMinimaPorModelo(empreendimento: any): boolean {
+  const lista: any[] = empreendimento?.modelos || [];
+  return lista.some((m: any) => {
+    const b = m?.entradaMin;
+    if (b === null || b === undefined || b === "") return false;
+    const n = Number(b);
+    return Number.isFinite(n) && n >= 0;
+  });
+}
+
+// ===================================================
 // FORMATAÇÃO
 // ===================================================
 export function formatBRL(valor: number): string {
